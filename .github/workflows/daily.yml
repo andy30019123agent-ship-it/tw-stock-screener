@@ -2,7 +2,7 @@ name: 每天盤後更新選股資料
 
 on:
   schedule:
-    - cron: '0 10 * * *'   # 每天 UTC 10:00 = 台北 18:00
+    - cron: '17 10 * * *'  # 每天 UTC 10:17 = 台北 18:17（避開整點壅塞）
   workflow_dispatch:        # 也可手動觸發（測試用）
     inputs:
       sample:
