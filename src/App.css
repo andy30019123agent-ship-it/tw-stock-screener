@@ -28,20 +28,45 @@ body {
 /* ── Header ─────────────────────────────── */
 .app-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  padding: 22px 4px 18px;
-  gap: 16px;
+  padding: 22px 4px 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
-.app-header h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.01em; }
-.updated { font-size: 12px; color: var(--text-muted); }
+.brand h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.01em; }
+.brand .subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.updated {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-muted);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 5px 11px; white-space: nowrap;
+}
+.updated-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--down); box-shadow: 0 0 6px var(--down);
+}
 
-.loading, .error, .empty {
+.loading, .empty {
   padding: 40px; text-align: center; color: var(--text-muted);
   background: var(--surface); border-radius: var(--radius); margin-top: 12px;
 }
-.error { color: var(--up); }
+
+/* ── Banner（提示帶）─────────────────────── */
+.banner {
+  margin-top: 12px; padding: 11px 15px; border-radius: var(--radius);
+  font-size: 13px; line-height: 1.5;
+}
+.banner b { font-weight: 700; }
+.banner-warn {
+  background: rgba(245,185,66,0.12); border: 1px solid rgba(245,185,66,0.4);
+  color: #f7c965;
+}
+.banner-warn b { color: var(--gold); }
+.banner-error {
+  background: rgba(224,72,75,0.12); border: 1px solid rgba(224,72,75,0.4);
+  color: #ff8e90;
+}
 
 /* ── Condition Panel ────────────────────── */
 .cond-panel {
@@ -57,6 +82,20 @@ body {
   z-index: 10;
 }
 
+/* 摺疊開關（手機才顯示） */
+.cond-toggle {
+  display: none;
+  width: 100%; align-items: center; gap: 10px;
+  background: none; border: none; color: var(--text);
+  font-size: 15px; font-weight: 600; cursor: pointer; padding: 2px;
+}
+.cond-toggle-label { flex-shrink: 0; }
+.cond-toggle-count { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.cond-toggle-count b { color: var(--accent); font-size: 15px; }
+.chevron { color: var(--text-muted); transition: transform 0.2s ease; flex-shrink: 0; }
+.chevron.up { transform: rotate(180deg); }
+
+.cond-body { display: flex; flex-direction: column; gap: 14px; }
 .cond-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .cond-checks { gap: 8px; }
 
@@ -131,12 +170,15 @@ body {
 .result-table tbody tr:hover { background: var(--surface-2); }
 .result-table tbody tr:last-child td { border-bottom: none; }
 
-.cell-name { display: flex; flex-direction: column; gap: 1px; }
+/* 注意：td 維持 table-cell（勿用 display:flex，否則欄位會跑掉），靠內部 span block 堆疊 */
+.cell-name { line-height: 1.35; }
+.cell-name span { display: block; }
 .cell-name .sid { font-weight: 700; font-size: 15px; }
 .cell-name .sname { font-size: 13px; }
 .cell-name .sindustry { font-size: 11px; color: var(--text-muted); }
 
-.cell-price { display: flex; flex-direction: column; gap: 1px; font-variant-numeric: tabular-nums; }
+.cell-price { font-variant-numeric: tabular-nums; line-height: 1.35; }
+.cell-price span { display: block; }
 .cell-price .close { font-weight: 700; font-size: 15px; }
 .cell-price .chg { font-size: 12px; }
 .cell-price.up { color: var(--up); }
@@ -144,7 +186,8 @@ body {
 
 .spark { display: block; }
 
-.cell-ma { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.cell-ma { font-size: 12px; line-height: 1.5; }
+.cell-ma > span { display: block; }
 .ma-bull { color: var(--up); font-weight: 600; }
 .ma-flat { color: var(--text-muted); }
 .ma-up { color: var(--gold); }
@@ -164,6 +207,51 @@ body {
 .tag-gc     { background: rgba(79,140,255,0.16); color: #87b0ff; }
 .tag-foreign{ background: rgba(22,163,74,0.16); color: #5fd089; }
 .tag-trust  { background: rgba(168,85,247,0.18); color: #c79bff; }
+
+/* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
+.sort-bar, .card-list { display: none; }
+
+.sort-bar {
+  align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 14px; padding: 2px;
+}
+.sort-bar-label { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+.sort-chip {
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-muted); border-radius: 999px;
+  padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.15s;
+}
+.sort-chip.on { background: rgba(79,140,255,0.16); border-color: var(--accent); color: #87b0ff; }
+
+.card-list { flex-direction: column; gap: 10px; margin-top: 12px; }
+.stock-card {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; text-align: left;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px;
+  color: var(--text); cursor: pointer;
+  transition: border-color 0.15s, transform 0.08s;
+}
+.stock-card:active { transform: scale(0.99); border-color: var(--accent); }
+
+.sc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sc-name { display: flex; flex-direction: column; gap: 2px; }
+.sc-name .sid { font-weight: 700; font-size: 17px; }
+.sc-name .sname { font-size: 14px; }
+.sc-name .sindustry { font-size: 12px; color: var(--text-muted); }
+.sc-price { display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.sc-price .close { font-weight: 700; font-size: 18px; }
+.sc-price .chg { font-size: 13px; font-weight: 600; }
+.sc-price.up { color: var(--up); }
+.sc-price.down { color: var(--down); }
+
+.sc-mid { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sc-streaks { display: flex; gap: 16px; font-size: 13px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; }
+.sc-streaks b { color: var(--text); font-weight: 600; margin-left: 3px; }
+.sc-streaks b.hot { color: var(--gold); }
 
 /* ── Modal ──────────────────────────────── */
 .modal-backdrop {
@@ -211,9 +299,27 @@ body {
 
 /* ── RWD ────────────────────────────────── */
 @media (max-width: 720px) {
-  .result-table .sindustry,
-  .cell-ma .disp { display: none; }
-  .result-table th, .result-table td { padding: 10px 8px; }
-  .search { margin-left: 0; width: 100%; }
-  .cond-panel { position: static; }
+  body { font-size: 15px; }
+  .app { padding: 0 12px 40px; }
+
+  .app-header { padding: 16px 2px 12px; }
+  .brand h1 { font-size: 20px; }
+
+  /* 桌機表格隱藏，改用卡片 */
+  .table-wrap { display: none; }
+  .sort-bar { display: flex; }
+  .card-list { display: flex; }
+
+  /* 篩選面板：可摺疊、不再黏頂 */
+  .cond-panel { position: static; padding: 14px; gap: 12px; }
+  .cond-toggle { display: flex; }
+  .cond-panel.collapsed .cond-body { display: none; }
+
+  /* 觸控放大 */
+  .toggle { padding: 10px 14px; }
+  .toggle-label { font-size: 14px; }
+  .num-field { padding: 9px 12px; }
+  .num-field input { width: 52px; padding: 6px; font-size: 16px; }
+  .logic-toggle button { padding: 10px 13px; font-size: 13px; }
+  .search { margin-left: 0; width: 100%; padding: 11px 13px; font-size: 16px; }
 }

@@ -24,16 +24,32 @@ export default function App() {
     return [...list].sort(SORTS[sortKey] || SORTS.signal)
   }, [data, conditions, sortKey])
 
+  // 抓太少判斷：實際檔數低於清單應有的 90% 視為資料可能不完整
+  const expected = data?.expected || 0
+  const incomplete = expected > 0 && data.count < expected * 0.9
+
   return (
     <div className="app">
       <header className="app-header">
-        <h1>📈 台股電子選股</h1>
-        <span className="updated">
-          {data ? `資料更新：${data.updated}` : ''}
-        </span>
+        <div className="brand">
+          <h1>台股電子選股</h1>
+          <p className="subtitle">糾結轉強 × 法人連買</p>
+        </div>
+        {data && (
+          <span className="updated">
+            <span className="updated-dot" />
+            資料更新 {data.updated}
+          </span>
+        )}
       </header>
 
-      {error && <div className="error">⚠️ {error}</div>}
+      {error && <div className="banner banner-error" role="alert">{error}</div>}
+
+      {data && incomplete && (
+        <div className="banner banner-warn" role="status">
+          本次只更新 <b>{data.count}</b> ／ {expected} 檔，部分股票抓取失敗，資料可能不完整，請稍後再看或等下次自動更新。
+        </div>
+      )}
 
       {!data && !error && <div className="loading">載入資料中…</div>}
 

@@ -1,45 +1,60 @@
+import { useState } from 'react'
+
+const isMobile = () =>
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
+
 export default function ConditionPanel({ conditions, onChange, total, shown }) {
   const c = conditions
   const set = (key, value) => onChange({ ...c, [key]: value })
+  // 手機預設收合，桌機預設展開
+  const [open, setOpen] = useState(() => !isMobile())
 
   return (
-    <div className="cond-panel">
-      <div className="cond-row cond-checks">
-        <Toggle label="✨ 糾結後黃金交叉→多頭發散" hint="綜合訊號"
-          checked={c.signalMa} onChange={v => set('signalMa', v)} accent />
-        <Toggle label="多頭排列" hint="MA5>10>20>60"
-          checked={c.bullAligned} onChange={v => set('bullAligned', v)} />
-        <Toggle label="近期黃金交叉" hint="MA5 上穿 MA20"
-          checked={c.goldenCross} onChange={v => set('goldenCross', v)} />
-        <Toggle label="均線上彎" hint="均線翻揚"
-          checked={c.maRising} onChange={v => set('maRising', v)} />
-      </div>
+    <div className={`cond-panel ${open ? 'open' : 'collapsed'}`}>
+      <button className="cond-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span className="cond-toggle-label">篩選條件</span>
+        <span className="cond-toggle-count">符合 <b>{shown}</b> ／ {total}</span>
+        <Chevron open={open} />
+      </button>
 
-      <div className="cond-row cond-chips">
-        <div className="num-field">
-          <label>外資連買 ≥</label>
-          <input type="number" min="0" max="30" value={c.foreignDays}
-            onChange={e => set('foreignDays', parseInt(e.target.value) || 0)} />
-          <span>天</span>
+      <div className="cond-body">
+        <div className="cond-row cond-checks">
+          <Toggle label="糾結後黃金交叉→多頭發散" hint="綜合訊號"
+            checked={c.signalMa} onChange={v => set('signalMa', v)} accent />
+          <Toggle label="多頭排列" hint="MA5>10>20>60"
+            checked={c.bullAligned} onChange={v => set('bullAligned', v)} />
+          <Toggle label="近期黃金交叉" hint="MA5 上穿 MA20"
+            checked={c.goldenCross} onChange={v => set('goldenCross', v)} />
+          <Toggle label="均線上彎" hint="均線翻揚"
+            checked={c.maRising} onChange={v => set('maRising', v)} />
         </div>
-        <div className="num-field">
-          <label>投信連買 ≥</label>
-          <input type="number" min="0" max="30" value={c.trustDays}
-            onChange={e => set('trustDays', parseInt(e.target.value) || 0)} />
-          <span>天</span>
-        </div>
-        <div className="logic-toggle">
-          <button className={c.chipLogic === 'and' ? 'on' : ''}
-            onClick={() => set('chipLogic', 'and')}>外資＋投信都要</button>
-          <button className={c.chipLogic === 'or' ? 'on' : ''}
-            onClick={() => set('chipLogic', 'or')}>任一即可</button>
-        </div>
-        <input className="search" type="search" placeholder="搜尋代號／名稱"
-          value={c.keyword} onChange={e => set('keyword', e.target.value)} />
-      </div>
 
-      <div className="cond-summary">
-        符合 <b>{shown}</b> 檔 ／ 共 {total} 檔
+        <div className="cond-row cond-chips">
+          <div className="num-field">
+            <label>外資連買 ≥</label>
+            <input type="number" inputMode="numeric" min="0" max="30" value={c.foreignDays}
+              onChange={e => set('foreignDays', parseInt(e.target.value) || 0)} />
+            <span>天</span>
+          </div>
+          <div className="num-field">
+            <label>投信連買 ≥</label>
+            <input type="number" inputMode="numeric" min="0" max="30" value={c.trustDays}
+              onChange={e => set('trustDays', parseInt(e.target.value) || 0)} />
+            <span>天</span>
+          </div>
+          <div className="logic-toggle">
+            <button className={c.chipLogic === 'and' ? 'on' : ''}
+              onClick={() => set('chipLogic', 'and')}>外資＋投信都要</button>
+            <button className={c.chipLogic === 'or' ? 'on' : ''}
+              onClick={() => set('chipLogic', 'or')}>任一即可</button>
+          </div>
+          <input className="search" type="search" placeholder="搜尋代號／名稱"
+            value={c.keyword} onChange={e => set('keyword', e.target.value)} />
+        </div>
+
+        <div className="cond-summary">
+          符合 <b>{shown}</b> 檔 ／ 共 {total} 檔
+        </div>
       </div>
     </div>
   )
@@ -52,5 +67,15 @@ function Toggle({ label, hint, checked, onChange, accent }) {
       <span className="toggle-label">{label}</span>
       {hint && <span className="toggle-hint">{hint}</span>}
     </label>
+  )
+}
+
+function Chevron({ open }) {
+  return (
+    <svg className={`chevron ${open ? 'up' : ''}`} width="16" height="16"
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
   )
 }

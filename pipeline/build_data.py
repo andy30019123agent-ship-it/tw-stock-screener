@@ -286,6 +286,7 @@ def main():
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "count": len(results),
+        "expected": len(universe),   # 本次清單原本要處理的檔數，前端用來判斷是否抓太少
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")
