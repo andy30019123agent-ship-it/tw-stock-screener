@@ -3,7 +3,7 @@ import { useState } from 'react'
 const isMobile = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
 
-export default function ConditionPanel({ conditions, onChange, total, shown }) {
+export default function ConditionPanel({ conditions, onChange, total, shown, holderReady }) {
   const c = conditions
   const set = (key, value) => onChange({ ...c, [key]: value })
   // 手機預設收合，桌機預設展開
@@ -27,6 +27,9 @@ export default function ConditionPanel({ conditions, onChange, total, shown }) {
             checked={c.goldenCross} onChange={v => set('goldenCross', v)} />
           <Toggle label="均線上彎" hint="均線翻揚"
             checked={c.maRising} onChange={v => set('maRising', v)} />
+          <Toggle label="千張大戶上升" hint={holderReady ? '占比較上週增加' : '資料累積中'}
+            checked={c.bigHolderRising} onChange={v => set('bigHolderRising', v)}
+            disabled={!holderReady} />
         </div>
 
         <div className="cond-row cond-chips">
@@ -60,10 +63,11 @@ export default function ConditionPanel({ conditions, onChange, total, shown }) {
   )
 }
 
-function Toggle({ label, hint, checked, onChange, accent }) {
+function Toggle({ label, hint, checked, onChange, accent, disabled }) {
   return (
-    <label className={`toggle ${checked ? 'checked' : ''} ${accent ? 'accent' : ''}`}>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+    <label className={`toggle ${checked ? 'checked' : ''} ${accent ? 'accent' : ''} ${disabled ? 'disabled' : ''}`}>
+      <input type="checkbox" checked={checked} disabled={disabled}
+        onChange={e => onChange(e.target.checked)} />
       <span className="toggle-label">{label}</span>
       {hint && <span className="toggle-hint">{hint}</span>}
     </label>

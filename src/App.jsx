@@ -60,6 +60,7 @@ export default function App() {
             onChange={setConditions}
             total={data.count}
             shown={filtered.length}
+            holderReady={!!data.holder_ready}
           />
           <ResultTable
             stocks={filtered}

@@ -220,6 +220,72 @@ def compute_indicators(price_rows, chip_rows):
     }
 
 
+# ── 集保千張大戶（TDCC 股權分散表，免費 OpenData）────────────────
+# 持股分級 15 = 1,000,001 股以上 = 1000 張以上 = 千張大戶
+TDCC_OPENDATA = "https://opendata.tdcc.com.tw/getOD.ashx?id=1-5"
+BIG_HOLDER_LEVEL = "15"
+HOLDER_HISTORY_PATH = os.path.join(os.path.dirname(__file__), "holders_history.json")
+HOLDER_MAX_WEEKS = 12   # 歷史只留最近 N 週
+
+
+def fetch_tdcc_big_holders():
+    """下載集保最新一週股權分散表，回傳 (週日期YYYYMMDD, {股票代號: 千張大戶占比%})。失敗回 (None, {})。"""
+    import csv, io
+    try:
+        req = Request(TDCC_OPENDATA, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(req, timeout=90) as r:
+            raw = r.read().decode("utf-8-sig", errors="replace")
+    except Exception as e:
+        print(f"  ⚠️ 集保資料下載失敗：{e}")
+        return None, {}
+    week, pct_by_id = None, {}
+    for row in csv.reader(io.StringIO(raw)):
+        if len(row) < 6 or row[2].strip() != BIG_HOLDER_LEVEL:
+            continue
+        week = row[0].strip()
+        try:
+            pct_by_id[row[1].strip()] = float(row[5])
+        except ValueError:
+            pass
+    return week, pct_by_id
+
+
+def update_holder_history(week, pct_by_id):
+    """把本週千張大戶占比併入歷史檔（同週去重、只留最近 N 週），回傳 history dict。"""
+    history = {}
+    if os.path.exists(HOLDER_HISTORY_PATH):
+        try:
+            with open(HOLDER_HISTORY_PATH, encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            history = {}
+    if not week or not pct_by_id:
+        return history   # 沒抓到資料就不動歷史
+    for sid, pct in pct_by_id.items():
+        lst = [e for e in history.get(sid, []) if e["w"] != week]
+        lst.append({"w": week, "pct": pct})
+        lst.sort(key=lambda e: e["w"])             # 舊 → 新
+        history[sid] = lst[-HOLDER_MAX_WEEKS:]
+    with open(HOLDER_HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, separators=(",", ":"))
+    return history
+
+
+def holder_signal(hist):
+    """從某股歷史算千張大戶指標，回傳 dict。週數 < 2 時 rising = None（資料不足）。"""
+    lst = hist or []
+    pct = lst[-1]["pct"] if len(lst) >= 1 else None
+    prev = lst[-2]["pct"] if len(lst) >= 2 else None
+    rising = (pct > prev) if len(lst) >= 2 else None
+    return {
+        "holder_pct": pct,
+        "holder_prev": prev,
+        "holder_rising": rising,
+        "holder_weeks": len(lst),
+        "holder_hist": [e["pct"] for e in lst[-8:]],   # 給前端畫趨勢用
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", help="只跑指定股票代號（逗號分隔）")
@@ -252,6 +318,12 @@ def main():
         universe = universe[:args.limit]
     print(f"   本次處理 {len(universe)} 檔\n")
 
+    # 集保千張大戶：下載最新一週、併入歷史檔（每週累積）
+    print("📦 取得集保千張大戶（TDCC）…")
+    holder_week, holder_pct = fetch_tdcc_big_holders()
+    holder_history = update_holder_history(holder_week, holder_pct)
+    print(f"   集保資料週：{holder_week or '無'}，本市場 {len(holder_pct)} 檔\n")
+
     results = []
     for i, stock in enumerate(universe, 1):
         sid = stock["id"]
@@ -270,6 +342,7 @@ def main():
             print(f"量太小（{ind['avg_vol_lots']} 張），略過")
             continue
         ind.update(stock)
+        ind.update(holder_signal(holder_history.get(sid)))
         results.append(ind)
         tags = []
         if ind["signal_ma"]:
@@ -280,13 +353,19 @@ def main():
             tags.append(f"外資連買{ind['foreign_streak']}")
         if ind["trust_streak"] >= 3:
             tags.append(f"投信連買{ind['trust_streak']}")
+        if ind["holder_rising"]:
+            tags.append(f"千張大戶↑{ind['holder_pct']}%")
         print(", ".join(tags) if tags else "—")
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    # 千張大戶歷史是否足夠算「上升」（至少有 2 週）→ 前端據此決定顯示「累積中」
+    holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "count": len(results),
         "expected": len(universe),   # 本次清單原本要處理的檔數，前端用來判斷是否抓太少
+        "holder_ready": holder_ready,       # 千張大戶歷史是否已累積到可用
+        "holder_week": holder_week,         # 集保資料週（YYYYMMDD）
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")

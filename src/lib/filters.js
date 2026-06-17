@@ -4,6 +4,7 @@ export const DEFAULT_CONDITIONS = {
   bullAligned: true,      // 多頭排列
   goldenCross: false,     // 近期黃金交叉
   maRising: false,        // 均線上彎
+  bigHolderRising: false, // 千張大戶占比較上週上升
   foreignDays: 3,         // 外資連買 ≥ N 天（0 = 不限）
   trustDays: 3,           // 投信連買 ≥ N 天（0 = 不限）
   chipLogic: 'and',       // 'and' 外資與投信都要 / 'or' 任一即可
@@ -16,6 +17,7 @@ export function applyFilters(stocks, c) {
     if (c.bullAligned && !s.bull_aligned) return false
     if (c.goldenCross && !s.golden_cross_recent) return false
     if (c.maRising && !s.ma_rising) return false
+    if (c.bigHolderRising && !s.holder_rising) return false
 
     // 籌碼條件
     const fOk = c.foreignDays <= 0 || s.foreign_streak >= c.foreignDays

@@ -7,6 +7,7 @@ function Tags({ s }) {
   if (s.golden_cross_recent) tags.push(['黃金交叉', 'tag-gc'])
   if (s.foreign_streak >= 3) tags.push([`外資連買${s.foreign_streak}`, 'tag-foreign'])
   if (s.trust_streak >= 3) tags.push([`投信連買${s.trust_streak}`, 'tag-trust'])
+  if (s.holder_rising) tags.push([`千張大戶↑${s.holder_pct}%`, 'tag-holder'])
   return (
     <div className="tags">
       {tags.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}

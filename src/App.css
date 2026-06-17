@@ -114,6 +114,9 @@ body {
 .toggle input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 .toggle:hover { border-color: var(--accent); }
 .toggle.checked { background: rgba(79,140,255,0.14); border-color: var(--accent); }
+.toggle.disabled { opacity: 0.45; cursor: not-allowed; }
+.toggle.disabled input { cursor: not-allowed; }
+.toggle.disabled .toggle-hint { color: var(--gold); }
 .toggle.accent.checked { background: rgba(245,185,66,0.16); border-color: var(--gold); }
 .toggle-label { font-weight: 600; font-size: 13px; }
 .toggle-hint { font-size: 11px; color: var(--text-muted); }
@@ -207,6 +210,7 @@ body {
 .tag-gc     { background: rgba(79,140,255,0.16); color: #87b0ff; }
 .tag-foreign{ background: rgba(22,163,74,0.16); color: #5fd089; }
 .tag-trust  { background: rgba(168,85,247,0.18); color: #c79bff; }
+.tag-holder { background: rgba(20,184,166,0.18); color: #44d6c4; }
 
 /* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
 .sort-bar, .card-list { display: none; }
