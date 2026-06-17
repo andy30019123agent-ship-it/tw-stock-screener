@@ -206,7 +206,17 @@ def compute_indicators(price_rows, chip_rows):
         "trust_streak": trust_streak,
         # 給前端畫迷你走勢圖用（最後 60 個收盤）
         "spark": [round(c, 2) for c in closes[-60:]],
-        "spark_dates": dates[-60:],
+        # 給彈窗畫 K 線用（最後 80 根：日期, 開, 高, 低, 收, 量張）
+        "ohlc": [
+            {
+                "t": r["date"],
+                "o": round(r["open"], 2), "h": round(r["max"], 2),
+                "l": round(r["min"], 2), "c": round(r["close"], 2),
+                "v": round((r.get("Trading_Volume", 0) or 0) / 1000),
+            }
+            for r in price_rows[-80:]
+            if r.get("open") and r.get("close")
+        ],
     }
 
 
