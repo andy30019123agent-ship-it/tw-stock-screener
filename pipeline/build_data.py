@@ -223,6 +223,7 @@ def compute_indicators(price_rows, chip_rows):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", help="只跑指定股票代號（逗號分隔）")
+    ap.add_argument("--universe-file", help="從 JSON 檔讀股票清單（{ids:[...]}）")
     ap.add_argument("--limit", type=int, help="只跑前 N 檔")
     ap.add_argument("--days", type=int, default=130, help="抓幾天歷史（預設 130）")
     ap.add_argument("--sleep", type=float, default=0.4, help="每次請求間隔秒數")
@@ -239,6 +240,11 @@ def main():
     universe = get_universe()
     print(f"   電子股共 {len(universe)} 檔")
 
+    if args.universe_file:
+        with open(args.universe_file, encoding="utf-8") as f:
+            ids = set(json.load(f).get("ids", []))
+        universe = [u for u in universe if u["id"] in ids]
+        print(f"   依清單篩選 → {len(universe)} 檔")
     if args.sample:
         ids = set(s.strip() for s in args.sample.split(","))
         universe = [u for u in universe if u["id"] in ids]

@@ -1,0 +1,52 @@
+name: 每天盤後更新選股資料
+
+on:
+  schedule:
+    - cron: '0 10 * * *'   # 每天 UTC 10:00 = 台北 18:00
+  workflow_dispatch:        # 也可手動觸發（測試用）
+    inputs:
+      sample:
+        description: '測試用：只跑指定股票（逗號分隔，留空＝跑完整清單）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-screener
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 抓資料、算指標
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.sample }}" ]; then
+            python pipeline/build_data.py --universe-file pipeline/universe.json --sample "${{ inputs.sample }}" --sleep 0.4
+          else
+            python pipeline/build_data.py --universe-file pipeline/universe.json --sleep 0.4
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: 部署到 GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
