@@ -12,6 +12,7 @@
   python pipeline/notify_tg.py --force            # 忽略 state 直接發（驗證用）
 """
 import argparse
+import html
 import json
 import os
 import sys
@@ -20,6 +21,10 @@ import urllib.request
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
+
+
+def esc(t):
+    return html.escape(str(t))
 
 
 def data_date(stocks):
@@ -44,54 +49,54 @@ def score(s):
 
 
 def reasons(s):
-    """為何注意：把中了的訊號講成人話。"""
+    """為何注意：緊湊標籤，控制每行長度避免手機折行破版。"""
     r = []
     if s.get("signal_ma"):
-        r.append("均線糾結轉強（綜合多頭訊號）")
+        r.append("糾結轉強")
     elif s.get("bull_aligned") and s.get("diverging"):
-        r.append("均線多頭發散")
+        r.append("多頭發散")
     elif s.get("bull_aligned"):
-        r.append("均線多頭排列")
+        r.append("多頭排列")
     elif s.get("golden_cross_recent"):
-        r.append("近期黃金交叉")
+        r.append("黃金交叉")
     elif s.get("squeeze_recent"):
-        r.append("均線糾結待變")
+        r.append("糾結待變")
     fs = s.get("foreign_streak", 0)
     if fs >= 3:
-        r.append(f"外資連 {fs} 買")
+        r.append(f"外資連{fs}買")
     ts = s.get("trust_streak", 0)
     if ts >= 3:
-        r.append(f"投信連 {ts} 買")
+        r.append(f"投信連{ts}買")
     if s.get("holder_rising"):
-        r.append("千張大戶占比上升")
+        r.append("千張↑")
     return r
 
 
 def price_note(s):
-    close, ma20, ma60 = s["close"], s.get("ma20"), s.get("ma60")
+    """支撐/壓力 + 前高，緊湊一行。"""
+    close, ma20 = s["close"], s.get("ma20")
     parts = []
     if ma20:
-        rel = "支撐" if close >= ma20 else "壓力"
-        parts.append(f"ma20 {ma20:g} 為{rel}")
-    # 近期高點（近 20 根）
+        parts.append(f"ma20 {ma20:.1f}{'撐' if close >= ma20 else '壓'}")
     oh = s.get("ohlc", [])[-20:]
     if oh:
         hi = max(b["h"] for b in oh)
         if hi > close:
-            parts.append(f"近高 {hi:g}")
-    return "、".join(parts)
+            parts.append(f"高 {hi:g}")
+    return "　".join(parts)
 
 
-def risk_note(s, n_reasons):
+def risk_warning(s, n_reasons):
+    """只回「值得警示」的風險（緊湊）；無特別警示則回空字串。"""
     disp = s.get("dispersion_pct")
     if disp is not None and disp >= 12:
-        return f"乖離 {disp:g}% 偏大，留意追高"
+        return f"乖離 {disp:.0f}% 偏大"
     if n_reasons <= 1:
-        return "訊號偏單一，待確認"
+        return "訊號單一待確認"
     vol = s.get("avg_vol_lots")
     if vol is not None and vol < 700:
-        return "均量偏低，留意流動性"
-    return "依大盤與量能調節"
+        return "均量偏低"
+    return ""
 
 
 def build_message(d):
@@ -103,34 +108,36 @@ def build_message(d):
         key=lambda s: (-score(s), -s.get("foreign_streak", 0)),
     )[:5]
 
-    head = f"📊 台股電子選股快報 {mmdd}"
-    nums = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
-    lines = [head]
+    cnt = d.get("count", len(stocks))
+    sep = "━━━━━━━━━━"  # 卡片分隔線
 
     if not ranked:
-        lines.append(
-            f"今日掃描 {d.get('count', len(stocks))} 檔有量電子股，"
-            "沒有明顯符合『均線多頭＋法人連買』的標的，先觀望。"
-        )
+        lines = [
+            f"📊 台股電子選股快報 {mmdd}",
+            f"掃描 {cnt} 檔有量電子股",
+            sep,
+            "今日沒有明顯符合『均線多頭＋法人連買』的標的，先觀望。",
+        ]
     else:
-        lines.append(
-            f"今日掃描 {d.get('count', len(stocks))} 檔有量電子股，精選 {len(ranked)} 檔："
-        )
+        lines = [
+            f"📊 台股電子選股快報 {mmdd}",
+            f"精選 {len(ranked)} 檔（掃描 {cnt} 檔）",
+        ]
+        nums = ["①", "②", "③", "④", "⑤"]
         for i, s in enumerate(ranked):
             chg = s.get("change_pct", 0)
             sign = "+" if chg >= 0 else ""
-            rs = reasons(s)
-            why = "、".join(rs)
-            block = (
-                f"\n{nums[i]} {s['name']}（{s['id']}）{s.get('industry', '')}\n"
-                f"   收 {s['close']:g}（{sign}{chg:g}%）｜{why}\n"
-                f"   {price_note(s)}；{risk_note(s, len(rs))}"
-            )
-            lines.append(block)
+            lines.append(sep)
+            lines.append(f"{nums[i]} {s['name']} {s['id']}　{sign}{chg:g}%")
+            lines.append(" · ".join(reasons(s)))
+            pn = price_note(s)
+            if pn:
+                lines.append(pn)
+            warn = risk_warning(s, len(reasons(s)))
+            if warn:
+                lines.append(f"⚠️ {warn}")
 
-    lines.append(
-        "\n⚙️ 條件：均線糾結→黃金交叉→多頭發散／外資投信連買 ≥3 天／千張大戶占比上升"
-    )
+    lines.append(sep)
     lines.append(f"🔗 完整清單 {SITE}")
     lines.append("※ 僅供參考，非投資建議")
     return "\n".join(lines), dd
