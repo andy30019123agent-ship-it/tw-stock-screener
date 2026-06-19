@@ -12,19 +12,13 @@
   python pipeline/notify_tg.py --force            # 忽略 state 直接發（驗證用）
 """
 import argparse
-import html
 import json
 import os
-import sys
 import urllib.parse
 import urllib.request
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
-
-
-def esc(t):
-    return html.escape(str(t))
 
 
 def data_date(stocks):
