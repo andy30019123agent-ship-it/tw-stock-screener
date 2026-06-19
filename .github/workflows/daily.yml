@@ -37,15 +37,20 @@ jobs:
             python pipeline/build_data.py --universe-file pipeline/universe.json --sleep 0.4
           fi
 
-      - name: 保存千張大戶歷史回 main（每週累積，不可遺失）
+      - name: 選股快報推播 Telegram（僅新交易日資料才推）
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        run: python pipeline/notify_tg.py
+
+      - name: 保存千張大戶歷史與推播紀錄回 main（不可遺失）
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pipeline/holders_history.json
+          git add pipeline/holders_history.json pipeline/notify_state.json
           if git diff --cached --quiet; then
-            echo "千張大戶歷史無變動，略過"
+            echo "歷史與推播紀錄無變動，略過"
           else
-            git commit -m "chore: 更新千張大戶歷史 [skip ci]"
+            git commit -m "chore: 更新千張大戶歷史與推播紀錄 [skip ci]"
             git push origin HEAD:main
           fi
 
