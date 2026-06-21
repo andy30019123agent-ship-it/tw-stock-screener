@@ -3,3 +3,11 @@ dist
 .DS_Store
 *.log
 .env
+.env.*
+
+# 工具與測試快取（不應進版控、會造成 commit 雜訊）
+.impeccable/
+**/.impeccable/
+.pytest_cache/
+__pycache__/
+*.pyc
