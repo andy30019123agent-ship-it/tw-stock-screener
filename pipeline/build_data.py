@@ -23,6 +23,11 @@ from urllib.request import urlopen, Request
 API = "https://api.finmindtrade.com/api/v4/data"
 TOKEN = os.environ.get("FINMIND_TOKEN", "")
 
+# FinMind 額度防護：連續這麼多次 API 回報「額度用盡」就中止整個 run，避免 token 失效時
+# 空轉跑完上千檔、燒光配額還產出殘缺資料。build_universe.py 共用 api_get 故一併受保護。
+MAX_QUOTA_FAILS = 8
+_quota_fails = 0
+
 # 電子相關產業（上市 + 上櫃命名都涵蓋）
 ELECTRONICS = {
     "電子工業", "半導體業", "電子零組件業", "光電業", "電腦及週邊設備業",
@@ -34,28 +39,41 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "data")
 
 
 def api_get(dataset, params=None, retries=3):
+    global _quota_fails
     q = {"dataset": dataset}
     if params:
         q.update(params)
     if TOKEN:
         q["token"] = TOKEN
     url = f"{API}?{urlencode(q)}"
+    hit_limit = False
     for attempt in range(retries):
         try:
             req = Request(url, headers={"User-Agent": "tw-screener/1.0"})
             with urlopen(req, timeout=30) as r:
                 j = json.loads(r.read().decode())
             if j.get("status") == 200 or j.get("msg") == "success":
+                _quota_fails = 0  # 成功一次就把連續計數歸零
                 return j.get("data", [])
             # 額度用盡 → 等一下重試
             if "level" in str(j.get("msg", "")).lower() or "limit" in str(j.get("msg", "")).lower():
                 print(f"  ⚠️ 額度限制：{j.get('msg')}")
+                hit_limit = True
                 time.sleep(8)
                 continue
             return []
         except Exception as e:
             print(f"  ⚠️ 第 {attempt+1} 次失敗：{e}")
             time.sleep(3)
+    # 重試用盡：若是「額度用盡」造成的，累計連續次數，超過上限就中止整個 run
+    if hit_limit:
+        _quota_fails += 1
+        if _quota_fails >= MAX_QUOTA_FAILS:
+            sys.exit(
+                f"\n⛔ FinMind 連續 {_quota_fails} 次額度用盡（或 token 失效），中止本次執行以免"
+                f"空轉跑完上千檔、燒光配額還產出殘缺資料。\n"
+                f"   解法：改用 FinMind backer 等級 token，或等額度恢復後再跑。"
+            )
     return []
 
 
