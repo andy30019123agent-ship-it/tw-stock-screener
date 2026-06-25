@@ -180,6 +180,40 @@ def compute_indicators(price_rows, chip_rows):
     signal_ma = bool(squeeze_recent and golden_cross_recent
                      and bull_aligned and ma_rising and diverging)
 
+    # ── 爆量突破起漲：悶久 → 帶量突破創新高 → 站上均線 ──
+    # 對最近 5 個交易日逐日找「結構上合格的突破日」，吐候選給前端讓量倍數/回看天數可即時調。
+    # 結構條件（與旋鈕無關，pipeline 先過濾好）：
+    #   ① 突破前 20 日內曾糾結（dispersion < SQUEEZE_TH）
+    #   ② 當日收盤創「前 20 日新高」（突破盤整上緣）
+    #   ③ 當日收盤站上 MA5/10/20/60
+    # 候選附帶：ago（幾天前，0=今天）、vr（當日量 ÷ 前 20 日均量 = 爆量倍數）
+    vols_all = [r.get("Trading_Volume", 0) or 0 for r in price_rows]
+    n = len(closes)
+    breakout_cands = []
+    for i in range(max(0, n - 5), n):
+        if any(s[i] is None for s in (ma5s, ma10s, ma20s, ma60s)):
+            continue
+        ci = closes[i]
+        above_all = ci > ma5s[i] and ci > ma10s[i] and ci > ma20s[i] and ci > ma60s[i]
+        prior = closes[max(0, i - 20):i]
+        new_high = len(prior) >= 10 and ci > max(prior)
+        squeeze_before = any(
+            (dispersion(j) is not None and dispersion(j) < SQUEEZE_TH)
+            for j in range(max(0, i - 20), i)
+        )
+        if not (above_all and new_high and squeeze_before):
+            continue
+        prior_vols = vols_all[max(0, i - 20):i]
+        avg_v = sum(prior_vols) / len(prior_vols) if prior_vols else 0
+        vr = round(vols_all[i] / avg_v, 2) if avg_v else 0
+        breakout_cands.append({"ago": n - 1 - i, "vr": vr})
+
+    # 預設門檻（量 ≥ 1.8 倍、最近 3 天內）下是否成立 → 給標籤與 TG 評分用
+    signal_breakout = bool(
+        bull_aligned and ma_rising
+        and any(c["ago"] <= 3 and c["vr"] >= 1.8 for c in breakout_cands)
+    )
+
     # ── 籌碼：外資 / 投信 連續買超天數 ──
     by_date = {}
     for c in chip_rows:
@@ -218,6 +252,8 @@ def compute_indicators(price_rows, chip_rows):
         "golden_cross_recent": golden_cross_recent,
         "diverging": diverging,
         "signal_ma": signal_ma,
+        "breakout_cands": breakout_cands,
+        "signal_breakout": signal_breakout,
         "foreign_net": foreign_net,
         "trust_net": trust_net,
         "foreign_streak": foreign_streak,
@@ -365,6 +401,8 @@ def main():
         tags = []
         if ind["signal_ma"]:
             tags.append("✨糾結後多頭")
+        if ind["signal_breakout"]:
+            tags.append("🚀爆量突破")
         if ind["bull_aligned"]:
             tags.append("多頭排列")
         if ind["foreign_streak"] >= 3:

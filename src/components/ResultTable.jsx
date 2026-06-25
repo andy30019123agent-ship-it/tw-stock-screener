@@ -2,6 +2,7 @@ import Sparkline from './Sparkline'
 
 function Tags({ s }) {
   const tags = []
+  if (s.signal_breakout) tags.push(['🚀爆量突破', 'tag-breakout'])
   if (s.signal_ma) tags.push(['糾結後多頭', 'tag-signal'])
   else if (s.bull_aligned) tags.push(['多頭排列', 'tag-bull'])
   if (s.golden_cross_recent) tags.push(['黃金交叉', 'tag-gc'])
@@ -17,6 +18,7 @@ function Tags({ s }) {
 
 const MOBILE_SORTS = [
   ['signal', '訊號'],
+  ['breakout', '突破'],
   ['change', '漲跌幅'],
   ['foreign', '外資'],
   ['trust', '投信'],

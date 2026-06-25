@@ -31,6 +31,8 @@ def score(s):
     sc = 0
     if s.get("signal_ma"):
         sc += 3
+    if s.get("signal_breakout"):
+        sc += 3
     if s.get("bull_aligned") and s.get("diverging"):
         sc += 2
     if s.get("foreign_streak", 0) >= 3:
@@ -45,6 +47,8 @@ def score(s):
 def reasons(s):
     """為何注意：緊湊標籤，控制每行長度避免手機折行破版。"""
     r = []
+    if s.get("signal_breakout"):
+        r.append("爆量突破")
     if s.get("signal_ma"):
         r.append("糾結轉強")
     elif s.get("bull_aligned") and s.get("diverging"):

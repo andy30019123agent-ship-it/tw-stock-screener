@@ -22,13 +22,13 @@ export default function StockChartModal({ stock, onClose }) {
 
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: '#181f2e' }, textColor: '#8b97ab' },
+      layout: { background: { color: 'transparent' }, textColor: '#64748b' },
       grid: {
-        vertLines: { color: 'rgba(42,52,71,0.5)' },
-        horzLines: { color: 'rgba(42,52,71,0.5)' },
+        vertLines: { color: 'rgba(100,116,139,0.12)' },
+        horzLines: { color: 'rgba(100,116,139,0.12)' },
       },
-      rightPriceScale: { borderColor: '#2a3447' },
-      timeScale: { borderColor: '#2a3447', timeVisible: false },
+      rightPriceScale: { borderColor: 'rgba(100,116,139,0.25)' },
+      timeScale: { borderColor: 'rgba(100,116,139,0.25)', timeVisible: false },
       crosshair: { mode: 0 },
     })
 
@@ -53,7 +53,7 @@ export default function StockChartModal({ stock, onClose }) {
     // 均線：MA5 / MA20 / MA60
     const closes = stock.ohlc.map(d => d.c)
     const times = stock.ohlc.map(d => d.t)
-    const lines = [[5, '#f5b942'], [20, '#4f8cff'], [60, '#c79bff']]
+    const lines = [[5, '#e0a020'], [20, '#4f7cff'], [60, '#8b5cf6']]
     for (const [n, color] of lines) {
       const s = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       const m = ma(closes, n)
