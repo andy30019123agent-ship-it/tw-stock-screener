@@ -26,7 +26,7 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
     <div className={`cond-panel ${open ? 'open' : 'collapsed'}`}>
       <button className="cond-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <span className="cond-toggle-label">篩選條件</span>
-        <span className="cond-toggle-count">符合 <b>{shown}</b> ／ {total}</span>
+        <span className="cond-toggle-count">符合 <b key={shown}>{shown}</b> ／ {total}</span>
         <Chevron open={open} />
       </button>
 
@@ -35,8 +35,9 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
         <div className="cond-presets">
           <span className="cond-section-label">快速套用</span>
           <div className="preset-row">
-            {PRESETS.map(p => (
-              <button key={p.key} className="preset-chip" onClick={() => applyPreset(p.patch)}>
+            {PRESETS.map((p, i) => (
+              <button key={p.key} className="preset-chip" style={{ '--i': i }}
+                onClick={() => applyPreset(p.patch)}>
                 {p.label}
               </button>
             ))}
@@ -102,7 +103,7 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
           <input className="search" type="search" placeholder="🔍 搜尋代號／名稱"
             value={c.keyword} onChange={e => set('keyword', e.target.value)} />
           <div className="cond-summary">
-            符合 <b>{shown}</b> 檔 ／ 共 {total} 檔
+            符合 <b key={shown}>{shown}</b> 檔 ／ 共 {total} 檔
           </div>
         </div>
       </div>

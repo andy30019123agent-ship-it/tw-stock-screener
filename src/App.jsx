@@ -63,6 +63,7 @@ export default function App() {
             holderReady={!!data.holder_ready}
           />
           <ResultTable
+            key={`${sortKey}:${filtered.length}`}
             stocks={filtered}
             sortKey={sortKey}
             onSort={setSortKey}

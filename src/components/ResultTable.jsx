@@ -48,10 +48,11 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
 
       {/* 手機：卡片列表 */}
       <div className="card-list">
-        {stocks.map(s => {
+        {stocks.map((s, i) => {
           const up = s.change >= 0
           return (
-            <button key={s.id} className="stock-card" onClick={() => onPick(s)}>
+            <button key={s.id} className="stock-card" style={{ '--i': Math.min(i, 12) }}
+              onClick={() => onPick(s)}>
               <div className="sc-top">
                 <div className="sc-name">
                   <span className="sid">{s.id}</span>
@@ -93,10 +94,10 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
             </tr>
           </thead>
           <tbody>
-            {stocks.map(s => {
+            {stocks.map((s, i) => {
               const up = s.change >= 0
               return (
-                <tr key={s.id} onClick={() => onPick(s)}>
+                <tr key={s.id} style={{ '--i': Math.min(i, 12) }} onClick={() => onPick(s)}>
                   <td className="cell-name">
                     <span className="sid">{s.id}</span>
                     <span className="sname">{s.name}</span>
