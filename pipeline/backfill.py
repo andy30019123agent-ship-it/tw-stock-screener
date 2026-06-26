@@ -32,44 +32,27 @@ def recent_months(n):
     return list(reversed(out))
 
 
-def trading_days(months, ref="2330"):
-    """用參考股（台積電）的月表日期當全市場交易日清單。"""
+def trading_days(months):
+    """交易日清單＝FMTQIK（成交統計）各月的日期列（指數級端點、不受逐檔限流）。"""
     days = set()
     for ym in months:
-        for r in ms.fetch_listed_ohlc_month(ref, ym):
-            days.add(r["date"])
+        d = ms.get_json(f"{ms.TWSE_AT}/FMTQIK?date={ym}01&response=json")
+        for r in d.get("data", []) or []:
+            iso = ms.roc_to_iso(r[0])
+            if iso:
+                days.add(iso)
         time.sleep(0.3)
     return sorted(days)
 
 
-def load_universe():
-    import json
-    with open(os.path.join(HERE, "universe.json"), encoding="utf-8") as f:
-        return json.load(f)["stocks"]
-
-
-def backfill_listed_price(stocks, months, sleep, price):
-    listed = [s for s in stocks if s["market"] == "上市"]
-    need = len(months) * 15
-    for i, s in enumerate(listed, 1):
-        sid = s["id"]
-        if len(price.get(sid, {})) >= need:        # 續跑：已夠就跳過
-            continue
-        try:
-            for ym in months:
-                for r in ms.fetch_listed_ohlc_month(sid, ym):
-                    hs.append_price(price, r["date"], {sid: r})
-                time.sleep(sleep)
-        except Exception as e:
-            print(f"  ⚠️ {sid} 上市價格失敗：{e}")
-        if i % 25 == 0:
-            hs.save(PRICE_PATH, price)
-            print(f"  上市 {i}/{len(listed)} 檔，已存檔")
-    hs.save(PRICE_PATH, price)
-
-
-def backfill_otc_price(days, sleep, price):
+def backfill_price_by_day(days, sleep, price):
+    """逐交易日抓「全上市(MI_INDEX type=ALL)+全上櫃(TPEX dailyQuotes)」OHLCV，併入歷史。
+    兩者皆「一請求一天、全市場」，快且不被限流。"""
     for i, day in enumerate(days, 1):
+        try:
+            hs.append_price(price, day, ms.fetch_listed_ohlc(day))
+        except Exception as e:
+            print(f"  ⚠️ 上市 {day} 失敗：{e}")
         try:
             hs.append_price(price, day, ms.fetch_otc_ohlc(day))
         except Exception as e:
@@ -77,7 +60,7 @@ def backfill_otc_price(days, sleep, price):
         time.sleep(sleep)
         if i % 20 == 0:
             hs.save(PRICE_PATH, price)
-            print(f"  上櫃 {i}/{len(days)} 日")
+            print(f"  價格 {i}/{len(days)} 日")
     hs.save(PRICE_PATH, price)
 
 
@@ -99,9 +82,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--months", type=int, default=6)
     ap.add_argument("--chip-days", type=int, default=20)
-    ap.add_argument("--sleep", type=float, default=0.6)
-    ap.add_argument("--limit", type=int, help="只回填前 N 檔上市（測試用）")
-    ap.add_argument("--skip-listed", action="store_true")
+    ap.add_argument("--sleep", type=float, default=0.5)
     args = ap.parse_args()
 
     months = recent_months(args.months)
@@ -109,20 +90,12 @@ def main():
     days = trading_days(months)
     print(f"   交易日 {len(days)} 天（{days[0]}~{days[-1]}）")
 
-    stocks = load_universe()
-    if args.limit:
-        listed = [s for s in stocks if s["market"] == "上市"][:args.limit]
-        stocks = listed + [s for s in stocks if s["market"] == "上櫃"]
-
     price = hs.load(PRICE_PATH)
     chip = hs.load(CHIP_PATH)
 
-    if not args.skip_listed:
-        print("📈 回填上市 OHLCV（逐檔月表，較久）…")
-        backfill_listed_price(stocks, months, args.sleep, price)
-    print("📈 回填上櫃 OHLCV（逐日）…")
-    backfill_otc_price(days[-hs.PRICE_WINDOW:], args.sleep, price)
-    print("💰 回填三大法人（逐日）…")
+    print("📈 回填全市場 OHLCV（逐日：上市 MI_INDEX + 上櫃 dailyQuotes）…")
+    backfill_price_by_day(days[-hs.PRICE_WINDOW:], args.sleep, price)
+    print("💰 回填三大法人（逐日：T86 + insti）…")
     backfill_chip(days[-args.chip_days:], args.sleep, chip)
 
     print(f"\n✅ 回填完成：price {len(price)} 檔、chip {len(chip)} 檔")

@@ -112,6 +112,28 @@ def fetch_listed_ohlc_latest():
     return date_iso, out
 
 
+def fetch_listed_ohlc(date_iso):
+    """指定日全上市個股 OHLCV（MI_INDEX type=ALL 的個股表，吃過去 date）。回 {sid: row}。
+    比逐檔 STOCK_DAY 快太多、且不會被 TWSE 限流（一請求一天、全市場）。"""
+    ymd = date_iso.replace("-", "")
+    d = get_json(f"{TWSE_AT}/MI_INDEX?date={ymd}&type=ALL&response=json")
+    out = {}
+    for t in d.get("tables", []) or []:
+        f = [str(x) for x in t.get("fields", [])]
+        if not (f and f[0] == "證券代號" and any("收盤價" in x for x in f)):
+            continue
+        # 欄位：證券代號,證券名稱,成交股數,成交筆數,成交金額,開盤價,最高價,最低價,收盤價,…
+        for r in t.get("data", []) or []:
+            sid = str(r[0]).strip()
+            if not is_common_stock(sid):
+                continue
+            row = _ohlc(date_iso, r[5], r[6], r[7], r[8], r[2], r[4])
+            if row:
+                out[sid] = row
+        break
+    return out
+
+
 def fetch_listed_ohlc_month(sid, yyyymm):
     """單一上市股某月各日 OHLCV（STOCK_DAY，吃 date；回填上市歷史用）。回 list[row]。"""
     url = f"{TWSE_AT}/STOCK_DAY?stockNo={sid}&date={yyyymm}01&response=json"

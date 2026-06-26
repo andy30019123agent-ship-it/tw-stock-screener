@@ -20,8 +20,12 @@ import datetime as dt
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 
+sys.path.insert(0, os.path.dirname(__file__))
+import history_store as hs  # noqa: E402  （同目錄）
+
 API = "https://api.finmindtrade.com/api/v4/data"
 TOKEN = os.environ.get("FINMIND_TOKEN", "")
+HERE = os.path.dirname(__file__)
 
 # FinMind 額度防護：連續這麼多次 API 回報「額度用盡」就中止整個 run，避免 token 失效時
 # 空轉跑完上千檔、燒光配額還產出殘缺資料。build_universe.py 共用 api_get 故一併受保護。
@@ -340,94 +344,73 @@ def holder_signal(hist):
     }
 
 
+def load_universe_file():
+    with open(os.path.join(HERE, "universe.json"), encoding="utf-8") as f:
+        return json.load(f)["stocks"]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", help="只跑指定股票代號（逗號分隔）")
-    ap.add_argument("--universe-file", help="從 JSON 檔讀股票清單（{ids:[...]}）")
     ap.add_argument("--limit", type=int, help="只跑前 N 檔")
-    ap.add_argument("--days", type=int, default=130, help="抓幾天歷史（預設 130）")
-    ap.add_argument("--sleep", type=float, default=0.4, help="每次請求間隔秒數")
     ap.add_argument("--min-vol", type=int, default=500,
-                    help="只輸出 20 日均量 ≥ N 張的「有量」電子股（預設 500）")
+                    help="只輸出 20 日均量 ≥ N 張的「有量」股（預設 500）")
     args = ap.parse_args()
 
-    today = dt.date.today()
-    start = (today - dt.timedelta(days=int(args.days * 1.6))).isoformat()
-    end = today.isoformat()
-    chip_start = (today - dt.timedelta(days=40)).isoformat()
-
-    print(f"📡 取得電子股清單…（token：{'有' if TOKEN else '無，用免費額度'}）")
-    universe = get_universe()
-    print(f"   電子股共 {len(universe)} 檔")
-
-    if args.universe_file:
-        with open(args.universe_file, encoding="utf-8") as f:
-            ids = set(json.load(f).get("ids", []))
-        universe = [u for u in universe if u["id"] in ids]
-        print(f"   依清單篩選 → {len(universe)} 檔")
+    print("📡 載入全市場清單與歷史（TWSE/TPEX 免費源，不用 FinMind）…")
+    universe = load_universe_file()
     if args.sample:
         ids = set(s.strip() for s in args.sample.split(","))
         universe = [u for u in universe if u["id"] in ids]
     if args.limit:
         universe = universe[:args.limit]
-    print(f"   本次處理 {len(universe)} 檔\n")
+    print(f"   全市場 {len(universe)} 檔")
 
-    # 集保千張大戶：下載最新一週、併入歷史檔（每週累積）
+    # 集保千張大戶：下載最新一週、併入歷史檔（每週累積）— 不變
     print("📦 取得集保千張大戶（TDCC）…")
     holder_week, holder_pct = fetch_tdcc_big_holders()
     holder_history = update_holder_history(holder_week, holder_pct)
-    print(f"   集保資料週：{holder_week or '無'}，本市場 {len(holder_pct)} 檔\n")
+    print(f"   集保資料週：{holder_week or '無'}，本市場 {len(holder_pct)} 檔")
 
+    price_hist = hs.load(os.path.join(HERE, "history", "price.json"))
+    chip_hist = hs.load(os.path.join(HERE, "history", "chip.json"))
+    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔\n")
+
+    charts_dir = os.path.join(OUT_DIR, "charts")
+    os.makedirs(charts_dir, exist_ok=True)
     results = []
-    for i, stock in enumerate(universe, 1):
+    for stock in universe:
         sid = stock["id"]
-        print(f"[{i}/{len(universe)}] {sid} {stock['name']}", end="  ")
-        price = api_get("TaiwanStockPrice",
-                        {"data_id": sid, "start_date": start, "end_date": end})
-        time.sleep(args.sleep)
-        chip = api_get("TaiwanStockInstitutionalInvestorsBuySell",
-                       {"data_id": sid, "start_date": chip_start, "end_date": end})
-        time.sleep(args.sleep)
-        ind = compute_indicators(price, chip)
-        if ind is None:
-            print("資料不足，略過")
+        pr = hs.to_price_rows(price_hist.get(sid, {}))
+        if len(pr) < 65:                          # 歷史不足算不了 MA60 → 略過
             continue
-        if ind["avg_vol_lots"] < args.min_vol:
-            print(f"量太小（{ind['avg_vol_lots']} 張），略過")
+        cr = hs.to_chip_rows(chip_hist.get(sid, {}))
+        ind = compute_indicators(pr, cr)
+        if ind is None or ind["avg_vol_lots"] < args.min_vol:
             continue
-        ind.update(stock)
+        ohlc = ind.pop("ohlc")                    # K 線拆到 charts/<id>.json（前端按需載入）
+        ind.update(stock)                         # id, name, market, industry
         ind.update(holder_signal(holder_history.get(sid)))
         results.append(ind)
-        tags = []
-        if ind["signal_ma"]:
-            tags.append("✨糾結後多頭")
-        if ind["signal_breakout"]:
-            tags.append("🚀爆量突破")
-        if ind["bull_aligned"]:
-            tags.append("多頭排列")
-        if ind["foreign_streak"] >= 3:
-            tags.append(f"外資連買{ind['foreign_streak']}")
-        if ind["trust_streak"] >= 3:
-            tags.append(f"投信連買{ind['trust_streak']}")
-        if ind["holder_rising"]:
-            tags.append(f"千張大戶↑{ind['holder_pct']}%")
-        print(", ".join(tags) if tags else "—")
+        with open(os.path.join(charts_dir, f"{sid}.json"), "w", encoding="utf-8") as f:
+            json.dump({"id": sid, "name": stock["name"], "ohlc": ohlc}, f,
+                      ensure_ascii=False, separators=(",", ":"))
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    # 千張大戶歷史是否足夠算「上升」（至少有 2 週）→ 前端據此決定顯示「累積中」
     holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "count": len(results),
-        "expected": len(universe),   # 本次清單原本要處理的檔數，前端用來判斷是否抓太少
-        "holder_ready": holder_ready,       # 千張大戶歷史是否已累積到可用
-        "holder_week": holder_week,         # 集保資料週（YYYYMMDD）
+        "universe_count": len(universe),    # 全市場掃描檔數（資訊用）
+        "holder_ready": holder_ready,
+        "holder_week": holder_week,
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"\n✅ 完成，輸出 {len(results)} 檔 → {os.path.relpath(path)}")
+    size_mb = round(os.path.getsize(path) / 1e6, 2)
+    print(f"✅ 完成，輸出 {len(results)} 檔（screener.json {size_mb}MB）+ {len(results)} 個 charts/")
 
 
 if __name__ == "__main__":
