@@ -57,6 +57,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                 <div className="sc-name">
                   <span className="sid">{s.id}</span>
                   <span className="sname">{s.name}</span>
+                  <span className={`smarket ${s.market === '上櫃' ? 'otc' : ''}`}>{s.market}</span>
                   <span className="sindustry">{s.industry}</span>
                 </div>
                 <div className={`sc-price ${up ? 'up' : 'down'}`}>
@@ -101,7 +102,8 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                   <td className="cell-name">
                     <span className="sid">{s.id}</span>
                     <span className="sname">{s.name}</span>
-                    <span className="sindustry">{s.industry}</span>
+                    <span className={`smarket ${s.market === '上櫃' ? 'otc' : ''}`}>{s.market}</span>
+                  <span className="sindustry">{s.industry}</span>
                   </td>
                   <td className={`cell-price ${up ? 'up' : 'down'}`}>
                     <span className="close">{s.close}</span>

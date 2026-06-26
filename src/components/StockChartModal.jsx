@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createChart } from 'lightweight-charts'
 
 function ma(closes, n) {
@@ -14,9 +14,22 @@ function ma(closes, n) {
 
 export default function StockChartModal({ stock, onClose }) {
   const wrapRef = useRef(null)
+  const [ohlc, setOhlc] = useState(null)   // K 線按需載入（charts/<id>.json）
+
+  // 開窗時抓該股 K 線（主清單不帶 ohlc，故 1,966 檔也載得快）
+  useEffect(() => {
+    if (!stock) { setOhlc(null); return }
+    let alive = true
+    setOhlc(null)
+    fetch(`${import.meta.env.BASE_URL}data/charts/${stock.id}.json`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive) setOhlc(d?.ohlc || []) })
+      .catch(() => { if (alive) setOhlc([]) })
+    return () => { alive = false }
+  }, [stock])
 
   useEffect(() => {
-    if (!stock || !stock.ohlc?.length) return
+    if (!stock || !ohlc?.length) return
     const el = wrapRef.current
     el.innerHTML = ''
 
@@ -37,7 +50,7 @@ export default function StockChartModal({ stock, onClose }) {
       borderUpColor: '#e0484b', borderDownColor: '#16a34a',
       wickUpColor: '#e0484b', wickDownColor: '#16a34a',
     })
-    candle.setData(stock.ohlc.map(d => ({
+    candle.setData(ohlc.map(d => ({
       time: d.t, open: d.o, high: d.h, low: d.l, close: d.c,
     })))
 
@@ -46,13 +59,13 @@ export default function StockChartModal({ stock, onClose }) {
       priceScaleId: 'vol', priceFormat: { type: 'volume' },
     })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
-    vol.setData(stock.ohlc.map(d => ({
+    vol.setData(ohlc.map(d => ({
       time: d.t, value: d.v, color: d.c >= d.o ? 'rgba(224,72,75,0.4)' : 'rgba(22,163,74,0.4)',
     })))
 
     // 均線：MA5 / MA20 / MA60
-    const closes = stock.ohlc.map(d => d.c)
-    const times = stock.ohlc.map(d => d.t)
+    const closes = ohlc.map(d => d.c)
+    const times = ohlc.map(d => d.t)
     const lines = [[5, '#e0a020'], [20, '#4f7cff'], [60, '#8b5cf6']]
     for (const [n, color] of lines) {
       const s = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
@@ -64,7 +77,7 @@ export default function StockChartModal({ stock, onClose }) {
     const onKey = e => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey); chart.remove() }
-  }, [stock, onClose])
+  }, [stock, ohlc, onClose])
 
   if (!stock) return null
   const up = stock.change >= 0
@@ -91,7 +104,11 @@ export default function StockChartModal({ stock, onClose }) {
           <span>投信連買 <b>{stock.trust_streak}</b> 天</span>
           <span>20日均量 <b>{stock.avg_vol_lots?.toLocaleString()}</b> 張</span>
         </div>
-        <div className="tv-chart" ref={wrapRef} />
+        <div className="tv-chart">
+          <div className="tv-canvas" ref={wrapRef} />
+          {!ohlc && <div className="chart-msg">載入 K 線中…</div>}
+          {ohlc && ohlc.length === 0 && <div className="chart-msg">此標的暫無 K 線資料</div>}
+        </div>
       </div>
     </div>
   )

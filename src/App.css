@@ -371,8 +371,25 @@ body {
 .modal-chips .lg-ma20 { color: var(--accent); font-weight: 700; }
 .modal-chips .lg-ma60 { color: #8b5cf6; font-weight: 700; }
 
-.tv-chart { width: 100%; height: 460px; }
+.tv-chart { width: 100%; height: 460px; position: relative; }
+.tv-canvas { width: 100%; height: 100%; }
+.chart-msg {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--text-muted); font-size: 14px; pointer-events: none;
+}
 @media (max-width: 720px) { .tv-chart { height: 360px; } }
+
+/* 市場別徽章（上市/上櫃）+ 產業下拉 */
+.smarket {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px;
+  margin-right: 6px; background: rgba(79,124,255,0.14); color: #4f7cff; vertical-align: middle;
+}
+.smarket.otc { background: rgba(224,160,32,0.16); color: #c07d10; }
+.select-field select {
+  font: inherit; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--border, rgba(100,116,139,0.3));
+  background: rgba(255,255,255,0.7); color: var(--text, #2b3a55); cursor: pointer;
+}
 
 /* ── 動畫 ────────────────────────────────── */
 @keyframes fadeInUp {

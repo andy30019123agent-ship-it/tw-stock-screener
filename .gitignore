@@ -2,8 +2,14 @@ node_modules
 dist
 .DS_Store
 *.log
+*.pid
 .env
 .env.*
+
+# 建置產物（build_data 產生、部署走 dist，不進 main 避免 1000+ 檔雜訊）
+public/data/screener.json
+public/data/charts/
+# 註：pipeline/history/price.json、chip.json 是持久化資料，要 commit（不在此忽略）
 
 # 工具與測試快取（不應進版控、會造成 commit 雜訊）
 .impeccable/

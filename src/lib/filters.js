@@ -11,6 +11,8 @@ export const DEFAULT_CONDITIONS = {
   foreignDays: 3,         // 外資連買 ≥ N 天（0 = 不限）
   trustDays: 3,           // 投信連買 ≥ N 天（0 = 不限）
   chipLogic: 'and',       // 'and' 外資與投信都要 / 'or' 任一即可
+  market: 'all',          // 'all' / '上市' / '上櫃'
+  industry: 'all',        // 'all' 或產業名稱
   keyword: '',
 }
 
@@ -28,6 +30,10 @@ export function applyFilters(stocks, c) {
     if (c.goldenCross && !s.golden_cross_recent) return false
     if (c.maRising && !s.ma_rising) return false
     if (c.bigHolderRising && !s.holder_rising) return false
+
+    // 市場 / 產業
+    if (c.market && c.market !== 'all' && s.market !== c.market) return false
+    if (c.industry && c.industry !== 'all' && s.industry !== c.industry) return false
 
     // 籌碼條件
     const fOk = c.foreignDays <= 0 || s.foreign_streak >= c.foreignDays

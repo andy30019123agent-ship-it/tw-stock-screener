@@ -15,7 +15,7 @@ const PRESETS = [
   { key: 'bull', label: '📈 多頭排列', patch: { ...BLANK, bullAligned: true } },
 ]
 
-export default function ConditionPanel({ conditions, onChange, total, shown, holderReady }) {
+export default function ConditionPanel({ conditions, onChange, total, shown, holderReady, industries = [] }) {
   const c = conditions
   const set = (key, value) => onChange({ ...c, [key]: value })
   const applyPreset = patch => onChange({ ...c, ...patch })
@@ -41,6 +41,26 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
                 {p.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* 範圍：市場 / 產業 */}
+        <div className="cond-group">
+          <span className="cond-section-label">範圍</span>
+          <div className="cond-chips">
+            <div className="logic-toggle">
+              {[['all', '全部'], ['上市', '上市'], ['上櫃', '上櫃']].map(([m, label]) => (
+                <button key={m} className={c.market === m ? 'on' : ''}
+                  onClick={() => set('market', m)}>{label}</button>
+              ))}
+            </div>
+            <div className="num-field select-field">
+              <label>產業</label>
+              <select value={c.industry} onChange={e => set('industry', e.target.value)}>
+                <option value="all">全部產業</option>
+                {industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 

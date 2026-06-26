@@ -24,16 +24,20 @@ export default function App() {
     return [...list].sort(SORTS[sortKey] || SORTS.signal)
   }, [data, conditions, sortKey])
 
-  // 抓太少判斷：實際檔數低於清單應有的 90% 視為資料可能不完整
-  const expected = data?.expected || 0
-  const incomplete = expected > 0 && data.count < expected * 0.9
+  // 全市場可選產業清單（依檔數多寡排序）
+  const industries = useMemo(() => {
+    if (!data) return []
+    const cnt = {}
+    for (const s of data.stocks) cnt[s.industry] = (cnt[s.industry] || 0) + 1
+    return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])
+  }, [data])
 
   return (
     <div className="app">
       <header className="app-header">
         <div className="brand">
-          <h1>台股電子選股</h1>
-          <p className="subtitle">糾結轉強 × 法人連買</p>
+          <h1>台股全市場選股</h1>
+          <p className="subtitle">糾結轉強 × 法人連買 · 上市＋上櫃</p>
         </div>
         {data && (
           <span className="updated">
@@ -45,12 +49,6 @@ export default function App() {
 
       {error && <div className="banner banner-error" role="alert">{error}</div>}
 
-      {data && incomplete && (
-        <div className="banner banner-warn" role="status">
-          本次只更新 <b>{data.count}</b> ／ {expected} 檔，部分股票抓取失敗，資料可能不完整，請稍後再看或等下次自動更新。
-        </div>
-      )}
-
       {!data && !error && <div className="loading">載入資料中…</div>}
 
       {data && (
@@ -61,6 +59,7 @@ export default function App() {
             total={data.count}
             shown={filtered.length}
             holderReady={!!data.holder_ready}
+            industries={industries}
           />
           <ResultTable
             key={`${sortKey}:${filtered.length}`}
@@ -75,7 +74,7 @@ export default function App() {
       <StockChartModal stock={picked} onClose={() => setPicked(null)} />
 
       <footer className="app-footer">
-        資料來源：FinMind ＋ TradingView · 僅供研究參考，非投資建議
+        資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議
       </footer>
     </div>
   )
