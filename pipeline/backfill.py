@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""一次性回填全市場歷史（OHLCV + 三大法人），之後改由每日累積維護。
+
+- 上市 OHLCV：逐檔單股月表 STOCK_DAY 抓近 N 個月（~1000 檔 × N 請求，一次性較久、可續跑）。
+- 上櫃 OHLCV：逐「交易日」抓 TPEX dailyQuotes（每日一支、全上櫃）。
+- 三大法人：逐「交易日」抓 TWSE T86 + TPEX insti（留近 ~20 日）。
+
+續跑：上市部分會跳過 price 歷史已足夠的股票；每 25 檔存一次檔。
+用法：python3 backfill.py [--months 6] [--chip-days 20] [--sleep 0.6] [--limit N]
+"""
+import argparse
+import datetime as dt
+import os
+import time
+
+import history_store as hs
+import market_sources as ms
+
+HERE = os.path.dirname(__file__)
+PRICE_PATH = os.path.join(HERE, "history", "price.json")
+CHIP_PATH = os.path.join(HERE, "history", "chip.json")
+
+
+def recent_months(n):
+    today = dt.date.today()
+    y, m, out = today.year, today.month, []
+    for _ in range(n):
+        out.append(f"{y}{m:02d}")
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    return list(reversed(out))
+
+
+def trading_days(months, ref="2330"):
+    """用參考股（台積電）的月表日期當全市場交易日清單。"""
+    days = set()
+    for ym in months:
+        for r in ms.fetch_listed_ohlc_month(ref, ym):
+            days.add(r["date"])
+        time.sleep(0.3)
+    return sorted(days)
+
+
+def load_universe():
+    import json
+    with open(os.path.join(HERE, "universe.json"), encoding="utf-8") as f:
+        return json.load(f)["stocks"]
+
+
+def backfill_listed_price(stocks, months, sleep, price):
+    listed = [s for s in stocks if s["market"] == "上市"]
+    need = len(months) * 15
+    for i, s in enumerate(listed, 1):
+        sid = s["id"]
+        if len(price.get(sid, {})) >= need:        # 續跑：已夠就跳過
+            continue
+        try:
+            for ym in months:
+                for r in ms.fetch_listed_ohlc_month(sid, ym):
+                    hs.append_price(price, r["date"], {sid: r})
+                time.sleep(sleep)
+        except Exception as e:
+            print(f"  ⚠️ {sid} 上市價格失敗：{e}")
+        if i % 25 == 0:
+            hs.save(PRICE_PATH, price)
+            print(f"  上市 {i}/{len(listed)} 檔，已存檔")
+    hs.save(PRICE_PATH, price)
+
+
+def backfill_otc_price(days, sleep, price):
+    for i, day in enumerate(days, 1):
+        try:
+            hs.append_price(price, day, ms.fetch_otc_ohlc(day))
+        except Exception as e:
+            print(f"  ⚠️ 上櫃 {day} 失敗：{e}")
+        time.sleep(sleep)
+        if i % 20 == 0:
+            hs.save(PRICE_PATH, price)
+            print(f"  上櫃 {i}/{len(days)} 日")
+    hs.save(PRICE_PATH, price)
+
+
+def backfill_chip(days, sleep, chip):
+    for i, day in enumerate(days, 1):
+        try:
+            hs.append_chip(chip, day, ms.fetch_listed_chip(day))
+        except Exception as e:
+            print(f"  ⚠️ 上市法人 {day} 失敗：{e}")
+        try:
+            hs.append_chip(chip, day, ms.fetch_otc_chip(day))
+        except Exception as e:
+            print(f"  ⚠️ 上櫃法人 {day} 失敗：{e}")
+        time.sleep(sleep)
+    hs.save(CHIP_PATH, chip)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--months", type=int, default=6)
+    ap.add_argument("--chip-days", type=int, default=20)
+    ap.add_argument("--sleep", type=float, default=0.6)
+    ap.add_argument("--limit", type=int, help="只回填前 N 檔上市（測試用）")
+    ap.add_argument("--skip-listed", action="store_true")
+    args = ap.parse_args()
+
+    months = recent_months(args.months)
+    print(f"📅 月份：{months}")
+    days = trading_days(months)
+    print(f"   交易日 {len(days)} 天（{days[0]}~{days[-1]}）")
+
+    stocks = load_universe()
+    if args.limit:
+        listed = [s for s in stocks if s["market"] == "上市"][:args.limit]
+        stocks = listed + [s for s in stocks if s["market"] == "上櫃"]
+
+    price = hs.load(PRICE_PATH)
+    chip = hs.load(CHIP_PATH)
+
+    if not args.skip_listed:
+        print("📈 回填上市 OHLCV（逐檔月表，較久）…")
+        backfill_listed_price(stocks, months, args.sleep, price)
+    print("📈 回填上櫃 OHLCV（逐日）…")
+    backfill_otc_price(days[-hs.PRICE_WINDOW:], args.sleep, price)
+    print("💰 回填三大法人（逐日）…")
+    backfill_chip(days[-args.chip_days:], args.sleep, chip)
+
+    print(f"\n✅ 回填完成：price {len(price)} 檔、chip {len(chip)} 檔")
+
+
+if __name__ == "__main__":
+    main()
