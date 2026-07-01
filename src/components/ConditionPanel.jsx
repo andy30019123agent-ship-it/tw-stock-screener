@@ -9,10 +9,12 @@ const BLANK = {
   maRising: false, bigHolderRising: false, foreignDays: 0, trustDays: 0,
   shishiAny: false, snSqueezeBreakout: false, snLowerReversal: false,
   snBreakLowRecover: false, snImmortalGuide: false, snVolumeSupport: false,
+  minYield: 0, maxPe: 0, maxPb: 0, undervalued: false,
 }
 const PRESETS = [
   { key: 'breakout', label: '🚀 爆量突破', patch: { ...BLANK, breakout: true } },
   { key: 'shishi', label: '📗 小詩選股', patch: { ...BLANK, shishiAny: true } },
+  { key: 'value', label: '💎 同業低估', patch: { ...BLANK, undervalued: true } },
   { key: 'signal', label: '✨ 糾結轉強', patch: { ...BLANK, signalMa: true } },
   { key: 'foreign', label: '🏦 外資連買', patch: { ...BLANK, foreignDays: 3, trustDays: 0 } },
   { key: 'bull', label: '📈 多頭排列', patch: { ...BLANK, bullAligned: true } },
@@ -138,6 +140,33 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
             <Toggle label="千張大戶上升" hint={holderReady ? '占比較上週增加' : '資料累積中'}
               checked={c.bigHolderRising} onChange={v => set('bigHolderRising', v)}
               disabled={!holderReady} />
+          </div>
+        </div>
+
+        {/* 估值 / 同業比 */}
+        <div className="cond-group">
+          <span className="cond-section-label">💎 估值／同業比</span>
+          <div className="cond-chips">
+            <div className="num-field">
+              <label>殖利率 ≥</label>
+              <input type="number" inputMode="decimal" min="0" max="20" step="0.5" value={c.minYield}
+                onChange={e => set('minYield', parseFloat(e.target.value) || 0)} />
+              <span>%</span>
+            </div>
+            <div className="num-field">
+              <label>本益比 ≤</label>
+              <input type="number" inputMode="numeric" min="0" max="100" value={c.maxPe}
+                onChange={e => set('maxPe', parseFloat(e.target.value) || 0)} />
+              <span>倍</span>
+            </div>
+            <div className="num-field">
+              <label>本淨比 ≤</label>
+              <input type="number" inputMode="decimal" min="0" max="20" step="0.1" value={c.maxPb}
+                onChange={e => set('maxPb', parseFloat(e.target.value) || 0)} />
+              <span>倍</span>
+            </div>
+            <Toggle label="💎 同業被低估" hint="本益比低於同產業中位數"
+              checked={c.undervalued} onChange={v => set('undervalued', v)} accent />
           </div>
         </div>
 

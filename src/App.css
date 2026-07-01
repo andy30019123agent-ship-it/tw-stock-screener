@@ -283,6 +283,13 @@ body {
 .tag-trust  { background: rgba(139,92,246,0.15); color: #7a45e0; }
 .tag-holder { background: rgba(13,148,136,0.15); color: #0c8076; }
 .tag-shishi { background: rgba(101,163,13,0.16); color: #4d7c0f; }
+.tag-value  { background: rgba(8,145,178,0.14); color: #0e7490; }
+
+/* 估值小欄位（PE / PB / 殖利率）*/
+.valuation { display: flex; gap: 10px; font-size: 12px; color: #64748b; white-space: nowrap; }
+.valuation b { color: #334155; font-weight: 700; }
+.valuation b.hot { color: #0c8159; }
+.card-list .valuation { margin: 6px 0 2px; }
 
 /* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
 .sort-bar, .card-list { display: none; }

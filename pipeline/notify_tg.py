@@ -45,6 +45,8 @@ def score(s):
         sc += 2
     if s.get("holder_rising"):
         sc += 1
+    if s.get("undervalued"):        # 同業被低估（估值面加分）
+        sc += 1
     return sc
 
 
@@ -73,6 +75,8 @@ def reasons(s):
         r.append(f"投信連{ts}買")
     if s.get("holder_rising"):
         r.append("千張↑")
+    if s.get("undervalued"):
+        r.append("同業低估")
     return r
 
 

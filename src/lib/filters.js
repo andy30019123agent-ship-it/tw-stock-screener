@@ -15,6 +15,11 @@ export const DEFAULT_CONDITIONS = {
   snImmortalGuide: false,     // 仙人指路
   snVolumeSupport: false,     // 大量紅K低點防守
   bigHolderRising: false, // 千張大戶占比較上週上升
+  // 估值 / 同業比（0 = 不限）
+  minYield: 0,            // 現金殖利率 ≥ N %
+  maxPe: 0,               // 本益比 ≤ N（且 > 0）
+  maxPb: 0,               // 本淨比 ≤ N
+  undervalued: false,     // 同業被低估（本益比低於同產業中位數）
   foreignDays: 3,         // 外資連買 ≥ N 天（0 = 不限）
   trustDays: 3,           // 投信連買 ≥ N 天（0 = 不限）
   chipLogic: 'and',       // 'and' 外資與投信都要 / 'or' 任一即可
@@ -45,6 +50,12 @@ export function applyFilters(stocks, c) {
     if (c.snBreakLowRecover && !s.sn_break_low_recover) return false
     if (c.snImmortalGuide && !s.sn_immortal_guide) return false
     if (c.snVolumeSupport && !s.sn_volume_support) return false
+
+    // 估值 / 同業比
+    if (c.minYield > 0 && !(s.yield_pct >= c.minYield)) return false
+    if (c.maxPe > 0 && !(s.pe > 0 && s.pe <= c.maxPe)) return false
+    if (c.maxPb > 0 && !(s.pb > 0 && s.pb <= c.maxPb)) return false
+    if (c.undervalued && !s.undervalued) return false
 
     // 市場 / 產業
     if (c.market && c.market !== 'all' && s.market !== c.market) return false
@@ -80,4 +91,6 @@ export const SORTS = {
   trust: (a, b) => b.trust_streak - a.trust_streak,
   change: (a, b) => b.change_pct - a.change_pct,
   close: (a, b) => b.close - a.close,
+  yield: (a, b) => (b.yield_pct || 0) - (a.yield_pct || 0),
+  pe: (a, b) => (a.pe > 0 ? a.pe : 1e9) - (b.pe > 0 ? b.pe : 1e9),  // 本益比小→大（無/負殿後）
 }

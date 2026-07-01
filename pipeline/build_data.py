@@ -22,6 +22,7 @@ from urllib.request import urlopen, Request
 
 sys.path.insert(0, os.path.dirname(__file__))
 import history_store as hs  # noqa: E402  （同目錄）
+import market_sources as ms  # noqa: E402  （同目錄，估值抓取用）
 
 API = "https://api.finmindtrade.com/api/v4/data"
 TOKEN = os.environ.get("FINMIND_TOKEN", "")
@@ -456,6 +457,24 @@ def holder_signal(hist):
     }
 
 
+def annotate_valuation(results):
+    """同業比：以「同產業本益比中位數」判斷是否被低估。
+    對每檔加上 industry_pe_median 與 undervalued（本益比為正且低於同業中位數）。就地修改。"""
+    import statistics
+    by_ind = {}
+    for r in results:
+        pe = r.get("pe")
+        if pe and pe > 0:
+            by_ind.setdefault(r.get("industry"), []).append(pe)
+    medians = {k: statistics.median(v) for k, v in by_ind.items() if v}
+    for r in results:
+        med = medians.get(r.get("industry"))
+        pe = r.get("pe")
+        r["industry_pe_median"] = round(med, 2) if med else None
+        r["undervalued"] = bool(pe and pe > 0 and med and pe < med)
+    return results
+
+
 def load_universe_file():
     with open(os.path.join(HERE, "universe.json"), encoding="utf-8") as f:
         return json.load(f)["stocks"]
@@ -486,7 +505,12 @@ def main():
 
     price_hist = hs.load(os.path.join(HERE, "history", "price.json"))
     chip_hist = hs.load(os.path.join(HERE, "history", "chip.json"))
-    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔\n")
+    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔")
+
+    # 估值（本益比/本淨比/殖利率）：全市場一次抓，免費 OpenAPI
+    print("💰 取得全市場估值（TWSE/TPEX OpenAPI）…")
+    valuation = ms.fetch_valuation()
+    print(f"   估值 {len(valuation)} 檔\n")
 
     charts_dir = os.path.join(OUT_DIR, "charts")
     os.makedirs(charts_dir, exist_ok=True)
@@ -506,10 +530,16 @@ def main():
             data_dates.append(ohlc[-1]["t"])      # 拆出前先記下交易日（給 notify 閘門用）
         ind.update(stock)                         # id, name, market, industry
         ind.update(holder_signal(holder_history.get(sid)))
+        val = valuation.get(sid) or {}            # 估值：本益比/本淨比/殖利率
+        ind["pe"] = val.get("pe")
+        ind["pb"] = val.get("pb")
+        ind["yield_pct"] = val.get("yield_pct")
         results.append(ind)
         with open(os.path.join(charts_dir, f"{sid}.json"), "w", encoding="utf-8") as f:
             json.dump({"id": sid, "name": stock["name"], "ohlc": ohlc}, f,
                       ensure_ascii=False, separators=(",", ":"))
+
+    annotate_valuation(results)   # 同業比：標記 industry_pe_median / undervalued
 
     os.makedirs(OUT_DIR, exist_ok=True)
     holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2

@@ -9,6 +9,7 @@ function Tags({ s }) {
   if (s.golden_cross_recent) tags.push(['黃金交叉', 'tag-gc'])
   if (s.foreign_streak >= 3) tags.push([`外資連買${s.foreign_streak}`, 'tag-foreign'])
   if (s.trust_streak >= 3) tags.push([`投信連買${s.trust_streak}`, 'tag-trust'])
+  if (s.undervalued) tags.push(['💎同業低估', 'tag-value'])
   if (s.holder_rising) tags.push([`千張大戶↑${s.holder_pct}%`, 'tag-holder'])
   return (
     <div className="tags">
@@ -22,9 +23,23 @@ const MOBILE_SORTS = [
   ['breakout', '突破'],
   ['shishi', '小詩'],
   ['change', '漲跌幅'],
+  ['yield', '殖利率'],
+  ['pe', '本益比'],
   ['foreign', '外資'],
   ['trust', '投信'],
 ]
+
+// 估值：本益比 / 本淨比 / 殖利率（缺值以 — 顯示）
+function Valuation({ s }) {
+  const g = v => (v === null || v === undefined) ? '—' : v
+  return (
+    <div className="valuation">
+      <span>PE <b>{s.pe > 0 ? s.pe : '—'}</b></span>
+      <span>PB <b>{g(s.pb)}</b></span>
+      <span>殖 <b className={s.yield_pct >= 5 ? 'hot' : ''}>{s.yield_pct != null ? `${s.yield_pct}%` : '—'}</b></span>
+    </div>
+  )
+}
 
 export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
   const col = (key, label) => (
@@ -76,6 +91,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                     {s.trust_streak > 0 ? `${s.trust_streak}天` : '—'}</b></span>
                 </div>
               </div>
+              <Valuation s={s} />
               <Tags s={s} />
             </button>
           )
@@ -91,6 +107,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
               {col('change', '收盤 / 漲跌')}
               <th>走勢</th>
               <th>均線狀態</th>
+              {col('yield', '估值 PE/PB/殖利')}
               {col('foreign', '外資連買')}
               {col('trust', '投信連買')}
               <th>訊號</th>
@@ -118,6 +135,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                     {s.ma_rising && <span className="ma-up">↑翻揚</span>}
                     <span className="disp">離散 {s.dispersion_pct}%</span>
                   </td>
+                  <td className="cell-value"><Valuation s={s} /></td>
                   <td className="cell-streak">{s.foreign_streak > 0
                     ? <b className={s.foreign_streak >= 3 ? 'hot' : ''}>{s.foreign_streak} 天</b> : '—'}</td>
                   <td className="cell-streak">{s.trust_streak > 0

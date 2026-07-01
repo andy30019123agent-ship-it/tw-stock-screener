@@ -21,6 +21,8 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 TWSE_AT = "https://www.twse.com.tw/rwd/zh/afterTrading"
 TWSE_FUND = "https://www.twse.com.tw/rwd/zh/fund"
 TPEX = "https://www.tpex.org.tw/www/zh-tw"
+TWSE_OPENAPI = "https://openapi.twse.com.tw/v1"
+TPEX_OPENAPI = "https://www.tpex.org.tw/openapi/v1"
 
 
 # ── HTTP（curl 優先、urllib 後備、重試退避；跨環境最穩）────────────────
@@ -182,6 +184,35 @@ def fetch_listed_chip(date_iso):
         foreign = (_f(r[4]) or 0) + (_f(r[7]) or 0)
         trust = _f(r[10]) or 0
         out[sid] = {"Foreign_Investor": foreign, "Investment_Trust": trust}
+    return out
+
+
+# ── 估值指標（本益比 / 本淨比 / 現金殖利率）──────────────────────────
+def fetch_valuation():
+    """全市場每股估值：本益比 pe / 本淨比 pb / 現金殖利率 yield_pct(%)。回 {sid: {...}}。
+    上市 TWSE OpenAPI BWIBBU_ALL、上櫃 TPEX OpenAPI peratio_analysis，皆免費、每日更新。
+    本益比為空（無獲利）時 pe = None。"""
+    out = {}
+    # 上市
+    try:
+        for r in get_json(f"{TWSE_OPENAPI}/exchangeReport/BWIBBU_ALL"):
+            sid = str(r.get("Code", "")).strip()
+            if not is_common_stock(sid):
+                continue
+            out[sid] = {"pe": _f(r.get("PEratio")), "pb": _f(r.get("PBratio")),
+                        "yield_pct": _f(r.get("DividendYield"))}
+    except Exception as e:
+        print(f"  ⚠️ 上市估值抓取失敗：{e}")
+    # 上櫃
+    try:
+        for r in get_json(f"{TPEX_OPENAPI}/tpex_mainboard_peratio_analysis"):
+            sid = str(r.get("SecuritiesCompanyCode", "")).strip()
+            if not is_common_stock(sid):
+                continue
+            out[sid] = {"pe": _f(r.get("PriceEarningRatio")), "pb": _f(r.get("PriceBookRatio")),
+                        "yield_pct": _f(r.get("YieldRatio"))}
+    except Exception as e:
+        print(f"  ⚠️ 上櫃估值抓取失敗：{e}")
     return out
 
 
