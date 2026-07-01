@@ -33,6 +33,10 @@ def score(s):
         sc += 3
     if s.get("signal_breakout"):
         sc += 3
+    if s.get("sn_squeeze_breakout"):   # 小詩：縮口帶量突破（招牌招式）
+        sc += 3
+    elif s.get("signal_shishi"):       # 其餘小詩形態
+        sc += 2
     if s.get("bull_aligned") and s.get("diverging"):
         sc += 2
     if s.get("foreign_streak", 0) >= 3:
@@ -49,6 +53,8 @@ def reasons(s):
     r = []
     if s.get("signal_breakout"):
         r.append("爆量突破")
+    for t in (s.get("sn_tags") or [])[:2]:   # 小詩形態最多帶 2 個標籤
+        r.append(t)
     if s.get("signal_ma"):
         r.append("糾結轉強")
     elif s.get("bull_aligned") and s.get("diverging"):
@@ -99,7 +105,8 @@ def risk_warning(s, n_reasons):
 
 def build_message(d):
     stocks = d["stocks"]
-    dd = data_date(stocks)
+    # 交易日優先讀頂層 data_date；舊資料沒有才退回掃 ohlc（全市場版 ohlc 已拆出，掃不到）
+    dd = d.get("data_date") or data_date(stocks)
     mmdd = "/".join(dd.split("-")[1:]) if dd else "—"
     ranked = sorted(
         [s for s in stocks if score(s) >= 2],

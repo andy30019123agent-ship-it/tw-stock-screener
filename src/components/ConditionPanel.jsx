@@ -7,9 +7,12 @@ const isMobile = () =>
 const BLANK = {
   signalMa: false, breakout: false, bullAligned: false, goldenCross: false,
   maRising: false, bigHolderRising: false, foreignDays: 0, trustDays: 0,
+  shishiAny: false, snSqueezeBreakout: false, snLowerReversal: false,
+  snBreakLowRecover: false, snImmortalGuide: false, snVolumeSupport: false,
 }
 const PRESETS = [
   { key: 'breakout', label: '🚀 爆量突破', patch: { ...BLANK, breakout: true } },
+  { key: 'shishi', label: '📗 小詩選股', patch: { ...BLANK, shishiAny: true } },
   { key: 'signal', label: '✨ 糾結轉強', patch: { ...BLANK, signalMa: true } },
   { key: 'foreign', label: '🏦 外資連買', patch: { ...BLANK, foreignDays: 3, trustDays: 0 } },
   { key: 'bull', label: '📈 多頭排列', patch: { ...BLANK, bullAligned: true } },
@@ -89,6 +92,25 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
                 suffix="天內" onChange={v => set('breakoutLookback', v)} />
             </div>
           )}
+        </div>
+
+        {/* 小詩選股（布林軌道系列技術形態）*/}
+        <div className="cond-group">
+          <span className="cond-section-label">📗 小詩選股</span>
+          <div className="cond-checks">
+            <Toggle label="符合任一小詩形態" hint="下列 5 招中任一成立"
+              checked={c.shishiAny} onChange={v => set('shishiAny', v)} accent />
+            <Toggle label="縮口帶量突破" hint="布林壓縮→帶量收上上軌"
+              checked={c.snSqueezeBreakout} onChange={v => set('snSqueezeBreakout', v)} />
+            <Toggle label="破下軌翻紅" hint="連黑跌破下軌後翻紅"
+              checked={c.snLowerReversal} onChange={v => set('snLowerReversal', v)} />
+            <Toggle label="破底翻" hint="跌破前低後迅速站回"
+              checked={c.snBreakLowRecover} onChange={v => set('snBreakLowRecover', v)} />
+            <Toggle label="仙人指路" hint="帶量長上影小K在壓力區"
+              checked={c.snImmortalGuide} onChange={v => set('snImmortalGuide', v)} />
+            <Toggle label="大量撐" hint="拉回大量紅K低點守住"
+              checked={c.snVolumeSupport} onChange={v => set('snVolumeSupport', v)} />
+          </div>
         </div>
 
         {/* 籌碼面 */}

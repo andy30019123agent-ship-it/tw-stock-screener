@@ -218,6 +218,110 @@ def compute_indicators(price_rows, chip_rows):
         and any(c["ago"] <= 3 and c["vr"] >= 1.8 for c in breakout_cands)
     )
 
+    # ── 小詩技術形態（布林軌道系列 + K 線形態）─────────────────────
+    # 依「可轉債小詩」技術分析講義實作，全部只用價量、且需發生在最近 3 個交易日內才算。
+    # 布林軌道：中軌 = 20MA，上/下軌 = 中軌 ± 2 標準差（講義的標準架構）。
+    bars = [r for r in price_rows if r.get("close")]
+    opens = [r.get("open") for r in bars]
+    highs = [r.get("max") for r in bars]
+    lows = [r.get("min") for r in bars]
+    vols_bar = [(r.get("Trading_Volume", 0) or 0) for r in bars]
+    BOLL_N, BOLL_K = 20, 2
+    SN_RECENT = 3   # 形態需發生在最近 3 個交易日內
+
+    def boll(i):
+        """回傳 (中軌, 上軌, 下軌, 帶寬)；資料不足回 None。帶寬 = (上軌−下軌)/中軌。"""
+        if i + 1 < BOLL_N:
+            return None
+        win = closes[i + 1 - BOLL_N:i + 1]
+        m = sum(win) / BOLL_N
+        sd = (sum((x - m) ** 2 for x in win) / BOLL_N) ** 0.5
+        up, lo = m + BOLL_K * sd, m - BOLL_K * sd
+        return m, up, lo, ((up - lo) / m if m else None)
+
+    boll_cache = [boll(i) for i in range(n)]
+
+    def avg_vol_before(i, w=20):
+        seg = vols_bar[max(0, i - w):i]
+        return sum(seg) / len(seg) if seg else 0
+
+    def is_red(i):
+        return opens[i] is not None and closes[i] > opens[i]
+
+    def is_black(i):
+        return opens[i] is not None and closes[i] < opens[i]
+
+    # 縮口判斷門檻：以該股自身近 60 日「布林帶寬」的第 30 百分位為相對低檔
+    bw_hist = [b[3] for b in boll_cache if b and b[3] is not None]
+    bw_recent = sorted(bw_hist[-60:])
+    bw_th = bw_recent[max(0, int(len(bw_recent) * 0.3) - 1)] if bw_recent else None
+
+    sn = {"squeeze_breakout": False, "lower_reversal": False,
+          "break_low_recover": False, "immortal_guide": False,
+          "volume_support": False}
+
+    for i in range(max(BOLL_N, n - SN_RECENT), n):
+        b = boll_cache[i]
+        if not b or opens[i] is None or highs[i] is None or lows[i] is None:
+            continue
+        mid, up, lo, _bw = b
+        av = avg_vol_before(i)
+        vr = (vols_bar[i] / av) if av else 0
+        body = abs(closes[i] - opens[i])
+        rng = highs[i] - lows[i]
+
+        # 1. 縮口帶量突破：前 20 日內帶寬曾壓縮到相對低檔 → 當日帶量收上上軌
+        if bw_th is not None:
+            prior_bw = [boll_cache[j][3] for j in range(max(0, i - 20), i)
+                        if boll_cache[j] and boll_cache[j][3] is not None]
+            if any(x <= bw_th for x in prior_bw) and closes[i] > up and vr >= 1.5:
+                sn["squeeze_breakout"] = True
+
+        # 2. 連續黑K跌破下軌後翻紅：近幾日有黑K跌破下軌，當日翻紅站回軌內
+        if is_red(i) and closes[i] > lo:
+            broke = sum(1 for j in range(max(0, i - 4), i)
+                        if boll_cache[j] and closes[j] < boll_cache[j][2])
+            blacks = sum(1 for j in range(max(0, i - 4), i) if is_black(j))
+            if broke >= 1 and blacks >= 2:
+                sn["lower_reversal"] = True
+
+        # 3. 破底翻：跌破前段區間低點後又迅速站回
+        base = [x for x in lows[max(0, i - 40):max(0, i - 5)] if x is not None]
+        if base:
+            base_low = min(base)
+            dip = min(x for x in lows[max(0, i - 8):i + 1] if x is not None)
+            if dip < base_low and closes[i] > base_low:
+                sn["break_low_recover"] = True
+
+        # 4. 仙人指路：帶量(不爆量)長上影小實體K、位階不高、貼近前壓力區
+        prior_high = max([h for h in highs[max(0, i - 20):i] if h is not None], default=None)
+        if rng > 0 and prior_high:
+            upper_shadow = highs[i] - max(opens[i], closes[i])
+            if (body <= 0.035 * closes[i]                 # 小實體
+                    and upper_shadow >= 2 * body and upper_shadow >= 0.5 * rng  # 長上影
+                    and 1.2 <= vr <= 2.5                  # 帶量但不爆量
+                    and closes[i] >= 0.95 * prior_high    # 貼近前壓力
+                    and mid and closes[i] <= mid * 1.12): # 位階不高（未大幅偏離中軌）
+                sn["immortal_guide"] = True
+
+        # 5. 大量低點防守：近 20 日出現「大量紅K」(量≥2.5倍且收紅)，當日拉回貼著其低點 2% 內守住
+        #    （小詩：大量紅K的低點是多數人的成本，守住不破＝主力洗盤喝了再上）
+        for j in range(max(0, i - 20), i):
+            avj = avg_vol_before(j)
+            if avj and vols_bar[j] >= 2.5 * avj and is_red(j) and lows[j] is not None:
+                sup = lows[j]
+                if sup <= closes[i] <= sup * 1.02:
+                    sn["volume_support"] = True
+                    break
+
+    SN_LABELS = {
+        "squeeze_breakout": "縮口帶量突破", "lower_reversal": "破下軌翻紅",
+        "break_low_recover": "破底翻", "immortal_guide": "仙人指路",
+        "volume_support": "大量撐",
+    }
+    sn_tags = [SN_LABELS[k] for k in SN_LABELS if sn[k]]
+    signal_shishi = len(sn_tags) > 0
+
     # ── 籌碼：外資 / 投信 連續買超天數 ──
     by_date = {}
     for c in chip_rows:
@@ -258,6 +362,14 @@ def compute_indicators(price_rows, chip_rows):
         "signal_ma": signal_ma,
         "breakout_cands": breakout_cands,
         "signal_breakout": signal_breakout,
+        # 小詩技術形態（布林軌道系列）
+        "sn_squeeze_breakout": sn["squeeze_breakout"],
+        "sn_lower_reversal": sn["lower_reversal"],
+        "sn_break_low_recover": sn["break_low_recover"],
+        "sn_immortal_guide": sn["immortal_guide"],
+        "sn_volume_support": sn["volume_support"],
+        "sn_tags": sn_tags,
+        "signal_shishi": signal_shishi,
         "foreign_net": foreign_net,
         "trust_net": trust_net,
         "foreign_streak": foreign_streak,
@@ -379,6 +491,7 @@ def main():
     charts_dir = os.path.join(OUT_DIR, "charts")
     os.makedirs(charts_dir, exist_ok=True)
     results = []
+    data_dates = []   # 全市場最後一根 K 線日期 → 這份資料的交易日
     for stock in universe:
         sid = stock["id"]
         pr = hs.to_price_rows(price_hist.get(sid, {}))
@@ -389,6 +502,8 @@ def main():
         if ind is None or ind["avg_vol_lots"] < args.min_vol:
             continue
         ohlc = ind.pop("ohlc")                    # K 線拆到 charts/<id>.json（前端按需載入）
+        if ohlc:
+            data_dates.append(ohlc[-1]["t"])      # 拆出前先記下交易日（給 notify 閘門用）
         ind.update(stock)                         # id, name, market, industry
         ind.update(holder_signal(holder_history.get(sid)))
         results.append(ind)
@@ -400,6 +515,7 @@ def main():
     holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "data_date": max(data_dates) if data_dates else None,   # 資料交易日（notify 只推新交易日用）
         "count": len(results),
         "universe_count": len(universe),    # 全市場掃描檔數（資訊用）
         "holder_ready": holder_ready,

@@ -7,6 +7,13 @@ export const DEFAULT_CONDITIONS = {
   bullAligned: true,      // 多頭排列
   goldenCross: false,     // 近期黃金交叉
   maRising: false,        // 均線上彎
+  // 小詩選股（布林軌道系列技術形態，近 3 交易日內成立）
+  shishiAny: false,           // 符合任一小詩形態
+  snSqueezeBreakout: false,   // 縮口帶量突破
+  snLowerReversal: false,     // 破下軌翻紅
+  snBreakLowRecover: false,   // 破底翻
+  snImmortalGuide: false,     // 仙人指路
+  snVolumeSupport: false,     // 大量紅K低點防守
   bigHolderRising: false, // 千張大戶占比較上週上升
   foreignDays: 3,         // 外資連買 ≥ N 天（0 = 不限）
   trustDays: 3,           // 投信連買 ≥ N 天（0 = 不限）
@@ -31,6 +38,14 @@ export function applyFilters(stocks, c) {
     if (c.maRising && !s.ma_rising) return false
     if (c.bigHolderRising && !s.holder_rising) return false
 
+    // 小詩選股形態
+    if (c.shishiAny && !s.signal_shishi) return false
+    if (c.snSqueezeBreakout && !s.sn_squeeze_breakout) return false
+    if (c.snLowerReversal && !s.sn_lower_reversal) return false
+    if (c.snBreakLowRecover && !s.sn_break_low_recover) return false
+    if (c.snImmortalGuide && !s.sn_immortal_guide) return false
+    if (c.snVolumeSupport && !s.sn_volume_support) return false
+
     // 市場 / 產業
     if (c.market && c.market !== 'all' && s.market !== c.market) return false
     if (c.industry && c.industry !== 'all' && s.industry !== c.industry) return false
@@ -54,9 +69,13 @@ export function applyFilters(stocks, c) {
 // 取一檔最強的突破量倍數（沒有候選回 0），給排序用
 const topVr = s => (s.breakout_cands || []).reduce((m, c) => Math.max(m, c.vr), 0)
 
+// 小詩形態命中數（給排序用）
+const snCount = s => (s.sn_tags || []).length
+
 export const SORTS = {
   signal: (a, b) => (b.signal_ma - a.signal_ma) || (b.foreign_streak - a.foreign_streak),
   breakout: (a, b) => (b.signal_breakout - a.signal_breakout) || (topVr(b) - topVr(a)),
+  shishi: (a, b) => (snCount(b) - snCount(a)) || (b.foreign_streak - a.foreign_streak),
   foreign: (a, b) => b.foreign_streak - a.foreign_streak,
   trust: (a, b) => b.trust_streak - a.trust_streak,
   change: (a, b) => b.change_pct - a.change_pct,

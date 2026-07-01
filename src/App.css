@@ -282,6 +282,7 @@ body {
 .tag-foreign{ background: rgba(15,157,107,0.14); color: #0c8159; }
 .tag-trust  { background: rgba(139,92,246,0.15); color: #7a45e0; }
 .tag-holder { background: rgba(13,148,136,0.15); color: #0c8076; }
+.tag-shishi { background: rgba(101,163,13,0.16); color: #4d7c0f; }
 
 /* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
 .sort-bar, .card-list { display: none; }
