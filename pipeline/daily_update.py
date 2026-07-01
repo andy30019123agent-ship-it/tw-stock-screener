@@ -18,6 +18,11 @@ CHIP_PATH = os.path.join(HERE, "history", "chip.json")
 def main():
     date_iso, listed = ms.fetch_listed_ohlc_latest()   # 最新交易日 + 全上市
     print(f"📅 最新交易日 {date_iso}：上市 {len(listed)} 檔")
+    # 抓不到最新交易日（TWSE 偶爾會擋 runner IP、或收盤資料未出）→ 優雅跳過本次累積，
+    # 用現有歷史繼續 build+部署，不讓整個流程崩掉；下次排程 TWSE 恢復後自動補上。
+    if not date_iso or not listed:
+        print("  ⚠️ 上市最新交易日抓不到 → 跳過本次累積，用現有歷史繼續建置。")
+        return
     otc = ms.fetch_otc_ohlc(date_iso)
     print(f"   上櫃 {len(otc)} 檔")
 
