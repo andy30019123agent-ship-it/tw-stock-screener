@@ -63,13 +63,15 @@ def back_adjust_rows(price_rows, events):
     return out
 
 
-def compute_indicators(price_rows, chip_rows, events=None, index_ret20=None):
+def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
     """從原始資料算出該股的指標字典；資料不足回 None。
     events：該股除權息事件（見 back_adjust_rows）。均線/糾結/黃金交叉/多頭排列/布林小詩/爆量突破
     的「價格部分」一律用還原權息後的序列計算，避免除權息日被誤判成跌破/翻空；但現價/漲跌/走勢圖
     （raw_closes 系列）仍用原始成交價，維持顯示給使用者的真實股價。
-    index_ret20：加權指數近 20 交易日報酬（%，見 index_return_20），給相對強弱 rs20 用；
-    沒有大盤資料（歷史不足/抓取失敗）時傳 None，rs20 也會是 None。"""
+    index_series：加權指數日線序列 [(date_iso, close), ...]（見 history_store.to_index_series），
+    給相對強弱 rs20 用。個股與指數序列各自轉成 {date: close} 後取「日期交集」對齊，避免其中一邊
+    缺資料（抓取失敗/停牌）時用「位置對齊」（各取最後 21 筆相除）把不同天的價格錯配在一起算錯；
+    交集不足 21 個共同交易日時 rs20 為 None。"""
     price_rows = sorted(price_rows, key=lambda r: r["date"])
     closes = [r["close"] for r in price_rows if r.get("close")]
     if len(closes) < 65:
@@ -96,9 +98,16 @@ def compute_indicators(price_rows, chip_rows, events=None, index_ret20=None):
     closes = [r["close"] for r in adj_rows if r.get("close")]
 
     # ── 相對強弱 RS：個股近 20 交易日報酬（還原價）－ 加權指數近 20 交易日報酬 ──
-    # 用還原後 closes，避免除權息缺口把個股報酬算歪；資料不足或大盤資料缺（index_ret20=None）都回 None。
-    if len(closes) >= 21 and index_ret20 is not None:
-        stock_ret20 = (closes[-1] / closes[-21] - 1) * 100
+    # 用還原後 closes；兩序列各自轉成 {date: close}，取「日期交集」排序後最後 21 個共同交易日
+    # 一起算報酬（起訖日一致），避免其中一邊缺資料（抓取失敗/停牌）時位置對齊把不同天的價格錯配。
+    # 共同交易日不足 21 個（或沒有大盤資料）都回 None。
+    stock_by_date = {r["date"]: r["close"] for r in adj_rows if r.get("close")}
+    index_by_date = dict(index_series or [])
+    common_dates = sorted(set(stock_by_date) & set(index_by_date))
+    if len(common_dates) >= 21:
+        d0, d1 = common_dates[-21], common_dates[-1]
+        stock_ret20 = (stock_by_date[d1] / stock_by_date[d0] - 1) * 100
+        index_ret20 = (index_by_date[d1] / index_by_date[d0] - 1) * 100
         rs20 = round(stock_ret20 - index_ret20, 2)
     else:
         rs20 = None
@@ -538,9 +547,10 @@ def main():
     index_hist = hs.load(os.path.join(HERE, "history", "index.json"))
     print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔、dividends {len(div_hist)} 檔、index {len(index_hist)} 天")
 
-    # 加權指數近 20 日報酬（相對強弱 RS 的大盤基準）
+    # 加權指數近 20 日報酬（相對強弱 RS 的大盤基準；僅供顯示，rs20 實際計算改用 idx_series 逐股日期對齊）
     idx_ret20 = index_return_20(index_hist)
     print(f"   加權指數近 20 日報酬：{f'{idx_ret20:.2f}%' if idx_ret20 is not None else '資料不足（暫無 rs20）'}")
+    idx_series = hs.to_index_series(index_hist)   # [(date_iso, close), ...]，給 compute_indicators 做日期交集對齊
 
     # 估值（本益比/本淨比/殖利率）：全市場一次抓，免費 OpenAPI
     print("💰 取得全市場估值（TWSE/TPEX OpenAPI）…")
@@ -563,7 +573,7 @@ def main():
             continue
         cr = hs.to_chip_rows(chip_hist.get(sid, {}))
         ev = hs.to_div_events(div_hist.get(sid))
-        ind = compute_indicators(pr, cr, ev, idx_ret20)
+        ind = compute_indicators(pr, cr, ev, idx_series)
         if ind is None or ind["avg_vol_lots"] < args.min_vol:
             continue
         ohlc = ind.pop("ohlc")                    # K 線拆到 charts/<id>.json（前端按需載入）
