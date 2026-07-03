@@ -1,101 +1,28 @@
 #!/usr/bin/env python3
 """
-台股電子股選股 — 資料管線
-抓 FinMind 全電子股的價格＋三大法人，算技術＋籌碼指標，輸出前端用的 JSON。
+台股全市場選股 — 資料管線
+讀 universe.json + 累積歷史（TWSE/TPEX 免費源，見 market_sources.py），
+算技術＋籌碼指標，輸出前端用的 JSON。
 
 用法：
-    FINMIND_TOKEN=xxx python3 build_data.py            # 跑全部電子股
-    python3 build_data.py --sample 2330,2317,2454      # 只跑指定股票（驗證用）
-    python3 build_data.py --limit 15                   # 只跑前 N 檔（驗證用）
-
-免費版沒 token 也能跑（單檔查詢），但有額度限制；要每天自動跑全電子股建議用
-FinMind 贊助者(backer)等級的 token。
+    python3 build_data.py                          # 跑全市場
+    python3 build_data.py --sample 2330,2317,2454   # 只跑指定股票（驗證用）
+    python3 build_data.py --limit 15                # 只跑前 N 檔（驗證用）
 """
 import os
 import sys
 import json
-import time
 import argparse
 import datetime as dt
-from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 
 sys.path.insert(0, os.path.dirname(__file__))
 import history_store as hs  # noqa: E402  （同目錄）
 import market_sources as ms  # noqa: E402  （同目錄，估值抓取用）
 
-API = "https://api.finmindtrade.com/api/v4/data"
-TOKEN = os.environ.get("FINMIND_TOKEN", "")
 HERE = os.path.dirname(__file__)
 
-# FinMind 額度防護：連續這麼多次 API 回報「額度用盡」就中止整個 run，避免 token 失效時
-# 空轉跑完上千檔、燒光配額還產出殘缺資料。build_universe.py 共用 api_get 故一併受保護。
-MAX_QUOTA_FAILS = 8
-_quota_fails = 0
-
-# 電子相關產業（上市 + 上櫃命名都涵蓋）
-ELECTRONICS = {
-    "電子工業", "半導體業", "電子零組件業", "光電業", "電腦及週邊設備業",
-    "通信網路業", "其他電子業", "資訊服務業", "電子通路業",
-    "數位雲端", "數位雲端類", "其他電子類",
-}
-
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "data")
-
-
-def api_get(dataset, params=None, retries=3):
-    global _quota_fails
-    q = {"dataset": dataset}
-    if params:
-        q.update(params)
-    if TOKEN:
-        q["token"] = TOKEN
-    url = f"{API}?{urlencode(q)}"
-    hit_limit = False
-    for attempt in range(retries):
-        try:
-            req = Request(url, headers={"User-Agent": "tw-screener/1.0"})
-            with urlopen(req, timeout=30) as r:
-                j = json.loads(r.read().decode())
-            if j.get("status") == 200 or j.get("msg") == "success":
-                _quota_fails = 0  # 成功一次就把連續計數歸零
-                return j.get("data", [])
-            # 額度用盡 → 等一下重試
-            if "level" in str(j.get("msg", "")).lower() or "limit" in str(j.get("msg", "")).lower():
-                print(f"  ⚠️ 額度限制：{j.get('msg')}")
-                hit_limit = True
-                time.sleep(8)
-                continue
-            return []
-        except Exception as e:
-            print(f"  ⚠️ 第 {attempt+1} 次失敗：{e}")
-            time.sleep(3)
-    # 重試用盡：若是「額度用盡」造成的，累計連續次數，超過上限就中止整個 run
-    if hit_limit:
-        _quota_fails += 1
-        if _quota_fails >= MAX_QUOTA_FAILS:
-            sys.exit(
-                f"\n⛔ FinMind 連續 {_quota_fails} 次額度用盡（或 token 失效），中止本次執行以免"
-                f"空轉跑完上千檔、燒光配額還產出殘缺資料。\n"
-                f"   解法：改用 FinMind backer 等級 token，或等額度恢復後再跑。"
-            )
-    return []
-
-
-def get_universe():
-    """取得電子股清單（排除 ETF、權證、存託憑證；只留 4 碼純數字代號）。"""
-    rows = api_get("TaiwanStockInfo")
-    seen = {}
-    for x in rows:
-        sid = x["stock_id"]
-        if x.get("industry_category") not in ELECTRONICS:
-            continue
-        if not (len(sid) == 4 and sid.isdigit()):
-            continue
-        seen[sid] = {"id": sid, "name": x["stock_name"],
-                     "industry": x["industry_category"],
-                     "market": x.get("type", "twse")}
-    return list(seen.values())
 
 
 def sma(vals, n):
@@ -114,8 +41,33 @@ def sma_series(closes, n):
     return out
 
 
-def compute_indicators(price_rows, chip_rows):
-    """從原始資料算出該股的指標字典；資料不足回 None。"""
+def back_adjust_rows(price_rows, events):
+    """依除權息事件把「事件日之前」的 OHLC 依比例縮放，讓歷史價格跟目前價格同一把尺（還原權息）。
+    events: [{"date": iso, "ratio": 除權息參考價/除權息前收盤價}, ...]（不拘順序，可多筆）。
+    只影響 open/max/min/close；成交量/金額不動、事件日當天(含)之後不受影響。
+    events 為空時直接回傳原始 price_rows（不複製）。"""
+    if not events:
+        return price_rows
+    evs = sorted(events, key=lambda e: e["date"])
+    out = []
+    for r in price_rows:
+        factor = 1.0
+        for e in evs:
+            if e["date"] > r["date"]:
+                factor *= e["ratio"]
+        if factor == 1.0:
+            out.append(r)
+        else:
+            out.append({**r, "open": r["open"] * factor, "max": r["max"] * factor,
+                        "min": r["min"] * factor, "close": r["close"] * factor})
+    return out
+
+
+def compute_indicators(price_rows, chip_rows, events=None):
+    """從原始資料算出該股的指標字典；資料不足回 None。
+    events：該股除權息事件（見 back_adjust_rows）。均線/糾結/黃金交叉/多頭排列/布林小詩/爆量突破
+    的「價格部分」一律用還原權息後的序列計算，避免除權息日被誤判成跌破/翻空；但現價/漲跌/走勢圖
+    （raw_closes 系列）仍用原始成交價，維持顯示給使用者的真實股價。"""
     price_rows = sorted(price_rows, key=lambda r: r["date"])
     closes = [r["close"] for r in price_rows if r.get("close")]
     if len(closes) < 65:
@@ -134,6 +86,12 @@ def compute_indicators(price_rows, chip_rows):
     # 20 日均成交額（億元）
     moneys = [r.get("Trading_money", 0) or 0 for r in price_rows[-20:]]
     avg_money_e = round(sum(moneys) / len(moneys) / 1e8, 2) if moneys else 0
+
+    # ── 除權息還原：以下所有技術指標一律改用還原後價格（closes 被重新指向還原序列）。
+    # raw_closes 保留原始收盤序列，只給走勢圖（spark）用，現價/漲跌已在上面算完不受影響。
+    raw_closes = closes
+    adj_rows = back_adjust_rows(price_rows, events)
+    closes = [r["close"] for r in adj_rows if r.get("close")]
 
     ma5s = sma_series(closes, 5)
     ma10s = sma_series(closes, 10)
@@ -222,7 +180,7 @@ def compute_indicators(price_rows, chip_rows):
     # ── 小詩技術形態（布林軌道系列 + K 線形態）─────────────────────
     # 依「可轉債小詩」技術分析講義實作，全部只用價量、且需發生在最近 3 個交易日內才算。
     # 布林軌道：中軌 = 20MA，上/下軌 = 中軌 ± 2 標準差（講義的標準架構）。
-    bars = [r for r in price_rows if r.get("close")]
+    bars = [r for r in adj_rows if r.get("close")]  # 還原權息後的 OHLC（成交量仍是原始值）
     opens = [r.get("open") for r in bars]
     highs = [r.get("max") for r in bars]
     lows = [r.get("min") for r in bars]
@@ -375,8 +333,8 @@ def compute_indicators(price_rows, chip_rows):
         "trust_net": trust_net,
         "foreign_streak": foreign_streak,
         "trust_streak": trust_streak,
-        # 給前端畫迷你走勢圖用（最後 60 個收盤）
-        "spark": [round(c, 2) for c in closes[-60:]],
+        # 給前端畫迷你走勢圖用（最後 60 個收盤，用原始成交價，不還原權息）
+        "spark": [round(c, 2) for c in raw_closes[-60:]],
         # 給彈窗畫 K 線用（最後 80 根：日期, 開, 高, 低, 收, 量張）
         "ohlc": [
             {
@@ -480,6 +438,21 @@ def load_universe_file():
         return json.load(f)["stocks"]
 
 
+FETCH_STATE_PATH = os.path.join(HERE, "fetch_state.json")
+
+
+def load_fetch_state():
+    """讀 daily_update.py 寫的「最新交易日抓取成功與否」旗標，讓前端過期警告更有依據。
+    檔案不存在（例如剛 bootstrap、還沒跑過 daily_update）就回 {}，前端視為未知、不擋。"""
+    if os.path.exists(FETCH_STATE_PATH):
+        try:
+            with open(FETCH_STATE_PATH, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sample", help="只跑指定股票代號（逗號分隔）")
@@ -505,7 +478,8 @@ def main():
 
     price_hist = hs.load(os.path.join(HERE, "history", "price.json"))
     chip_hist = hs.load(os.path.join(HERE, "history", "chip.json"))
-    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔")
+    div_hist = hs.load(os.path.join(HERE, "history", "dividends.json"))
+    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔、dividends {len(div_hist)} 檔")
 
     # 估值（本益比/本淨比/殖利率）：全市場一次抓，免費 OpenAPI
     print("💰 取得全市場估值（TWSE/TPEX OpenAPI）…")
@@ -522,7 +496,8 @@ def main():
         if len(pr) < 65:                          # 歷史不足算不了 MA60 → 略過
             continue
         cr = hs.to_chip_rows(chip_hist.get(sid, {}))
-        ind = compute_indicators(pr, cr)
+        ev = hs.to_div_events(div_hist.get(sid))
+        ind = compute_indicators(pr, cr, ev)
         if ind is None or ind["avg_vol_lots"] < args.min_vol:
             continue
         ohlc = ind.pop("ohlc")                    # K 線拆到 charts/<id>.json（前端按需載入）
@@ -543,9 +518,12 @@ def main():
 
     os.makedirs(OUT_DIR, exist_ok=True)
     holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2
+    fetch_state = load_fetch_state()
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "data_date": max(data_dates) if data_dates else None,   # 資料交易日（notify 只推新交易日用）
+        # 最新交易日抓取是否成功（daily_update.py 寫入；None=未知/尚未跑過）→ 前端過期警告用
+        "fetch_ok": fetch_state.get("ok"),
         "count": len(results),
         "universe_count": len(universe),    # 全市場掃描檔數（資訊用）
         "holder_ready": holder_ready,

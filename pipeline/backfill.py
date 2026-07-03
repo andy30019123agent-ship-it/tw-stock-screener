@@ -19,6 +19,7 @@ import market_sources as ms
 HERE = os.path.dirname(__file__)
 PRICE_PATH = os.path.join(HERE, "history", "price.json")
 CHIP_PATH = os.path.join(HERE, "history", "chip.json")
+DIV_PATH = os.path.join(HERE, "history", "dividends.json")
 
 
 def recent_months(n):
@@ -78,6 +79,16 @@ def backfill_chip(days, sleep, chip):
     hs.save(CHIP_PATH, chip)
 
 
+def backfill_dividends(start_iso, end_iso, div_hist):
+    """回填除權息事件：TWSE/TPEX 都吃日期區間，一次全市場一次全區間就夠，不用逐日抓。"""
+    print("💸 回填除權息事件（TWSE TWT49U + TPEX exDailyQ，一次全市場全區間）…")
+    events = ms.fetch_ex_dividend_events(start_iso, end_iso)
+    hs.append_dividends(div_hist, events)
+    hs.save(DIV_PATH, div_hist)
+    n = sum(len(v) for v in events.values())
+    print(f"   除權息事件 {n} 筆、{len(events)} 檔")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--months", type=int, default=6)
@@ -92,13 +103,16 @@ def main():
 
     price = hs.load(PRICE_PATH)
     chip = hs.load(CHIP_PATH)
+    div_hist = hs.load(DIV_PATH)
 
     print("📈 回填全市場 OHLCV（逐日：上市 MI_INDEX + 上櫃 dailyQuotes）…")
-    backfill_price_by_day(days[-hs.PRICE_WINDOW:], args.sleep, price)
+    price_days = days[-hs.PRICE_WINDOW:]
+    backfill_price_by_day(price_days, args.sleep, price)
     print("💰 回填三大法人（逐日：T86 + insti）…")
     backfill_chip(days[-args.chip_days:], args.sleep, chip)
+    backfill_dividends(price_days[0], price_days[-1], div_hist)
 
-    print(f"\n✅ 回填完成：price {len(price)} 檔、chip {len(chip)} 檔")
+    print(f"\n✅ 回填完成：price {len(price)} 檔、chip {len(chip)} 檔、dividends {len(div_hist)} 檔")
 
 
 if __name__ == "__main__":

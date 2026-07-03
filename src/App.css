@@ -68,6 +68,9 @@ body {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--down); box-shadow: 0 0 0 3px rgba(15,157,107,0.18);
 }
+.updated-dot-stale {
+  background: var(--gold); box-shadow: 0 0 0 3px rgba(217,148,17,0.22);
+}
 
 .loading, .empty {
   padding: 48px 24px; text-align: center; color: var(--text-muted); font-size: 14px;

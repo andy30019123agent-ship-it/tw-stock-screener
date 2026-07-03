@@ -11,6 +11,7 @@
 import csv
 import io
 import json
+import re
 import subprocess
 import time
 import urllib.request
@@ -80,6 +81,15 @@ def roc_to_iso(s):
     else:
         return None
     return f"{int(y) + 1911:04d}-{int(m):02d}-{int(d):02d}"
+
+
+def roc_label_to_iso(s):
+    """民國「115年07月03日」格式（TWT49U 除權除息表用）→ 西元 ISO。"""
+    m = re.match(r"(\d+)年(\d+)月(\d+)日", str(s).strip())
+    if not m:
+        return None
+    y, mo, d = m.groups()
+    return f"{int(y) + 1911:04d}-{int(mo):02d}-{int(d):02d}"
 
 
 def is_common_stock(sid):
@@ -213,6 +223,55 @@ def fetch_valuation():
                         "yield_pct": _f(r.get("YieldRatio"))}
     except Exception as e:
         print(f"  ⚠️ 上櫃估值抓取失敗：{e}")
+    return out
+
+
+# ── 除權息事件（技術指標還原權息用）──────────────────────────────────
+def fetch_ex_dividend_events(start_iso, end_iso):
+    """區間內全市場（上市+上櫃）除權息事件：{sid: [{"date": iso, "ratio": float}, ...]}。
+    ratio = 除權息參考價 / 除權息前收盤價（<1 代表除息/除權讓價格機械性下修，用來把
+    事件日「之前」的歷史價格 back-adjust 回同一把尺，避免均線/黃金交叉誤判）。
+    上市 TWSE TWT49U、上櫃 TPEX exDailyQ_result.php 皆吃日期區間、一次全市場一次全區間，
+    不像逐日 OHLCV 那樣要一天一天抓。"""
+    out = {}
+
+    def add(sid, date_iso, pre, ref):
+        pre_f, ref_f = _f(pre), _f(ref)
+        if not pre_f or pre_f <= 0 or ref_f is None:
+            return
+        out.setdefault(sid, []).append({"date": date_iso, "ratio": ref_f / pre_f})
+
+    # 上市：TWT49U，欄位 資料日期(民國"115年07月03日")/股票代號/股票名稱/除權息前收盤價/除權息參考價/…
+    try:
+        sd, ed = start_iso.replace("-", ""), end_iso.replace("-", "")
+        d = get_json(f"https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate={sd}&endDate={ed}&response=json")
+        for r in d.get("data", []) or []:
+            sid = str(r[1]).strip()
+            if not is_common_stock(sid):
+                continue
+            date_iso = roc_label_to_iso(r[0])
+            if date_iso:
+                add(sid, date_iso, r[3], r[4])
+    except Exception as e:
+        print(f"  ⚠️ 上市除權息抓取失敗：{e}")
+
+    # 上櫃：exDailyQ_result.php，欄位 除權息日期(民國"115/07/03")/代號/名稱/除權息前收盤價/除權息參考價/…
+    try:
+        sy, sm, sday = start_iso.split("-")
+        ey, em, eday = end_iso.split("-")
+        url = ("https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php"
+               f"?l=zh-tw&d={sy}/{sm}/{sday}&ed={ey}/{em}/{eday}")
+        d = get_json(url)
+        for t in d.get("tables", []) or []:
+            for r in t.get("data", []) or []:
+                sid = str(r[1]).strip()
+                if not is_common_stock(sid):
+                    continue
+                date_iso = roc_to_iso(r[0])
+                if date_iso:
+                    add(sid, date_iso, r[3], r[4])
+    except Exception as e:
+        print(f"  ⚠️ 上櫃除權息抓取失敗：{e}")
     return out
 
 

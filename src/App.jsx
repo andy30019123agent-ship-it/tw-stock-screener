@@ -24,6 +24,13 @@ export default function App() {
     return [...list].sort(SORTS[sortKey] || SORTS.signal)
   }, [data, conditions, sortKey])
 
+  // 資料日期誠實化：主顯示「資料日期（交易日）」而非 build 時間，落後太多天要醒目警告。
+  const daysStale = useMemo(() => {
+    if (!data?.data_date) return null
+    return Math.floor((Date.now() - new Date(data.data_date).getTime()) / 86400000)
+  }, [data])
+  const stale = data && (daysStale === null || daysStale > 5 || data.fetch_ok === false)
+
   // 全市場可選產業清單（依檔數多寡排序）
   const industries = useMemo(() => {
     if (!data) return []
@@ -40,14 +47,23 @@ export default function App() {
           <p className="subtitle">糾結轉強 × 法人連買 · 上市＋上櫃</p>
         </div>
         {data && (
-          <span className="updated">
-            <span className="updated-dot" />
-            資料更新 {data.updated}
+          <span className="updated" title={`管線建置時間 ${data.updated}`}>
+            <span className={`updated-dot${stale ? ' updated-dot-stale' : ''}`} />
+            資料日期（交易日）{data.data_date || '—'}
           </span>
         )}
       </header>
 
       {error && <div className="banner banner-error" role="alert">{error}</div>}
+
+      {data && stale && (
+        <div className="banner banner-warn" role="alert">
+          ⚠️ 資料可能未更新，最後交易日 <b>{data.data_date || '未知'}</b>
+          {data.fetch_ok === false
+            ? '（上次自動抓取最新交易日失敗，目前顯示的是沿用的舊資料）'
+            : daysStale !== null && `（已經 ${daysStale} 天沒有新交易資料，請留意）`}
+        </div>
+      )}
 
       {!data && !error && <div className="loading">載入資料中…</div>}
 

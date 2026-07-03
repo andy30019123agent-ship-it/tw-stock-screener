@@ -12,6 +12,7 @@ import os
 
 PRICE_WINDOW = 110   # 算 MA60 + 突破回看需 ~65+，留 110 個交易日緩衝
 CHIP_WINDOW = 20     # 連續買超天數判斷，留 20 個交易日
+DIV_WINDOW = 130     # 除權息事件視窗（曆日），稍寬於 PRICE_WINDOW 防止邊界漏接
 
 
 def load(path):
@@ -48,6 +49,22 @@ def append_chip(hist, date_iso, chip_map, window=CHIP_WINDOW):
         d = hist.setdefault(sid, {})
         d[date_iso] = [c.get("Foreign_Investor", 0), c.get("Investment_Trust", 0)]
         _prune(d, window)
+
+
+def append_dividends(hist, events_by_sid, window=DIV_WINDOW):
+    """把一批除權息事件（{sid: [{date, ratio}, ...]}）併入歷史（同股同日覆蓋、超窗修剪）。"""
+    for sid, evs in events_by_sid.items():
+        d = hist.setdefault(sid, {})
+        for e in evs:
+            d[e["date"]] = e["ratio"]
+        _prune(d, window)
+
+
+def to_div_events(stock_hist):
+    """還原成 compute_indicators 吃的除權息事件 list（依日期排序）。"""
+    if not stock_hist:
+        return []
+    return [{"date": d, "ratio": stock_hist[d]} for d in sorted(stock_hist)]
 
 
 def to_price_rows(stock_hist):
