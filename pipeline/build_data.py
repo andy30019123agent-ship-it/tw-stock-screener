@@ -583,12 +583,21 @@ def main():
 
     annotate_valuation(results)   # 同業比：標記 industry_pe_median / undervalued
 
+    dd = max(data_dates) if data_dates else None   # 這份資料的交易日
+
+    # ── 機會股 Top 5 引擎（回測權重 → 選股 → picks 留檔 → 成績單 → opportunities.json 契約）──
+    import opportunities as opp  # 延遲載入避免循環匯入
+    try:
+        opp.run(results, price_hist, chip_hist, div_hist, universe, dd)
+    except Exception as e:
+        print(f"  ⚠️ 機會股引擎失敗（不影響 screener.json 產出）：{e}")
+
     os.makedirs(OUT_DIR, exist_ok=True)
     holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2
     fetch_state = load_fetch_state()
     out = {
         "updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "data_date": max(data_dates) if data_dates else None,   # 資料交易日（notify 只推新交易日用）
+        "data_date": dd,   # 資料交易日（notify 只推新交易日用）
         # 最新交易日抓取是否成功（daily_update.py 寫入；None=未知/尚未跑過）→ 前端過期警告用
         "fetch_ok": fetch_state.get("ok"),
         "count": len(results),

@@ -63,7 +63,9 @@ jobs:
           git add pipeline/history/price.json pipeline/history/chip.json pipeline/history/dividends.json \
                   pipeline/history/index.json \
                   pipeline/holders_history.json pipeline/notify_state.json pipeline/universe.json \
-                  pipeline/fetch_state.json
+                  pipeline/fetch_state.json \
+                  pipeline/signal_weights.json pipeline/picks_history.json \
+                  pipeline/scoreboard.json pipeline/revenue_cache.json
           if git diff --cached --quiet; then
             echo "無變動，略過"
           else

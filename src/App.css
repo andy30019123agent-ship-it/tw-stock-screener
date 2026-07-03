@@ -479,10 +479,109 @@ body {
 /* ── Footer ─────────────────────────────── */
 .app-footer { margin-top: 22px; text-align: center; font-size: 12px; color: var(--text-muted); animation: fadeInUp 0.6s ease both; }
 
+/* ── 機會股 Top 5 ───────────────────────── */
+.opp {
+  margin-top: 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
+  animation: fadeInUp 0.5s cubic-bezier(0.2,0.7,0.3,1) both;
+}
+.opp-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.opp-head h2 { font-size: 18px; font-weight: 800; color: #2b3a55; }
+.opp-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; font-weight: 500; }
+.opp-date {
+  font-size: 12px; color: var(--text-muted); font-weight: 700;
+  background: var(--glass-strong); border: 1px solid var(--glass-border);
+  border-radius: 999px; padding: 5px 12px; white-space: nowrap; box-shadow: var(--shadow-sm);
+}
+
+.opp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.opp-card {
+  background: var(--glass-strong); border: 1px solid var(--glass-border);
+  border-radius: 14px; padding: 14px; box-shadow: var(--shadow-sm);
+  display: flex; flex-direction: column; gap: 10px;
+  animation: fadeInUp 0.45s cubic-bezier(0.2,0.7,0.3,1) both;
+  animation-delay: calc(var(--i, 0) * 0.06s);
+}
+.opp-card-top { display: flex; align-items: center; gap: 9px; }
+.opp-rank { font-size: 18px; font-weight: 800; color: var(--accent); }
+.opp-name { display: flex; flex-direction: column; line-height: 1.25; flex: 1; min-width: 0; }
+.opp-sid { font-weight: 800; font-size: 16px; }
+.opp-sname { font-size: 12px; color: var(--text-muted); }
+.opp-score {
+  font-size: 20px; font-weight: 800; color: var(--gold);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.opp-score small { font-size: 11px; font-weight: 600; margin-left: 1px; }
+
+.opp-reasons { display: flex; flex-wrap: wrap; gap: 5px; }
+.opp-reason {
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: rgba(79,124,255,0.12); color: #3a63e0; white-space: nowrap;
+}
+
+.opp-refs {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  padding-top: 2px; border-top: 1px solid var(--hairline);
+}
+.opp-refs b { color: var(--text); font-weight: 700; }
+.opp-refs b.good { color: var(--down); }
+.opp-rs { font-weight: 700; }
+.opp-rs.pos { color: var(--down); }
+.opp-rs.neg { color: var(--up); }
+
+.opp-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.opp-earn { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: rgba(100,116,139,0.14); color: #475569; }
+.opp-risk { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: rgba(217,148,17,0.15); color: #a9740a; }
+.opp-muted { font-size: 11px; color: var(--text-soft); }
+
+/* 成績單 */
+.opp-board {
+  margin-top: 14px; padding: 12px 14px; border-radius: 12px;
+  background: var(--glass-2); border: 1px solid var(--hairline);
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.opp-board-title { font-size: 13px; font-weight: 800; color: #2b3a55; }
+.opp-board-stats { display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+  font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.opp-board-stats b { color: var(--text); font-weight: 800; font-size: 15px; margin-left: 3px; }
+.opp-board-stats b.good { color: var(--down); }
+.opp-board-stats b.bad { color: var(--up); }
+
+/* 訊號回測勝率表 */
+.opp-weights { margin-top: 12px; }
+.opp-weights-toggle {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 13px; font-weight: 700; padding: 4px 0;
+}
+.opp-weights-toggle:hover { color: var(--accent); }
+.opp-weights-body { margin-top: 8px; }
+.opp-weights-scroll { overflow-x: auto; }
+.opp-weights-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.opp-weights-table th, .opp-weights-table td {
+  text-align: right; padding: 8px 12px; border-bottom: 1px solid var(--hairline); white-space: nowrap;
+}
+.opp-weights-table th:first-child, .opp-weights-table td:first-child { text-align: left; }
+.opp-weights-table th { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.opp-weights-table td { font-size: 13px; }
+.opp-weights-table td.good { color: var(--down); }
+.opp-weights-note { margin-top: 8px; line-height: 1.5; }
+
 /* ── RWD ────────────────────────────────── */
 @media (max-width: 720px) {
   body { font-size: 15px; }
   .app { padding: 0 12px 40px; }
+  .opp-cards { grid-template-columns: 1fr; }
 
   .app-header { padding: 18px 2px 12px; }
   .brand h1 { font-size: 21px; }

@@ -12,6 +12,10 @@ dist
 # 建置產物（build_data 產生、部署走 dist，不進 main 避免 1000+ 檔雜訊）
 public/data/screener.json
 public/data/charts/
+# 機會股引擎的「服務用」副本（跟 screener.json 同模式走 dist；持久化副本在 pipeline/）
+public/data/opportunities.json
+public/data/signal_weights.json
+public/data/scoreboard.json
 # 註：pipeline/history/price.json、chip.json 是持久化資料，要 commit（不在此忽略）
 
 # 工具與測試快取（不應進版控、會造成 commit 雜訊）

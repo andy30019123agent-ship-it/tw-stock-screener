@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import ConditionPanel from './components/ConditionPanel'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
+import Opportunities from './components/Opportunities'
 import { DEFAULT_CONDITIONS, applyFilters, SORTS } from './lib/filters'
 
 export default function App() {
@@ -66,6 +67,8 @@ export default function App() {
       )}
 
       {!data && !error && <div className="loading">載入資料中…</div>}
+
+      <Opportunities />
 
       {data && (
         <>
