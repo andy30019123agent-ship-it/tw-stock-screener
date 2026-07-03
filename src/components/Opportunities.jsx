@@ -2,11 +2,24 @@ import { useState, useEffect } from 'react'
 
 // 機會股 Top 5 區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights.json。
 // 三者都採「抓不到就靜默省略該部分」，不讓機會股區塊拖垮既有選股頁。
-export default function Opportunities() {
+export default function Opportunities({ stocks, onPick }) {
   const [opp, setOpp] = useState(null)
   const [board, setBoard] = useState(null)
   const [weights, setWeights] = useState(null)
   const [showWeights, setShowWeights] = useState(false)
+
+  // 點卡片開 K 線彈窗：優先用 screener.json 的完整資料（欄位齊全），
+  // 抓不到（如尚未載入）才用 pick 本身的欄位墊底，讓彈窗至少開得起來。
+  const handlePick = p => {
+    const full = stocks?.find(s => s.id === p.id)
+    onPick?.(full || {
+      ...p,
+      ma20: p.support_ma20 ?? null,
+      change: 0, change_pct: 0,
+      foreign_streak: 0, trust_streak: 0,
+      avg_vol_lots: null,
+    })
+  }
 
   useEffect(() => {
     const base = import.meta.env.BASE_URL
@@ -36,7 +49,7 @@ export default function Opportunities() {
         {opp.picks.map((p, i) => {
           const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
           return (
-            <div className="opp-card" key={p.id} style={{ '--i': Math.min(i, 5) }}>
+            <div className="opp-card" key={p.id} style={{ '--i': Math.min(i, 5) }} onClick={() => handlePick(p)}>
               <div className="opp-card-top">
                 <span className="opp-rank">{rankMark[i]}</span>
                 <div className="opp-name">

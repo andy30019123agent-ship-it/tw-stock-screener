@@ -68,7 +68,7 @@ export default function App() {
 
       {!data && !error && <div className="loading">載入資料中…</div>}
 
-      <Opportunities />
+      <Opportunities stocks={data?.stocks} onPick={setPicked} />
 
       {data && (
         <>
