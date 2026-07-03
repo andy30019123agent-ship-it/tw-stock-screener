@@ -20,6 +20,7 @@ HERE = os.path.dirname(__file__)
 PRICE_PATH = os.path.join(HERE, "history", "price.json")
 CHIP_PATH = os.path.join(HERE, "history", "chip.json")
 DIV_PATH = os.path.join(HERE, "history", "dividends.json")
+INDEX_PATH = os.path.join(HERE, "history", "index.json")
 
 
 def recent_months(n):
@@ -79,6 +80,17 @@ def backfill_chip(days, sleep, chip):
     hs.save(CHIP_PATH, chip)
 
 
+def backfill_index(days, sleep, index_hist):
+    """逐交易日回填加權指數收盤（RS20 相對強弱基準）。跟價格同一份交易日清單，一天一請求。"""
+    for i, day in enumerate(days, 1):
+        try:
+            hs.append_index(index_hist, day, ms.fetch_taiex_close(day))
+        except Exception as e:
+            print(f"  ⚠️ 加權指數 {day} 失敗：{e}")
+        time.sleep(sleep)
+    hs.save(INDEX_PATH, index_hist)
+
+
 def backfill_dividends(start_iso, end_iso, div_hist):
     """回填除權息事件：TWSE/TPEX 都吃日期區間，一次全市場一次全區間就夠，不用逐日抓。"""
     print("💸 回填除權息事件（TWSE TWT49U + TPEX exDailyQ，一次全市場全區間）…")
@@ -104,15 +116,18 @@ def main():
     price = hs.load(PRICE_PATH)
     chip = hs.load(CHIP_PATH)
     div_hist = hs.load(DIV_PATH)
+    index_hist = hs.load(INDEX_PATH)
 
     print("📈 回填全市場 OHLCV（逐日：上市 MI_INDEX + 上櫃 dailyQuotes）…")
     price_days = days[-hs.PRICE_WINDOW:]
     backfill_price_by_day(price_days, args.sleep, price)
     print("💰 回填三大法人（逐日：T86 + insti）…")
     backfill_chip(days[-args.chip_days:], args.sleep, chip)
+    print("📊 回填加權指數（相對強弱 RS 基準）…")
+    backfill_index(price_days, args.sleep, index_hist)
     backfill_dividends(price_days[0], price_days[-1], div_hist)
 
-    print(f"\n✅ 回填完成：price {len(price)} 檔、chip {len(chip)} 檔、dividends {len(div_hist)} 檔")
+    print(f"\n✅ 回填完成：price {len(price)} 檔、chip {len(chip)} 檔、dividends {len(div_hist)} 檔、index {len(index_hist)} 天")
 
 
 if __name__ == "__main__":

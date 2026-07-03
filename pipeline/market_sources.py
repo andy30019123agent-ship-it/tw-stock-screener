@@ -146,6 +146,18 @@ def fetch_listed_ohlc(date_iso):
     return out
 
 
+def fetch_taiex_close(date_iso):
+    """指定日加權指數（TAIEX）收盤（MI_INDEX type=IND，吃過去 date，跟 fetch_listed_ohlc 同端點家族）。
+    給相對強弱 RS 計算用的大盤基準。非交易日（假日/週末）資料表是空的，回 None。"""
+    ymd = date_iso.replace("-", "")
+    d = get_json(f"{TWSE_AT}/MI_INDEX?date={ymd}&type=IND&response=json")
+    for t in d.get("tables", []) or []:
+        for r in t.get("data", []) or []:
+            if r and r[0] == "發行量加權股價指數":
+                return _f(r[1])
+    return None
+
+
 def fetch_listed_ohlc_month(sid, yyyymm):
     """單一上市股某月各日 OHLCV（STOCK_DAY，吃 date；回填上市歷史用）。回 list[row]。"""
     url = f"{TWSE_AT}/STOCK_DAY?stockNo={sid}&date={yyyymm}01&response=json"

@@ -77,20 +77,22 @@ def reasons(s):
         r.append("千張↑")
     if s.get("undervalued"):
         r.append("同業低估")
+    ed = s.get("earnings_date")
+    if ed:
+        r.append(f"📅{'/'.join(ed.split('-')[1:])}法說會")
     return r
 
 
 def price_note(s):
-    """支撐/壓力 + 前高，緊湊一行。"""
+    """支撐/壓力 + 前高，緊湊一行。ma20/recent_high20 由 build_data.py 算好、跟網頁共用同一份
+    （原本這裡自己掃 ohlc，但全市場版 ohlc 已拆到 charts/<id>.json、screener.json 裡沒有，會掃空）。"""
     close, ma20 = s["close"], s.get("ma20")
     parts = []
     if ma20:
         parts.append(f"ma20 {ma20:.1f}{'撐' if close >= ma20 else '壓'}")
-    oh = s.get("ohlc", [])[-20:]
-    if oh:
-        hi = max(b["h"] for b in oh)
-        if hi > close:
-            parts.append(f"高 {hi:g}")
+    hi = s.get("recent_high20")
+    if hi and hi > close:
+        parts.append(f"高 {hi:g}")
     return "　".join(parts)
 
 

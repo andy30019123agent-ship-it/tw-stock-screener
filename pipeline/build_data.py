@@ -63,11 +63,13 @@ def back_adjust_rows(price_rows, events):
     return out
 
 
-def compute_indicators(price_rows, chip_rows, events=None):
+def compute_indicators(price_rows, chip_rows, events=None, index_ret20=None):
     """從原始資料算出該股的指標字典；資料不足回 None。
     events：該股除權息事件（見 back_adjust_rows）。均線/糾結/黃金交叉/多頭排列/布林小詩/爆量突破
     的「價格部分」一律用還原權息後的序列計算，避免除權息日被誤判成跌破/翻空；但現價/漲跌/走勢圖
-    （raw_closes 系列）仍用原始成交價，維持顯示給使用者的真實股價。"""
+    （raw_closes 系列）仍用原始成交價，維持顯示給使用者的真實股價。
+    index_ret20：加權指數近 20 交易日報酬（%，見 index_return_20），給相對強弱 rs20 用；
+    沒有大盤資料（歷史不足/抓取失敗）時傳 None，rs20 也會是 None。"""
     price_rows = sorted(price_rows, key=lambda r: r["date"])
     closes = [r["close"] for r in price_rows if r.get("close")]
     if len(closes) < 65:
@@ -92,6 +94,18 @@ def compute_indicators(price_rows, chip_rows, events=None):
     raw_closes = closes
     adj_rows = back_adjust_rows(price_rows, events)
     closes = [r["close"] for r in adj_rows if r.get("close")]
+
+    # ── 相對強弱 RS：個股近 20 交易日報酬（還原價）－ 加權指數近 20 交易日報酬 ──
+    # 用還原後 closes，避免除權息缺口把個股報酬算歪；資料不足或大盤資料缺（index_ret20=None）都回 None。
+    if len(closes) >= 21 and index_ret20 is not None:
+        stock_ret20 = (closes[-1] / closes[-21] - 1) * 100
+        rs20 = round(stock_ret20 - index_ret20, 2)
+    else:
+        rs20 = None
+
+    # ── 出場參考：近 20 日高點（用原始成交價，跟現價/走勢圖同一把尺；MA20 支撐/壓力沿用下面算好的 ma20）──
+    recent_highs = [r["max"] for r in price_rows[-20:] if r.get("max") is not None]
+    recent_high20 = round(max(recent_highs), 2) if recent_highs else None
 
     ma5s = sma_series(closes, 5)
     ma10s = sma_series(closes, 10)
@@ -312,6 +326,8 @@ def compute_indicators(price_rows, chip_rows, events=None):
         "avg_money_e": avg_money_e,
         "ma5": round(ma5, 2), "ma10": round(ma10, 2),
         "ma20": round(ma20, 2), "ma60": round(ma60, 2),
+        "rs20": rs20,                        # 相對強弱：個股近20日報酬 － 加權指數近20日報酬（百分點）
+        "recent_high20": recent_high20,      # 出場參考：近 20 日高點（原始成交價）
         "dispersion_pct": round(disp_now * 100, 2) if disp_now is not None else None,
         "bull_aligned": bull_aligned,
         "ma_rising": ma_rising,
@@ -347,6 +363,46 @@ def compute_indicators(price_rows, chip_rows, events=None):
             if r.get("open") and r.get("close")
         ],
     }
+
+
+def index_return_20(index_hist):
+    """加權指數近 20 交易日報酬（%）；history/index.json 累積不足 21 天回 None（給 rs20 用）。"""
+    series = hs.to_index_series(index_hist)   # [(日期, 收盤), ...] 已排序
+    if len(series) < 21:
+        return None
+    closes = [v for _, v in series]
+    return (closes[-1] / closes[-21] - 1) * 100
+
+
+# ── 法說會標記（跨專案：讀 tw-earnings-calendar 的公開 GitHub Pages JSON）───
+# 兩個 repo 的 GitHub Actions 互不相通，只能走公開 URL；失敗安全＝任何錯誤都靜默回 {}，
+# 絕不能讓法說會標記的問題拖垮選股 pipeline。
+EARNINGS_CALENDAR_URL = "https://andy30019123agent-ship-it.github.io/tw-earnings-calendar/data/latest.json"
+
+
+def fetch_earnings_badges(days_ahead=7, today=None):
+    """抓法說會行事曆的公開 JSON，取「今天起 days_ahead 天內」各股最近一場法說會日期。
+    回 {sid: date_iso}；任何失敗（連線/格式跑掉）都印一行警告後回傳空 dict，build 照常繼續。"""
+    today = today or dt.date.today()
+    until = today + dt.timedelta(days=days_ahead)
+    try:
+        d = ms.get_json(EARNINGS_CALENDAR_URL)
+        out = {}
+        for e in d.get("events", []) or []:
+            sid = str(e.get("id", "")).strip()
+            date_s = e.get("date")
+            if not sid or not date_s:
+                continue
+            try:
+                ed = dt.date.fromisoformat(date_s)
+            except ValueError:
+                continue
+            if today <= ed <= until and (sid not in out or ed < out[sid]):
+                out[sid] = ed
+        return {sid: v.isoformat() for sid, v in out.items()}
+    except Exception as e:
+        print(f"  ⚠️ 法說會行事曆抓取失敗（不影響選股，本次不標記）：{e}")
+        return {}
 
 
 # ── 集保千張大戶（TDCC 股權分散表，免費 OpenData）────────────────
@@ -479,12 +535,22 @@ def main():
     price_hist = hs.load(os.path.join(HERE, "history", "price.json"))
     chip_hist = hs.load(os.path.join(HERE, "history", "chip.json"))
     div_hist = hs.load(os.path.join(HERE, "history", "dividends.json"))
-    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔、dividends {len(div_hist)} 檔")
+    index_hist = hs.load(os.path.join(HERE, "history", "index.json"))
+    print(f"   歷史：price {len(price_hist)} 檔、chip {len(chip_hist)} 檔、dividends {len(div_hist)} 檔、index {len(index_hist)} 天")
+
+    # 加權指數近 20 日報酬（相對強弱 RS 的大盤基準）
+    idx_ret20 = index_return_20(index_hist)
+    print(f"   加權指數近 20 日報酬：{f'{idx_ret20:.2f}%' if idx_ret20 is not None else '資料不足（暫無 rs20）'}")
 
     # 估值（本益比/本淨比/殖利率）：全市場一次抓，免費 OpenAPI
     print("💰 取得全市場估值（TWSE/TPEX OpenAPI）…")
     valuation = ms.fetch_valuation()
-    print(f"   估值 {len(valuation)} 檔\n")
+    print(f"   估值 {len(valuation)} 檔")
+
+    # 法說會標記（跨專案讀 tw-earnings-calendar 公開頁面，失敗安全＝抓不到就沒有標記）
+    print("📅 取得未來 7 天法說會（tw-earnings-calendar 公開頁面）…")
+    earnings = fetch_earnings_badges()
+    print(f"   本週法說會 {len(earnings)} 檔\n")
 
     charts_dir = os.path.join(OUT_DIR, "charts")
     os.makedirs(charts_dir, exist_ok=True)
@@ -497,7 +563,7 @@ def main():
             continue
         cr = hs.to_chip_rows(chip_hist.get(sid, {}))
         ev = hs.to_div_events(div_hist.get(sid))
-        ind = compute_indicators(pr, cr, ev)
+        ind = compute_indicators(pr, cr, ev, idx_ret20)
         if ind is None or ind["avg_vol_lots"] < args.min_vol:
             continue
         ohlc = ind.pop("ohlc")                    # K 線拆到 charts/<id>.json（前端按需載入）
@@ -509,6 +575,7 @@ def main():
         ind["pe"] = val.get("pe")
         ind["pb"] = val.get("pb")
         ind["yield_pct"] = val.get("yield_pct")
+        ind["earnings_date"] = earnings.get(sid)  # 未來 7 天法說會日期（無則 None）
         results.append(ind)
         with open(os.path.join(charts_dir, f"{sid}.json"), "w", encoding="utf-8") as f:
             json.dump({"id": sid, "name": stock["name"], "ohlc": ohlc}, f,

@@ -15,6 +15,7 @@ HERE = os.path.dirname(__file__)
 PRICE_PATH = os.path.join(HERE, "history", "price.json")
 CHIP_PATH = os.path.join(HERE, "history", "chip.json")
 DIV_PATH = os.path.join(HERE, "history", "dividends.json")
+INDEX_PATH = os.path.join(HERE, "history", "index.json")
 FETCH_STATE_PATH = os.path.join(HERE, "fetch_state.json")
 
 
@@ -66,8 +67,16 @@ def main():
     except Exception as e:
         print(f"  ⚠️ 除權息事件 {date_iso} 抓取失敗：{e}")
 
+    # 加權指數收盤（相對強弱 RS 計算用大盤基準）
+    index_hist = hs.load(INDEX_PATH)
+    try:
+        hs.append_index(index_hist, date_iso, ms.fetch_taiex_close(date_iso))
+        hs.save(INDEX_PATH, index_hist)
+    except Exception as e:
+        print(f"  ⚠️ 加權指數 {date_iso} 抓取失敗：{e}")
+
     write_fetch_state(True)
-    print(f"✅ 已累積 {date_iso}：price {len(price)} 檔、chip {len(chip)} 檔、dividends {len(div_hist)} 檔")
+    print(f"✅ 已累積 {date_iso}：price {len(price)} 檔、chip {len(chip)} 檔、dividends {len(div_hist)} 檔、index {len(index_hist)} 天")
 
 
 if __name__ == "__main__":

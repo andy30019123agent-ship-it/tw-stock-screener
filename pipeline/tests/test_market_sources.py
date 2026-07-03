@@ -38,6 +38,23 @@ def test_listed_chip_sums_foreign(monkeypatch):
     assert out == {"2330": {"Foreign_Investor": -3311663.0, "Investment_Trust": 458215.0}}
 
 
+def test_fetch_taiex_close_parses_index_row(monkeypatch):
+    # MI_INDEX type=IND：多張表，要找到「發行量加權股價指數」那一列的收盤指數
+    payload = {"tables": [
+        {"fields": ["指數", "收盤指數", "漲跌(+/-)", "漲跌點數", "漲跌百分比(%)", "備註"],
+         "data": [["寶島股價指數", "52,351.49", "+", "960.26", "1.87", ""],
+                  ["發行量加權股價指數", "47,018.99", "+", "893.08", "1.94", ""]]},
+        {},
+    ]}
+    monkeypatch.setattr(ms, "get_json", lambda url: payload)
+    assert ms.fetch_taiex_close("2026-07-01") == 47018.99
+
+
+def test_fetch_taiex_close_no_data_on_non_trading_day(monkeypatch):
+    monkeypatch.setattr(ms, "get_json", lambda url: {"tables": [{"data": []}, {}]})
+    assert ms.fetch_taiex_close("2026-06-28") is None
+
+
 def test_otc_chip_maps_columns(monkeypatch):
     # TPEX insti：外資合計 = [10]，投信 = [13]
     row = ["6488", "環球晶", "1", "1", "0", "0", "0", "0",

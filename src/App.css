@@ -287,6 +287,14 @@ body {
 .tag-holder { background: rgba(13,148,136,0.15); color: #0c8076; }
 .tag-shishi { background: rgba(101,163,13,0.16); color: #4d7c0f; }
 .tag-value  { background: rgba(8,145,178,0.14); color: #0e7490; }
+.tag-earnings { background: rgba(100,116,139,0.14); color: #475569; }
+
+/* 相對強弱 RS：正值(強於大盤)綠、負值(弱於大盤)紅 */
+.rs-badge { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rs-pos { color: var(--down); }
+.rs-neg { color: var(--up); }
+.rs-na  { color: var(--text-soft); font-weight: 500; }
+.cell-rs { font-variant-numeric: tabular-nums; }
 
 /* 估值小欄位（PE / PB / 殖利率）*/
 .valuation { display: flex; gap: 10px; font-size: 12px; color: #64748b; white-space: nowrap; }
@@ -381,6 +389,15 @@ body {
 .modal-chips .lg-ma5 { color: var(--gold); font-weight: 700; }
 .modal-chips .lg-ma20 { color: var(--accent); font-weight: 700; }
 .modal-chips .lg-ma60 { color: #8b5cf6; font-weight: 700; }
+
+/* 出場參考：MA20 支撐/壓力 + 近 20 日高點（重用 pipeline 算好的值，跟 TG 快報同一份） */
+.exit-ref {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 9px 19px; font-size: 12.5px; color: var(--text-muted);
+  border-bottom: 1px solid var(--hairline);
+}
+.exit-ref b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.exit-ref-note { font-size: 11px; color: var(--text-soft); margin-left: auto; }
 
 .tv-chart { width: 100%; height: 460px; position: relative; }
 .tv-canvas { width: 100%; height: 100%; }

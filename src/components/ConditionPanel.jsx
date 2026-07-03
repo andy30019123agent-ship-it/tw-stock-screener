@@ -6,7 +6,7 @@ const isMobile = () =>
 // 一鍵套用的常用組合（會覆蓋現有勾選，但保留搜尋關鍵字）
 const BLANK = {
   signalMa: false, breakout: false, bullAligned: false, goldenCross: false,
-  maRising: false, bigHolderRising: false, foreignDays: 0, trustDays: 0,
+  maRising: false, strongerThanMarket: false, bigHolderRising: false, foreignDays: 0, trustDays: 0,
   shishiAny: false, snSqueezeBreakout: false, snLowerReversal: false,
   snBreakLowRecover: false, snImmortalGuide: false, snVolumeSupport: false,
   minYield: 0, maxPe: 0, maxPb: 0, undervalued: false,
@@ -83,6 +83,8 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
               checked={c.goldenCross} onChange={v => set('goldenCross', v)} />
             <Toggle label="均線上彎" hint="均線翻揚"
               checked={c.maRising} onChange={v => set('maRising', v)} />
+            <Toggle label="強於大盤" hint="近20日報酬贏過加權指數"
+              checked={c.strongerThanMarket} onChange={v => set('strongerThanMarket', v)} />
           </div>
 
           {/* 爆量突破旋鈕：只有勾選時出現 */}

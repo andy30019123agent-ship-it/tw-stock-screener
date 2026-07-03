@@ -1,5 +1,19 @@
 import Sparkline from './Sparkline'
 
+// 'YYYY-MM-DD' → 'M/D'，法說會徽章用
+const mmdd = iso => iso.split('-').slice(1).join('/').replace(/^0/, '').replace('/0', '/')
+
+// 相對強弱：個股近 20 日報酬 － 加權指數近 20 日報酬。正值＝強於大盤（綠），負值＝弱於大盤（紅）。
+function RS({ s }) {
+  if (s.rs20 == null) return <span className="rs-badge rs-na">RS —</span>
+  const pos = s.rs20 > 0
+  return (
+    <span className={`rs-badge ${pos ? 'rs-pos' : 'rs-neg'}`}>
+      RS {pos ? '+' : ''}{s.rs20}%
+    </span>
+  )
+}
+
 function Tags({ s }) {
   const tags = []
   if (s.signal_breakout) tags.push(['🚀爆量突破', 'tag-breakout'])
@@ -11,6 +25,7 @@ function Tags({ s }) {
   if (s.trust_streak >= 3) tags.push([`投信連買${s.trust_streak}`, 'tag-trust'])
   if (s.undervalued) tags.push(['💎同業低估', 'tag-value'])
   if (s.holder_rising) tags.push([`千張大戶↑${s.holder_pct}%`, 'tag-holder'])
+  if (s.earnings_date) tags.push([`📅${mmdd(s.earnings_date)}法說會`, 'tag-earnings'])
   return (
     <div className="tags">
       {tags.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}
@@ -22,6 +37,7 @@ const MOBILE_SORTS = [
   ['signal', '訊號'],
   ['breakout', '突破'],
   ['shishi', '小詩'],
+  ['rs', '相對強弱'],
   ['change', '漲跌幅'],
   ['yield', '殖利率'],
   ['pe', '本益比'],
@@ -89,6 +105,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                     {s.foreign_streak > 0 ? `${s.foreign_streak}天` : '—'}</b></span>
                   <span>投信 <b className={s.trust_streak >= 3 ? 'hot' : ''}>
                     {s.trust_streak > 0 ? `${s.trust_streak}天` : '—'}</b></span>
+                  <RS s={s} />
                 </div>
               </div>
               <Valuation s={s} />
@@ -107,6 +124,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
               {col('change', '收盤 / 漲跌')}
               <th>走勢</th>
               <th>均線狀態</th>
+              {col('rs', '相對強弱')}
               {col('yield', '估值 PE/PB/殖利')}
               {col('foreign', '外資連買')}
               {col('trust', '投信連買')}
@@ -135,6 +153,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                     {s.ma_rising && <span className="ma-up">↑翻揚</span>}
                     <span className="disp">離散 {s.dispersion_pct}%</span>
                   </td>
+                  <td className="cell-rs"><RS s={s} /></td>
                   <td className="cell-value"><Valuation s={s} /></td>
                   <td className="cell-streak">{s.foreign_streak > 0
                     ? <b className={s.foreign_streak >= 3 ? 'hot' : ''}>{s.foreign_streak} 天</b> : '—'}</td>

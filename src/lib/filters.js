@@ -7,6 +7,7 @@ export const DEFAULT_CONDITIONS = {
   bullAligned: true,      // 多頭排列
   goldenCross: false,     // 近期黃金交叉
   maRising: false,        // 均線上彎
+  strongerThanMarket: false, // 相對強弱 RS20 > 0（近 20 日報酬贏過加權指數）
   // 小詩選股（布林軌道系列技術形態，近 3 交易日內成立）
   shishiAny: false,           // 符合任一小詩形態
   snSqueezeBreakout: false,   // 縮口帶量突破
@@ -41,6 +42,7 @@ export function applyFilters(stocks, c) {
     if (c.bullAligned && !s.bull_aligned) return false
     if (c.goldenCross && !s.golden_cross_recent) return false
     if (c.maRising && !s.ma_rising) return false
+    if (c.strongerThanMarket && !(s.rs20 > 0)) return false
     if (c.bigHolderRising && !s.holder_rising) return false
 
     // 小詩選股形態
@@ -93,4 +95,5 @@ export const SORTS = {
   close: (a, b) => b.close - a.close,
   yield: (a, b) => (b.yield_pct || 0) - (a.yield_pct || 0),
   pe: (a, b) => (a.pe > 0 ? a.pe : 1e9) - (b.pe > 0 ? b.pe : 1e9),  // 本益比小→大（無/負殿後）
+  rs: (a, b) => (b.rs20 ?? -999) - (a.rs20 ?? -999),  // 相對強弱：強於大盤越多排越前
 }

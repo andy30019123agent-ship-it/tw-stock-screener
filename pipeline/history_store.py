@@ -6,6 +6,7 @@ compute_indicators 吃的 row 格式。歷史檔每天 commit 回 repo 保存（
 結構（緊湊、以日期為鍵自動去重）：
   price[sid] = { "YYYY-MM-DD": [open, high, low, close, volume股, money元], ... }
   chip[sid]  = { "YYYY-MM-DD": [foreign_net股, trust_net股], ... }
+  index      = { "YYYY-MM-DD": close, ... }   （加權指數，單一序列、無 sid 這層）
 """
 import json
 import os
@@ -75,6 +76,20 @@ def to_price_rows(stock_hist):
         rows.append({"date": date, "open": o, "max": h, "min": lo, "close": c,
                      "Trading_Volume": v, "Trading_money": m})
     return rows
+
+
+def append_index(hist, date_iso, value, window=PRICE_WINDOW):
+    """把單一數值（如加權指數收盤）併入以日期為鍵的歷史（同日覆蓋、超窗修剪）。value 為 None
+    （非交易日抓不到）時不動歷史，跟其他 fetch 失敗時的處理一致。"""
+    if value is None:
+        return
+    hist[date_iso] = value
+    _prune(hist, window)
+
+
+def to_index_series(hist):
+    """還原成 [(日期, 值), ...]，依日期排序（RS20 等報酬計算用）。"""
+    return [(d, hist[d]) for d in sorted(hist)]
 
 
 def to_chip_rows(stock_hist):

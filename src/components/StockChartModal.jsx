@@ -104,6 +104,11 @@ export default function StockChartModal({ stock, onClose }) {
           <span>投信連買 <b>{stock.trust_streak}</b> 天</span>
           <span>20日均量 <b>{stock.avg_vol_lots?.toLocaleString()}</b> 張</span>
         </div>
+        <div className="exit-ref">
+          <span>參考支撐／壓力 MA20 <b>{stock.ma20 ?? '—'}</b></span>
+          <span>近 20 日高點 <b>{stock.recent_high20 ?? '—'}</b></span>
+          <span className="exit-ref-note">參考位非建議</span>
+        </div>
         <div className="tv-chart">
           <div className="tv-canvas" ref={wrapRef} />
           {!ohlc && <div className="chart-msg">載入 K 線中…</div>}
