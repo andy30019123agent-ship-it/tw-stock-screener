@@ -293,7 +293,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .seg { display: inline-flex; gap: 4px; background: var(--surface-tint); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 4px; }
 .seg-btn {
   border: none; background: none; color: var(--ink-muted); font-family: inherit; font-size: .875rem; font-weight: 700;
-  padding: 10px 16px; border-radius: var(--r-pill); min-height: 40px; transition: background .15s, color .15s;
+  padding: 10px 16px; border-radius: var(--r-pill); min-height: 44px; transition: background .15s, color .15s;
 }
 .seg-btn.on { background: var(--primary); color: var(--on-primary); }
 
@@ -361,7 +361,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 /* ===== Table ===== */
 .table-wrap {
   margin-top: 24px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-lg); overflow: hidden auto; box-shadow: var(--shadow-sm);
+  border-radius: var(--r-lg); overflow: auto; -webkit-overflow-scrolling: touch;
+  box-shadow: var(--shadow-sm);
 }
 .result-table { width: 100%; border-collapse: collapse; min-width: 860px; }
 .result-table th {
@@ -419,10 +420,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .tag-value  { background: rgba(255,194,75,.22); color: var(--on-accent); }
 .tag-earnings { background: var(--surface-tint); color: var(--ink-muted); }
 
-/* 相對強弱 RS：正值(強於大盤)綠、負值(弱於大盤)紅 */
+/* 相對強弱 RS：正值(強於大盤)紅、負值(弱於大盤)綠，符合台股紅漲綠跌慣例 */
 .rs-badge { font-size: .875rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rs-pos { color: var(--down); }
-.rs-neg { color: var(--up); }
+.rs-pos { color: var(--up); }
+.rs-neg { color: var(--down); }
 .rs-na  { color: var(--ink-muted); font-weight: 500; }
 .cell-rs { font-variant-numeric: tabular-nums; }
 
@@ -482,7 +483,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
 /* 市場別徽章（上市/上櫃）*/
 .smarket {
-  font-size: .8125rem; font-weight: 700; padding: 2px 8px; border-radius: var(--r-sm);
+  font-size: .875rem; font-weight: 700; padding: 2px 8px; border-radius: var(--r-sm);
   margin-right: 6px; background: var(--primary-tint); color: var(--primary-strong); vertical-align: middle;
 }
 .smarket.otc { background: rgba(255,194,75,.22); color: var(--on-accent); }
