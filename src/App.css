@@ -200,10 +200,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   padding-top: 8px; border-top: 1px solid var(--border);
 }
 .opp-refs b { color: var(--ink); font-weight: 700; }
-.opp-refs b.good { color: var(--down); }
+.opp-refs b.good { color: var(--up); }
 .opp-rs { font-weight: 700; }
-.opp-rs.pos { color: var(--down); }
-.opp-rs.neg { color: var(--up); }
+.opp-rs.pos { color: var(--up); }
+.opp-rs.neg { color: var(--down); }
 
 .opp-flags { display: flex; flex-wrap: wrap; gap: 8px; }
 .opp-earn {
@@ -227,8 +227,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .opp-board-title { display: inline-flex; align-items: center; gap: 6px; font-size: .9375rem; font-weight: 800; color: var(--ink); }
 .opp-board-stats { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: .875rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .opp-board-stats b { color: var(--ink); font-weight: 800; font-size: 1rem; margin-left: 3px; }
-.opp-board-stats b.good { color: var(--down); }
-.opp-board-stats b.bad { color: var(--up); }
+.opp-board-stats b.good { color: var(--up); }
+.opp-board-stats b.bad { color: var(--down); }
 
 /* 訊號回測勝率表 */
 .opp-weights { margin-top: 16px; }
@@ -247,7 +247,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .opp-weights-table th:first-child, .opp-weights-table td:first-child { text-align: left; }
 .opp-weights-table th { font-size: .875rem; font-weight: 700; color: var(--ink-muted); }
 .opp-weights-table td { font-size: .875rem; color: var(--ink-body); }
-.opp-weights-table td.good { color: var(--down); }
+.opp-weights-table td.good { color: var(--up); }
 .opp-weights-note { margin-top: 8px; line-height: 1.6; }
 
 /* ===== Condition Panel ===== */
