@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Filter, AlertTriangle, CircleAlert } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
@@ -11,6 +12,7 @@ export default function App() {
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS)
   const [sortKey, setSortKey] = useState('signal')
   const [picked, setPicked] = useState(null)
+  const [oppCount, setOppCount] = useState(null)
 
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}data/screener.json`)
@@ -42,33 +44,69 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <div className="brand">
-          <h1>台股全市場選股</h1>
-          <p className="subtitle">糾結轉強 × 法人連買 · 上市＋上櫃</p>
+      <section className="hero" data-region="Hero / 標題與大數字統計">
+        <span className="hero-blob b1" aria-hidden="true" />
+        <span className="hero-blob b2" aria-hidden="true" />
+        <span className="hero-blob b3" aria-hidden="true" />
+        <div className="hero-top">
+          <div className="hero-titles">
+            <span className="badge-pill"><Filter size={14} strokeWidth={1.75} />全市場選股 · Screener</span>
+            <h1 style={{ marginTop: 14 }}>台股全市場選股</h1>
+            <p className="subtitle">糾結轉強 × 法人連買 · 上市＋上櫃</p>
+          </div>
+          {data && (
+            <div className="hero-right">
+              <span className={`updated-pill ${stale ? 'stale' : ''}`}>
+                <span className={`live-dot ${stale ? 'stale' : ''}`} />
+                資料日期（交易日）{data.data_date || '—'}
+              </span>
+            </div>
+          )}
         </div>
         {data && (
-          <span className="updated" title={`管線建置時間 ${data.updated}`}>
-            <span className={`updated-dot${stale ? ' updated-dot-stale' : ''}`} />
-            資料日期（交易日）{data.data_date || '—'}
-          </span>
+          <div className="stat-grid">
+            <div className="stat-tile">
+              <div className="st-name">全市場掃描</div>
+              <div className="st-value mono">{data.count}<small> 檔</small></div>
+            </div>
+            <div className="stat-tile">
+              <div className="st-name">符合條件</div>
+              <div className="st-value mono">{filtered.length}<small> 檔</small></div>
+            </div>
+            <div className="stat-tile">
+              <div className="st-name">今日機會股</div>
+              <div className="st-value mono">{oppCount ?? '—'}<small> 檔</small></div>
+            </div>
+          </div>
         )}
-      </header>
+      </section>
 
-      {error && <div className="banner banner-error" role="alert">{error}</div>}
-
-      {data && stale && (
-        <div className="banner banner-warn" role="alert">
-          ⚠️ 資料可能未更新，最後交易日 <b>{data.data_date || '未知'}</b>
-          {data.fetch_ok === false
-            ? '（上次自動抓取最新交易日失敗，目前顯示的是沿用的舊資料）'
-            : daysStale !== null && `（已經 ${daysStale} 天沒有新交易資料，請留意）`}
+      {error && (
+        <div className="banner banner-error" role="alert">
+          <CircleAlert size={18} strokeWidth={1.75} />{error}
         </div>
       )}
 
-      {!data && !error && <div className="loading">載入資料中…</div>}
+      {data && stale && (
+        <div className="banner banner-warn" role="alert">
+          <AlertTriangle size={18} strokeWidth={1.75} />
+          <span>
+            資料可能未更新，最後交易日 <b>{data.data_date || '未知'}</b>
+            {data.fetch_ok === false
+              ? '（上次自動抓取最新交易日失敗，目前顯示的是沿用的舊資料）'
+              : daysStale !== null && `（已經 ${daysStale} 天沒有新交易資料，請留意）`}
+          </span>
+        </div>
+      )}
 
-      <Opportunities stocks={data?.stocks} onPick={setPicked} />
+      {!data && !error && (
+        <div className="center-state">
+          <div className="spin" />
+          載入資料中…
+        </div>
+      )}
+
+      <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount} />
 
       {data && (
         <>
