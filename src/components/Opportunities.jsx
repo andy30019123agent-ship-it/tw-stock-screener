@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
+import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
 
 // 機會股 Top 5 區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights.json。
 // 三者都採「抓不到就靜默省略該部分」，不讓機會股區塊拖垮既有選股頁。
-export default function Opportunities({ stocks, onPick }) {
+export default function Opportunities({ stocks, onPick, onCount }) {
   const [opp, setOpp] = useState(null)
   const [board, setBoard] = useState(null)
   const [weights, setWeights] = useState(null)
@@ -26,20 +27,19 @@ export default function Opportunities({ stocks, onPick }) {
     const grab = (name, set) =>
       fetch(`${base}data/${name}.json`)
         .then(r => (r.ok ? r.json() : null)).then(set).catch(() => set(null))
-    grab('opportunities', setOpp)
+    grab('opportunities', d => { setOpp(d); onCount?.(d?.picks?.length ?? 0) })
     grab('scoreboard', setBoard)
     grab('signal_weights', setWeights)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (!opp || !opp.picks || opp.picks.length === 0) return null
 
-  const rankMark = ['①', '②', '③', '④', '⑤']
-
   return (
-    <section className="opp">
+    <section className="opp" data-region="機會股 Top 5">
       <div className="opp-head">
         <div>
-          <h2>🎯 今日機會股 Top 5</h2>
+          <span className="badge-pill"><Target size={14} strokeWidth={1.75} />今日機會股 Top 5</span>
           <p className="opp-sub">當日有訊號者依「回測權重加總」排序 · 已過濾營收年減／低量 · 僅供參考，非投資建議</p>
         </div>
         <span className="opp-date">{opp.date || '—'}</span>
@@ -49,9 +49,10 @@ export default function Opportunities({ stocks, onPick }) {
         {opp.picks.map((p, i) => {
           const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
           return (
-            <div className="opp-card" key={p.id} style={{ '--i': Math.min(i, 5) }} onClick={() => handlePick(p)}>
+            <div className={`opp-card ${i === 0 ? 'opp-card-lead' : ''}`} key={p.id}
+              style={{ '--i': Math.min(i, 5) }} onClick={() => handlePick(p)}>
               <div className="opp-card-top">
-                <span className="opp-rank">{rankMark[i]}</span>
+                <span className="opp-rank">{String(i + 1).padStart(2, '0')}</span>
                 <div className="opp-name">
                   <span className="opp-sid">{p.id}</span>
                   <span className="opp-sname">{p.name}</span>
@@ -75,16 +76,16 @@ export default function Opportunities({ stocks, onPick }) {
                   </span>
                 )}
                 {p.revenue_yoy != null && (
-                  <span>營收YoY <b className={p.revenue_yoy >= 0 ? 'good' : ''}>{p.revenue_yoy >= 0 ? '+' : ''}{p.revenue_yoy}%</b></span>
+                  <span>營收 YoY <b className={p.revenue_yoy >= 0 ? 'good' : ''}>{p.revenue_yoy >= 0 ? '+' : ''}{p.revenue_yoy}%</b></span>
                 )}
               </div>
 
               <div className="opp-flags">
                 {p.earnings_date && (
-                  <span className="opp-earn">📅 {p.earnings_date.slice(5)} 法說會</span>
+                  <span className="opp-earn"><Calendar size={12} strokeWidth={1.75} />{p.earnings_date.slice(5)} 法說會</span>
                 )}
                 {(p.risk_flags || []).map(f => (
-                  <span className="opp-risk" key={f}>⚠️ {f}</span>
+                  <span className="opp-risk" key={f}><AlertTriangle size={12} strokeWidth={1.75} />{f}</span>
                 ))}
                 {bias != null && bias <= 15 && bias >= 8 && (
                   <span className="opp-muted">乖離 {bias.toFixed(0)}%</span>
@@ -97,7 +98,7 @@ export default function Opportunities({ stocks, onPick }) {
 
       {board && (
         <div className="opp-board">
-          <span className="opp-board-title">📈 機會股成績單</span>
+          <span className="opp-board-title"><TrendingUp size={14} strokeWidth={1.75} />機會股成績單</span>
           {board.samples > 0 ? (
             <div className="opp-board-stats">
               <span>勝率 <b>{Math.round(board.win_rate * 100)}%</b></span>
@@ -115,7 +116,8 @@ export default function Opportunities({ stocks, onPick }) {
       {weights?.signals && (
         <div className="opp-weights">
           <button className="opp-weights-toggle" onClick={() => setShowWeights(v => !v)}>
-            {showWeights ? '▾' : '▸'} 各訊號回測勝率（權重依據，透明化）
+            {showWeights ? <ChevronDown size={14} strokeWidth={2} /> : <ChevronRight size={14} strokeWidth={2} />}
+            各訊號回測勝率（權重依據，透明化）
           </button>
           {showWeights && (
             <div className="opp-weights-body">

@@ -10,10 +10,9 @@ export default function Sparkline({ data, width = 88, height = 28 }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
   const up = data[data.length - 1] >= data[0]
-  const color = up ? '#e0484b' : '#16a34a'  // 台股：紅漲綠跌
   return (
     <svg width={width} height={height} className="spark">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" />
+      <polyline points={pts} fill="none" className={up ? 'spark-up' : 'spark-down'} strokeWidth="1.5" />
     </svg>
   )
 }

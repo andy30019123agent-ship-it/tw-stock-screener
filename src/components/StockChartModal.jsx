@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createChart } from 'lightweight-charts'
+import { X } from 'lucide-react'
 
 function ma(closes, n) {
   const out = []
@@ -10,6 +11,20 @@ function ma(closes, n) {
     out.push(s / n)
   }
   return out
+}
+
+// 讀取 CSS token 的實際色值（lightweight-charts 是 canvas 繪圖，無法直接吃 CSS var()，
+// 但顏色本身仍要來自 App.css 的 :root token，維持單一色彩來源）
+const cssVar = (name) => (typeof document !== 'undefined'
+  ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '')
+
+// 把 token 讀到的 hex 轉成帶透明度的 rgba（給量能柱體用，維持原本半透明視覺）
+function hexToRgba(hex, a) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `rgba(${r},${g},${b},${a})`
 }
 
 export default function StockChartModal({ stock, onClose }) {
@@ -33,22 +48,32 @@ export default function StockChartModal({ stock, onClose }) {
     const el = wrapRef.current
     el.innerHTML = ''
 
+    const inkMuted = cssVar('--ink-muted')
+    const border = cssVar('--border')
+    const up = cssVar('--up')
+    const down = cssVar('--down')
+    const ma5Color = cssVar('--accent')
+    const ma20Color = cssVar('--primary')
+    const ma60Color = cssVar('--deco-lavender')
+
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: '#64748b' },
+      layout: { background: { color: 'transparent' }, textColor: inkMuted, fontFamily: 'inherit' },
       grid: {
-        vertLines: { color: 'rgba(100,116,139,0.12)' },
-        horzLines: { color: 'rgba(100,116,139,0.12)' },
+        vertLines: { color: border },
+        horzLines: { color: border },
       },
-      rightPriceScale: { borderColor: 'rgba(100,116,139,0.25)' },
-      timeScale: { borderColor: 'rgba(100,116,139,0.25)', timeVisible: false },
+      rightPriceScale: { borderColor: border },
+      timeScale: { borderColor: border, timeVisible: false },
       crosshair: { mode: 0 },
+      localization: { locale: 'zh-TW' },
     })
 
+    // 台股漲紅跌綠
     const candle = chart.addCandlestickSeries({
-      upColor: '#e0484b', downColor: '#16a34a',           // 台股紅漲綠跌
-      borderUpColor: '#e0484b', borderDownColor: '#16a34a',
-      wickUpColor: '#e0484b', wickDownColor: '#16a34a',
+      upColor: up, downColor: down,
+      borderUpColor: up, borderDownColor: down,
+      wickUpColor: up, wickDownColor: down,
     })
     candle.setData(ohlc.map(d => ({
       time: d.t, open: d.o, high: d.h, low: d.l, close: d.c,
@@ -60,13 +85,13 @@ export default function StockChartModal({ stock, onClose }) {
     })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
     vol.setData(ohlc.map(d => ({
-      time: d.t, value: d.v, color: d.c >= d.o ? 'rgba(224,72,75,0.4)' : 'rgba(22,163,74,0.4)',
+      time: d.t, value: d.v, color: d.c >= d.o ? hexToRgba(up, 0.4) : hexToRgba(down, 0.4),
     })))
 
     // 均線：MA5 / MA20 / MA60
     const closes = ohlc.map(d => d.c)
     const times = ohlc.map(d => d.t)
-    const lines = [[5, '#e0a020'], [20, '#4f7cff'], [60, '#8b5cf6']]
+    const lines = [[5, ma5Color], [20, ma20Color], [60, ma60Color]]
     for (const [n, color] of lines) {
       const s = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       const m = ma(closes, n)
@@ -93,7 +118,7 @@ export default function StockChartModal({ stock, onClose }) {
               {stock.close} <small>{up ? '+' : ''}{stock.change_pct}%</small>
             </span>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="關閉">✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="關閉"><X size={18} strokeWidth={1.75} /></button>
         </div>
         <div className="modal-chips">
           <span className="lg-ma5">MA5</span>

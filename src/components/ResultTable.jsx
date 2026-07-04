@@ -1,3 +1,4 @@
+import { SearchX } from 'lucide-react'
 import Sparkline from './Sparkline'
 
 // 'YYYY-MM-DD' → 'M/D'，法說會徽章用
@@ -16,16 +17,16 @@ function RS({ s }) {
 
 function Tags({ s }) {
   const tags = []
-  if (s.signal_breakout) tags.push(['🚀爆量突破', 'tag-breakout'])
-  ;(s.sn_tags || []).forEach(t => tags.push([`📗${t}`, 'tag-shishi']))
+  if (s.signal_breakout) tags.push(['爆量突破', 'tag-breakout'])
+  ;(s.sn_tags || []).forEach(t => tags.push([t, 'tag-shishi']))
   if (s.signal_ma) tags.push(['糾結後多頭', 'tag-signal'])
   else if (s.bull_aligned) tags.push(['多頭排列', 'tag-bull'])
   if (s.golden_cross_recent) tags.push(['黃金交叉', 'tag-gc'])
   if (s.foreign_streak >= 3) tags.push([`外資連買${s.foreign_streak}`, 'tag-foreign'])
   if (s.trust_streak >= 3) tags.push([`投信連買${s.trust_streak}`, 'tag-trust'])
-  if (s.undervalued) tags.push(['💎同業低估', 'tag-value'])
+  if (s.undervalued) tags.push(['同業低估', 'tag-value'])
   if (s.holder_rising) tags.push([`千張大戶↑${s.holder_pct}%`, 'tag-holder'])
-  if (s.earnings_date) tags.push([`📅${mmdd(s.earnings_date)}法說會`, 'tag-earnings'])
+  if (s.earnings_date) tags.push([`${mmdd(s.earnings_date)}法說會`, 'tag-earnings'])
   return (
     <div className="tags">
       {tags.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}
@@ -57,15 +58,29 @@ function Valuation({ s }) {
   )
 }
 
+function SortArrow() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="sort-arrow">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
 export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
   const col = (key, label) => (
     <th className={`sortable ${sortKey === key ? 'active' : ''}`} onClick={() => onSort(key)}>
-      {label}{sortKey === key ? ' ▾' : ''}
+      {label}{sortKey === key && <SortArrow />}
     </th>
   )
 
   if (!stocks.length) {
-    return <div className="empty">沒有符合條件的股票，試著放寬條件看看 🔍</div>
+    return (
+      <div className="empty">
+        <SearchX size={28} strokeWidth={1.5} />
+        沒有符合條件的股票，試著放寬條件看看
+      </div>
+    )
   }
 
   return (

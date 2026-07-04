@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import {
+  SlidersHorizontal, Search, ChevronDown,
+  Rocket, BookOpen, Gem, Sparkles, Landmark, TrendingUp,
+} from 'lucide-react'
 
 const isMobile = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
@@ -12,27 +16,28 @@ const BLANK = {
   minYield: 0, maxPe: 0, maxPb: 0, undervalued: false,
 }
 const PRESETS = [
-  { key: 'breakout', label: '🚀 爆量突破', patch: { ...BLANK, breakout: true } },
-  { key: 'shishi', label: '📗 小詩選股', patch: { ...BLANK, shishiAny: true } },
-  { key: 'value', label: '💎 同業低估', patch: { ...BLANK, undervalued: true } },
-  { key: 'signal', label: '✨ 糾結轉強', patch: { ...BLANK, signalMa: true } },
-  { key: 'foreign', label: '🏦 外資連買', patch: { ...BLANK, foreignDays: 3, trustDays: 0 } },
-  { key: 'bull', label: '📈 多頭排列', patch: { ...BLANK, bullAligned: true } },
+  { key: 'breakout', label: '爆量突破', icon: Rocket, patch: { ...BLANK, breakout: true } },
+  { key: 'shishi', label: '小詩選股', icon: BookOpen, patch: { ...BLANK, shishiAny: true } },
+  { key: 'value', label: '同業低估', icon: Gem, patch: { ...BLANK, undervalued: true } },
+  { key: 'signal', label: '糾結轉強', icon: Sparkles, patch: { ...BLANK, signalMa: true } },
+  { key: 'foreign', label: '外資連買', icon: Landmark, patch: { ...BLANK, foreignDays: 3, trustDays: 0 } },
+  { key: 'bull', label: '多頭排列', icon: TrendingUp, patch: { ...BLANK, bullAligned: true } },
 ]
 
 export default function ConditionPanel({ conditions, onChange, total, shown, holderReady, industries = [] }) {
   const c = conditions
   const set = (key, value) => onChange({ ...c, [key]: value })
-  const applyPreset = patch => onChange({ ...c, ...patch })
+  const [activePreset, setActivePreset] = useState(null)
+  const applyPreset = (key, patch) => { onChange({ ...c, ...patch }); setActivePreset(key) }
   // 手機預設收合，桌機預設展開
   const [open, setOpen] = useState(() => !isMobile())
 
   return (
     <div className={`cond-panel ${open ? 'open' : 'collapsed'}`}>
       <button className="cond-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className="cond-toggle-label">篩選條件</span>
+        <span className="badge-pill"><SlidersHorizontal size={14} strokeWidth={1.75} />篩選條件</span>
         <span className="cond-toggle-count">符合 <b key={shown}>{shown}</b> ／ {total}</span>
-        <Chevron open={open} />
+        <ChevronDown className={`chevron ${open ? 'up' : ''}`} size={18} strokeWidth={2} />
       </button>
 
       <div className="cond-body">
@@ -41,9 +46,9 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
           <span className="cond-section-label">快速套用</span>
           <div className="preset-row">
             {PRESETS.map((p, i) => (
-              <button key={p.key} className="preset-chip" style={{ '--i': i }}
-                onClick={() => applyPreset(p.patch)}>
-                {p.label}
+              <button key={p.key} className={`preset-chip ${activePreset === p.key ? 'on' : ''}`} style={{ '--i': i }}
+                onClick={() => applyPreset(p.key, p.patch)}>
+                <p.icon size={14} strokeWidth={1.75} />{p.label}
               </button>
             ))}
           </div>
@@ -53,9 +58,9 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
         <div className="cond-group">
           <span className="cond-section-label">範圍</span>
           <div className="cond-chips">
-            <div className="logic-toggle">
+            <div className="seg">
               {[['all', '全部'], ['上市', '上市'], ['上櫃', '上櫃']].map(([m, label]) => (
-                <button key={m} className={c.market === m ? 'on' : ''}
+                <button key={m} className={`seg-btn ${c.market === m ? 'on' : ''}`}
                   onClick={() => set('market', m)}>{label}</button>
               ))}
             </div>
@@ -75,7 +80,7 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
           <div className="cond-checks">
             <Toggle label="糾結後黃金交叉→多頭發散" hint="綜合訊號"
               checked={c.signalMa} onChange={v => set('signalMa', v)} accent />
-            <Toggle label="🚀 爆量突破起漲" hint="悶久→帶量突破創高"
+            <Toggle label="爆量突破起漲" hint="悶久→帶量突破創高" icon={Rocket}
               checked={c.breakout} onChange={v => set('breakout', v)} accent />
             <Toggle label="多頭排列" hint="MA5>10>20>60"
               checked={c.bullAligned} onChange={v => set('bullAligned', v)} />
@@ -100,7 +105,7 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
 
         {/* 小詩選股（布林軌道系列技術形態）*/}
         <div className="cond-group">
-          <span className="cond-section-label">📗 小詩選股</span>
+          <span className="cond-section-label"><BookOpen size={14} strokeWidth={1.75} />小詩選股</span>
           <div className="cond-checks">
             <Toggle label="符合任一小詩形態" hint="下列 5 招中任一成立"
               checked={c.shishiAny} onChange={v => set('shishiAny', v)} accent />
@@ -133,10 +138,10 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
                 onChange={e => set('trustDays', parseInt(e.target.value) || 0)} />
               <span>天</span>
             </div>
-            <div className="logic-toggle">
-              <button className={c.chipLogic === 'and' ? 'on' : ''}
+            <div className="seg">
+              <button className={`seg-btn ${c.chipLogic === 'and' ? 'on' : ''}`}
                 onClick={() => set('chipLogic', 'and')}>外資＋投信都要</button>
-              <button className={c.chipLogic === 'or' ? 'on' : ''}
+              <button className={`seg-btn ${c.chipLogic === 'or' ? 'on' : ''}`}
                 onClick={() => set('chipLogic', 'or')}>任一即可</button>
             </div>
             <Toggle label="千張大戶上升" hint={holderReady ? '占比較上週增加' : '資料累積中'}
@@ -147,7 +152,7 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
 
         {/* 估值 / 同業比 */}
         <div className="cond-group">
-          <span className="cond-section-label">💎 估值／同業比</span>
+          <span className="cond-section-label"><Gem size={14} strokeWidth={1.75} />估值／同業比</span>
           <div className="cond-chips">
             <div className="num-field">
               <label>殖利率 ≥</label>
@@ -167,14 +172,17 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
                 onChange={e => set('maxPb', parseFloat(e.target.value) || 0)} />
               <span>倍</span>
             </div>
-            <Toggle label="💎 同業被低估" hint="本益比低於同產業中位數"
+            <Toggle label="同業被低估" hint="本益比低於同產業中位數" icon={Gem}
               checked={c.undervalued} onChange={v => set('undervalued', v)} accent />
           </div>
         </div>
 
         <div className="cond-footer">
-          <input className="search" type="search" placeholder="🔍 搜尋代號／名稱"
-            value={c.keyword} onChange={e => set('keyword', e.target.value)} />
+          <div className="search-field">
+            <Search size={16} strokeWidth={1.75} />
+            <input className="search" type="search" placeholder="搜尋代號／名稱"
+              value={c.keyword} onChange={e => set('keyword', e.target.value)} />
+          </div>
           <div className="cond-summary">
             符合 <b key={shown}>{shown}</b> 檔 ／ 共 {total} 檔
           </div>
@@ -184,12 +192,12 @@ export default function ConditionPanel({ conditions, onChange, total, shown, hol
   )
 }
 
-function Toggle({ label, hint, checked, onChange, accent, disabled }) {
+function Toggle({ label, hint, checked, onChange, accent, disabled, icon: Icon }) {
   return (
     <label className={`toggle ${checked ? 'checked' : ''} ${accent ? 'accent' : ''} ${disabled ? 'disabled' : ''}`}>
       <input type="checkbox" checked={checked} disabled={disabled}
         onChange={e => onChange(e.target.checked)} />
-      <span className="toggle-label">{label}</span>
+      <span className="toggle-label">{Icon && <Icon size={14} strokeWidth={1.75} />}{label}</span>
       {hint && <span className="toggle-hint">{hint}</span>}
     </label>
   )
@@ -203,15 +211,5 @@ function Slider({ label, value, min, max, step, suffix, onChange }) {
         onChange={e => onChange(parseFloat(e.target.value))} />
       <span className="knob-value">{value}{suffix}</span>
     </label>
-  )
-}
-
-function Chevron({ open }) {
-  return (
-    <svg className={`chevron ${open ? 'up' : ''}`} width="16" height="16"
-      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
   )
 }
