@@ -85,6 +85,33 @@ const topVr = s => (s.breakout_cands || []).reduce((m, c) => Math.max(m, c.vr), 
 // 小詩形態命中數（給排序用）
 const snCount = s => (s.sn_tags || []).length
 
+// 排序鍵 → 中文標籤（給手機常駐工具列顯示目前排序）
+export const SORT_LABELS = {
+  signal: '訊號', breakout: '突破', shishi: '小詩', rs: '相對強弱',
+  change: '漲跌幅', yield: '殖利率', pe: '本益比',
+  foreign: '外資', trust: '投信', close: '收盤',
+}
+
+// 目前有幾個條件在實際限縮清單（給工具列顯示「條件 N」）
+export function countActiveConditions(c) {
+  let n = 0
+  const bools = [
+    'signalMa', 'breakout', 'bullAligned', 'goldenCross', 'maRising', 'strongerThanMarket',
+    'bigHolderRising', 'shishiAny', 'snSqueezeBreakout', 'snLowerReversal',
+    'snBreakLowRecover', 'snImmortalGuide', 'snVolumeSupport', 'undervalued',
+  ]
+  for (const k of bools) if (c[k]) n++
+  if (c.foreignDays > 0) n++
+  if (c.trustDays > 0) n++
+  if (c.minYield > 0) n++
+  if (c.maxPe > 0) n++
+  if (c.maxPb > 0) n++
+  if (c.market && c.market !== 'all') n++
+  if (c.industry && c.industry !== 'all') n++
+  if (c.keyword && c.keyword.trim()) n++
+  return n
+}
+
 export const SORTS = {
   signal: (a, b) => (b.signal_ma - a.signal_ma) || (b.foreign_streak - a.foreign_streak),
   breakout: (a, b) => (b.signal_breakout - a.signal_breakout) || (topVr(b) - topVr(a)),
