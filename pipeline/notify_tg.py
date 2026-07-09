@@ -43,10 +43,27 @@ def score(s):
         sc += 2
     if s.get("trust_streak", 0) >= 3:
         sc += 2
-    if s.get("holder_rising"):
+    # 收緊雜訊：同業低估／千張↑ 太浮濫（各佔 ~40%），只在已有「實質訊號」
+    # （技術形態 或 法人連買）時才加分，避免單靠這兩項灌高分數。
+    primary = bool(
+        s.get("signal_ma") or s.get("signal_breakout") or s.get("signal_shishi")
+        or (s.get("bull_aligned") and s.get("diverging"))
+        or s.get("foreign_streak", 0) >= 3 or s.get("trust_streak", 0) >= 3
+    )
+    if primary and s.get("holder_rising"):
         sc += 1
-    if s.get("undervalued"):        # 同業被低估（估值面加分）
+    if primary and s.get("undervalued"):        # 同業被低估（估值面加分）
         sc += 1
+    # 抑制追高：乖離（離 ma20 的乖離率）過大者扣分，讓快報偏向「還沒噴太遠、
+    # 相對安全的進場點」，而非已經漲一大段的追高點。
+    disp = s.get("dispersion_pct")
+    if disp is not None:
+        if disp >= 20:
+            sc -= 3
+        elif disp >= 15:
+            sc -= 2
+        elif disp >= 12:
+            sc -= 1
     return sc
 
 
@@ -115,7 +132,7 @@ def build_message(d):
     dd = d.get("data_date") or data_date(stocks)
     mmdd = "/".join(dd.split("-")[1:]) if dd else "—"
     ranked = sorted(
-        [s for s in stocks if score(s) >= 2],
+        [s for s in stocks if score(s) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
         key=lambda s: (-score(s), -s.get("foreign_streak", 0)),
     )[:5]
 
