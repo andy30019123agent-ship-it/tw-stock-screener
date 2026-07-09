@@ -213,6 +213,11 @@ def main():
         print(f"[dry-run] 資料日期={dd} 上次推播={last}\n{'-'*40}\n{text}")
         return
 
+    # 防禦：資料日期讀不到（dd=None，代表資料異常）就別推，免得每晚重複發「—」日期快報
+    if not args.force and not dd:
+        print("資料日期讀不到（dd=None），資料可能異常，略過推播。")
+        return
+
     if not args.force and dd and last and dd <= last:
         print(f"資料日期 {dd} 未更新（上次已推 {last}），不重複推播。")
         return

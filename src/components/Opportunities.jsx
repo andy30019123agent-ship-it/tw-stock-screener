@@ -8,6 +8,8 @@ export default function Opportunities({ stocks, onPick, onCount }) {
   const [board, setBoard] = useState(null)
   const [weights, setWeights] = useState(null)
   const [showWeights, setShowWeights] = useState(false)
+  // 手機預設收合機會股 Top5（省捲動，Andy 2026-07-09 指定）；桌機不顯示收合鈕故恆展開。
+  const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 640 : true))
 
   // 點卡片開 K 線彈窗：優先用 screener.json 的完整資料（欄位齊全），
   // 抓不到（如尚未載入）才用 pick 本身的欄位墊底，讓彈窗至少開得起來。
@@ -33,6 +35,16 @@ export default function Opportunities({ stocks, onPick, onCount }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 桌機（≥641px）恆展開：視窗放大到桌機時強制 open=true，避免「手機載入收合→拉大到桌機、
+  // 收合鈕被 CSS 藏起卻仍收合」導致桌機看不到機會股。
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 641px)')
+    const sync = () => { if (mq.matches) setOpen(true) }
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
   if (!opp || !opp.picks || opp.picks.length === 0) return null
 
   return (
@@ -43,8 +55,14 @@ export default function Opportunities({ stocks, onPick, onCount }) {
           <p className="opp-sub">當日有訊號者依「回測權重加總」排序 · 已過濾營收年減／低量 · 僅供參考，非投資建議</p>
         </div>
         <span className="opp-date">{opp.date || '—'}</span>
+        <button className="opp-toggle" onClick={() => setOpen(v => !v)}
+          aria-expanded={open} aria-label={open ? '收合今日機會股' : '展開今日機會股'}>
+          {open ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
+          <span>{open ? '收合' : `展開 ${opp.picks.length} 檔`}</span>
+        </button>
       </div>
 
+      {open && (<>
       <div className="opp-cards">
         {opp.picks.map((p, i) => {
           const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
@@ -61,7 +79,7 @@ export default function Opportunities({ stocks, onPick, onCount }) {
               </div>
 
               <div className="opp-reasons">
-                {p.reasons.map(r => <span className="opp-reason" key={r}>{r}</span>)}
+                {(p.reasons || []).map(r => <span className="opp-reason" key={r}>{r}</span>)}
               </div>
 
               <div className="opp-refs">
@@ -152,6 +170,7 @@ export default function Opportunities({ stocks, onPick, onCount }) {
           )}
         </div>
       )}
+      </>)}
     </section>
   )
 }

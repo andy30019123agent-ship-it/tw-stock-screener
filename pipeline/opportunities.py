@@ -76,7 +76,7 @@ def build_opportunities(results, weights, revenue, data_date):
             "risk_flags": risk,
         })
 
-    picks.sort(key=lambda p: (-p["score"], -(p["rs20"] or -999)))
+    picks.sort(key=lambda p: (-p["score"], -(p["rs20"] if p["rs20"] is not None else -999)))
     return {"date": data_date, "picks": picks[:TOP_N]}
 
 
