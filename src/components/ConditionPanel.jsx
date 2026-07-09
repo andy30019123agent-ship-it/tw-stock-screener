@@ -24,17 +24,22 @@ const PRESETS = [
   { key: 'bull', label: '多頭排列', icon: TrendingUp, patch: { ...BLANK, bullAligned: true } },
 ]
 
-export default function ConditionPanel({ conditions, onChange, total, shown, holderReady, industries = [] }) {
+export default function ConditionPanel({
+  conditions, onChange, total, shown, holderReady, industries = [],
+  open: openProp, onOpenChange, id,
+}) {
   const c = conditions
   const set = (key, value) => onChange({ ...c, [key]: value })
   const [activePreset, setActivePreset] = useState(null)
   const applyPreset = (key, patch) => { onChange({ ...c, ...patch }); setActivePreset(key) }
-  // 手機預設收合，桌機預設展開
-  const [open, setOpen] = useState(() => !isMobile())
+  // 手機預設收合，桌機預設展開；若父層有傳 open 則改由父層控制（供手機常駐工具列連動）
+  const [openState, setOpenState] = useState(() => !isMobile())
+  const open = openProp !== undefined ? openProp : openState
+  const setOpen = v => (onOpenChange ? onOpenChange(v) : setOpenState(v))
 
   return (
-    <div className={`cond-panel ${open ? 'open' : 'collapsed'}`}>
-      <button className="cond-toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+    <div id={id} className={`cond-panel ${open ? 'open' : 'collapsed'}`}>
+      <button className="cond-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="badge-pill"><SlidersHorizontal size={14} strokeWidth={1.75} />篩選條件</span>
         <span className="cond-toggle-count">符合 <b key={shown}>{shown}</b> ／ {total}</span>
         <ChevronDown className={`chevron ${open ? 'up' : ''}`} size={18} strokeWidth={2} />

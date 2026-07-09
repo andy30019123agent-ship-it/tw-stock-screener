@@ -15,7 +15,8 @@ function RS({ s }) {
   )
 }
 
-function Tags({ s }) {
+// 建立一檔的所有標籤（[文字, class]），桌機與手機共用
+function buildTags(s) {
   const tags = []
   if (s.signal_breakout) tags.push(['爆量突破', 'tag-breakout'])
   ;(s.sn_tags || []).forEach(t => tags.push([t, 'tag-shishi']))
@@ -27,6 +28,21 @@ function Tags({ s }) {
   if (s.undervalued) tags.push(['同業低估', 'tag-value'])
   if (s.holder_rising) tags.push([`千張大戶↑${s.holder_pct}%`, 'tag-holder'])
   if (s.earnings_date) tags.push([`${mmdd(s.earnings_date)}法說會`, 'tag-earnings'])
+  return tags
+}
+
+// 手機卡片首要「主訊號」：依重要度挑一個技術/估值訊號當頭條
+const SIG_PRIORITY = ['tag-breakout', 'tag-signal', 'tag-shishi', 'tag-bull', 'tag-gc', 'tag-value']
+function pickPrimary(tags) {
+  for (const cls of SIG_PRIORITY) {
+    const t = tags.find(([, c]) => c === cls)
+    if (t) return t
+  }
+  return null
+}
+
+function Tags({ s }) {
+  const tags = buildTags(s)
   return (
     <div className="tags">
       {tags.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}
@@ -68,11 +84,18 @@ function SortArrow() {
 }
 
 export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
+  // 可排序表頭：th 帶 aria-sort，內含可聚焦按鈕（pe 為升冪，其餘降冪）
   const col = (key, label) => (
-    <th className={`sortable ${sortKey === key ? 'active' : ''}`} onClick={() => onSort(key)}>
-      {label}{sortKey === key && <SortArrow />}
+    <th className={`sortable ${sortKey === key ? 'active' : ''}`}
+      aria-sort={sortKey === key ? (key === 'pe' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className="th-sort-btn" onClick={() => onSort(key)}>
+        {label}{sortKey === key && <SortArrow />}
+      </button>
     </th>
   )
+  const onRowKey = (e, s) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(s) }
+  }
 
   if (!stocks.length) {
     return (
@@ -94,10 +117,14 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
         ))}
       </div>
 
-      {/* 手機：卡片列表 */}
+      {/* 手機：卡片列表 —— 首列代號/價格，第二列 3 個關鍵判斷（RS｜法人連買｜主訊號），估值降級小字 */}
       <div className="card-list">
         {stocks.map((s, i) => {
           const up = s.change >= 0
+          const tags = buildTags(s)
+          const primary = pickPrimary(tags)
+          // 其餘標籤：排除已在第二列呈現的主訊號與法人連買（避免重複）
+          const rest = tags.filter(t => t !== primary && t[1] !== 'tag-foreign' && t[1] !== 'tag-trust')
           return (
             <button key={s.id} className="stock-card" style={{ '--i': Math.min(i, 12) }}
               onClick={() => onPick(s)}>
@@ -113,18 +140,25 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
                   <span className="chg">{up ? '+' : ''}{s.change_pct}%</span>
                 </div>
               </div>
-              <div className="sc-mid">
-                <Sparkline data={s.spark} />
-                <div className="sc-streaks">
+              <div className="sc-key">
+                <RS s={s} />
+                <span className="sc-streaks">
                   <span>外資 <b className={s.foreign_streak >= 3 ? 'hot' : ''}>
                     {s.foreign_streak > 0 ? `${s.foreign_streak}天` : '—'}</b></span>
                   <span>投信 <b className={s.trust_streak >= 3 ? 'hot' : ''}>
                     {s.trust_streak > 0 ? `${s.trust_streak}天` : '—'}</b></span>
-                  <RS s={s} />
-                </div>
+                </span>
+                {primary && <span className={`tag ${primary[1]}`}>{primary[0]}</span>}
               </div>
-              <Valuation s={s} />
-              <Tags s={s} />
+              <div className="sc-mid">
+                <Sparkline data={s.spark} />
+                <Valuation s={s} />
+              </div>
+              {rest.length > 0 && (
+                <div className="tags">
+                  {rest.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}
+                </div>
+              )}
             </button>
           )
         })}
@@ -150,7 +184,9 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
             {stocks.map((s, i) => {
               const up = s.change >= 0
               return (
-                <tr key={s.id} style={{ '--i': Math.min(i, 12) }} onClick={() => onPick(s)}>
+                <tr key={s.id} style={{ '--i': Math.min(i, 12) }} onClick={() => onPick(s)}
+                  role="button" tabIndex={0} onKeyDown={e => onRowKey(e, s)}
+                  aria-label={`${s.id} ${s.name}，開啟 K 線圖`}>
                   <td className="cell-name">
                     <span className="sid">{s.id}</span>
                     <span className="sname">{s.name}</span>

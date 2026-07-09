@@ -386,10 +386,15 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   text-align: left; font-size: .875rem; font-weight: 500; color: var(--ink-muted);
   padding: 16px; border-bottom: 1px solid var(--border); white-space: nowrap;
 }
-.result-table th.sortable { cursor: pointer; display: table-cell; }
-.result-table th.sortable:hover { color: var(--ink); }
+.result-table th.sortable { padding: 0; }
+.result-table th.sortable .th-sort-btn {
+  display: flex; align-items: center; gap: 4px; width: 100%;
+  background: none; border: none; font: inherit; color: inherit;
+  text-align: left; cursor: pointer; padding: 16px;
+}
+.result-table th.sortable:hover .th-sort-btn { color: var(--ink); }
 .result-table th.active { color: var(--primary-strong); font-weight: 700; }
-.sort-arrow { display: inline-block; margin-left: 4px; vertical-align: middle; }
+.sort-arrow { display: inline-block; margin-left: 2px; vertical-align: middle; }
 
 .result-table td { padding: 16px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--ink-body); }
 .result-table tbody tr { cursor: pointer; transition: background .12s; min-height: 44px; }
@@ -415,7 +420,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
 .cell-ma { font-size: .875rem; line-height: 1.6; }
 .cell-ma > span { display: block; }
-.ma-bull { color: var(--up); font-weight: 700; }
+.ma-bull { color: var(--primary-strong); font-weight: 700; }
 .ma-flat { color: var(--ink-muted); }
 .ma-up { color: var(--accent); font-weight: 700; }
 .disp { color: var(--ink-muted); }
@@ -426,13 +431,14 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { font-size: .875rem; font-weight: 700; padding: 4px 12px; border-radius: var(--r-pill); white-space: nowrap; }
+/* 紅/綠僅保留給漲跌數字與 RS；技術/籌碼/估值標籤一律用 primary-tint／薰衣草／中性底 */
 .tag-breakout { background: rgba(255,194,75,.22); color: var(--on-accent); }
 .tag-signal { background: var(--primary-tint); color: var(--primary-strong); }
-.tag-bull   { background: var(--up-bg); color: var(--up); }
+.tag-bull   { background: var(--surface-tint); color: var(--ink-body); }
 .tag-gc     { background: rgba(231,198,245,.35); color: var(--ink); }
-.tag-foreign{ background: var(--down-bg); color: var(--down); }
+.tag-foreign{ background: rgba(231,198,245,.35); color: var(--ink); }
 .tag-trust  { background: rgba(231,198,245,.35); color: var(--ink); }
-.tag-holder { background: var(--down-bg); color: var(--down); }
+.tag-holder { background: var(--primary-tint); color: var(--ink); }
 .tag-shishi { background: var(--surface-tint); color: var(--ink-body); }
 .tag-value  { background: rgba(255,194,75,.22); color: var(--on-accent); }
 .tag-earnings { background: var(--surface-tint); color: var(--ink-muted); }
@@ -447,7 +453,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 /* 估值小欄位（PE / PB / 殖利率）*/
 .valuation { display: flex; gap: 12px; font-size: .875rem; color: var(--ink-muted); white-space: nowrap; }
 .valuation b { color: var(--ink); font-weight: 700; }
-.valuation b.hot { color: var(--down); }
+.valuation b.hot { color: var(--primary-strong); }
 .card-list .valuation { margin: 4px 0; }
 
 /* empty state */
@@ -458,6 +464,28 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   border-radius: var(--r-lg); margin-top: 24px; box-shadow: var(--shadow-sm);
 }
 .empty svg { color: var(--border-strong); }
+
+/* ── 手機常駐（sticky）篩選/排序工具列（桌機隱藏）──────── */
+.mobile-toolbar { display: none; }
+.mtb-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+  padding: 8px 16px; border: none; border-radius: var(--r-pill);
+  background: var(--primary-tint); color: var(--ink);
+  font-size: .875rem; font-weight: 700; white-space: nowrap; flex: none;
+}
+.mtb-btn b { color: var(--primary-strong); margin-left: 2px; }
+.mtb-sort {
+  flex: 1; min-width: 0; font-size: .875rem; color: var(--ink-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mtb-sort b { color: var(--ink); font-weight: 700; margin-left: 4px; }
+.mtb-reset {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px;
+  padding: 8px 14px; border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink-muted);
+  font-size: .875rem; font-weight: 700; white-space: nowrap; flex: none;
+}
+.mtb-reset:hover { border-color: var(--primary); color: var(--ink); }
 
 /* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
 .sort-bar, .card-list { display: none; }
@@ -493,8 +521,15 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .sc-price.up { color: var(--up); }
 .sc-price.down { color: var(--down); }
 
+/* 第二列：3 個關鍵判斷（RS｜法人連買｜主訊號），視覺權重高於估值 */
+.sc-key { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.sc-key .rs-badge { font-size: .9375rem; }
+.sc-key .tag { margin-left: auto; }
+
 .sc-mid { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.sc-streaks { display: flex; gap: 16px; font-size: .875rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+/* 估值降級為次要小字 */
+.sc-mid .valuation { font-size: .875rem; }
+.sc-streaks { display: flex; gap: 12px; font-size: .875rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .sc-streaks b { color: var(--ink); font-weight: 700; margin-left: 3px; }
 .sc-streaks b.hot { color: var(--on-accent); }
 
@@ -572,6 +607,15 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   .sort-bar { display: flex; }
   .card-list { display: flex; }
 
+  /* 常駐工具列：吸頂、不透明底避免疊字，層級在卡片之上、彈窗之下 */
+  .mobile-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    position: sticky; top: 0; z-index: 20;
+    padding: 8px; margin: 0 0 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-pill); box-shadow: var(--shadow-sm);
+  }
+
   /* 篩選面板：可摺疊、不再黏頂 */
   .cond-panel { padding: 20px; gap: 16px; }
   .cond-toggle { display: flex; }
@@ -579,4 +623,26 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
   .search { font-size: 16px; }
   .knob input[type=range] { width: 110px; }
+}
+
+/* ── 手機 K 線彈窗改 bottom sheet（≤640px；桌機維持置中 modal）── */
+@media (max-width: 640px) {
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .modal {
+    width: 100%; max-width: 100%; height: 92vh; max-height: 92vh;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    animation: sheet-up .28s ease;
+  }
+  /* 標題與關閉鈕固定頂部 */
+  .modal-head { position: sticky; top: 0; background: var(--surface); z-index: 2; padding: 16px 20px; }
+  /* chips（MA 圖例、法人、支撐/壓力）可橫向滑動 */
+  .modal-chips, .exit-ref { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .modal-chips > *, .exit-ref > * { flex: none; white-space: nowrap; }
+  .exit-ref-note { margin-left: 8px; }
+  /* 圖表吃滿剩餘空間 */
+  .tv-chart { flex: 1 1 auto; height: auto; min-height: 0; }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .modal { animation: none !important; }
 }

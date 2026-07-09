@@ -29,6 +29,8 @@ function hexToRgba(hex, a) {
 
 export default function StockChartModal({ stock, onClose }) {
   const wrapRef = useRef(null)
+  const modalRef = useRef(null)
+  const lastActiveRef = useRef(null)       // 關閉後把 focus 還原到開窗前的元素
   const [ohlc, setOhlc] = useState(null)   // K 線按需載入（charts/<id>.json）
 
   // 開窗時抓該股 K 線（主清單不帶 ohlc，故 1,966 檔也載得快）
@@ -99,19 +101,43 @@ export default function StockChartModal({ stock, onClose }) {
     }
 
     chart.timeScale().fitContent()
-    const onKey = e => e.key === 'Escape' && onClose()
+    return () => { chart.remove() }
+  }, [stock, ohlc])
+
+  // 無障礙：開窗把 focus 移入、Esc 關閉、Tab 在彈窗內循環（focus trap）、關閉後還原 focus
+  useEffect(() => {
+    if (!stock) return
+    lastActiveRef.current = document.activeElement
+    modalRef.current?.querySelector('.modal-close')?.focus()
+    const onKey = e => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key !== 'Tab') return
+      const node = modalRef.current
+      if (!node) return
+      const items = Array.from(
+        node.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      ).filter(el => !el.disabled && el.offsetParent !== null)
+      if (!items.length) return
+      const first = items[0], last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
     window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey); chart.remove() }
-  }, [stock, ohlc, onClose])
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      lastActiveRef.current?.focus?.()
+    }
+  }, [stock, onClose])
 
   if (!stock) return null
   const up = stock.change >= 0
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" ref={modalRef} onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div className="modal-head">
-          <div className="modal-title">
+          <div className="modal-title" id="modal-title">
             <span className="m-id">{stock.id}</span>
             <span className="m-name">{stock.name}</span>
             <span className={`m-price ${up ? 'up' : 'down'}`}>

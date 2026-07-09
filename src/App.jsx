@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Filter, AlertTriangle, CircleAlert } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
-import { DEFAULT_CONDITIONS, applyFilters, SORTS } from './lib/filters'
+import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, countActiveConditions } from './lib/filters'
 
 export default function App() {
   const [data, setData] = useState(null)
@@ -13,6 +13,12 @@ export default function App() {
   const [sortKey, setSortKey] = useState('signal')
   const [picked, setPicked] = useState(null)
   const [oppCount, setOppCount] = useState(null)
+  const [panelOpen, setPanelOpen] = useState(false)   // 手機常駐工具列與篩選面板連動；桌機面板恆展開（CSS）
+  // 穩定的關閉函式（避免每次渲染都是新函式，害 StockChartModal 的 focus-trap effect 反覆 cleanup/重跑搶焦）
+  const closeModal = useCallback(() => setPicked(null), [])
+
+  const activeConds = useMemo(() => countActiveConditions(conditions), [conditions])
+  const resetAll = () => { setConditions(DEFAULT_CONDITIONS); setSortKey('signal'); setPanelOpen(false) }
 
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}data/screener.json`)
@@ -110,13 +116,27 @@ export default function App() {
 
       {data && (
         <>
+          {/* 手機常駐（sticky）篩選/排序工具列：條件數｜目前排序｜重設；點左側展開完整篩選面板 */}
+          <div className="mobile-toolbar">
+            <button className="mtb-btn" onClick={() => setPanelOpen(o => !o)}
+              aria-expanded={panelOpen} aria-controls="cond-panel">
+              <SlidersHorizontal size={16} strokeWidth={1.75} />條件<b>{activeConds}</b>
+            </button>
+            <span className="mtb-sort">排序<b>{SORT_LABELS[sortKey] || sortKey}</b></span>
+            <button className="mtb-reset" onClick={resetAll}>
+              <RotateCcw size={14} strokeWidth={1.75} />重設
+            </button>
+          </div>
           <ConditionPanel
+            id="cond-panel"
             conditions={conditions}
             onChange={setConditions}
             total={data.count}
             shown={filtered.length}
             holderReady={!!data.holder_ready}
             industries={industries}
+            open={panelOpen}
+            onOpenChange={setPanelOpen}
           />
           <ResultTable
             key={`${sortKey}:${filtered.length}`}
@@ -128,7 +148,7 @@ export default function App() {
         </>
       )}
 
-      <StockChartModal stock={picked} onClose={() => setPicked(null)} />
+      <StockChartModal stock={picked} onClose={closeModal} />
 
       <footer className="app-footer">
         資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議
