@@ -63,6 +63,49 @@ def back_adjust_rows(price_rows, events):
     return out
 
 
+def dividend_fill(price_rows, events):
+    """最近一次除權息的「填息」進度。回 dict 或 None（近期沒有除權息事件）。
+
+    填息＝除權息後股價漲回「除權息前一日收盤價」。這是存股族真正在意的數字：配息拿到手，
+    但股價若沒漲回去，等於左手換右手。所以一律用**原始成交價**比較，不能用還原權息後的
+    序列——還原序列本來就把除權息的價差抹平了，拿它比會每檔都瞬間「填息」。
+
+    回傳：
+      ex_date        最近一次除權息日
+      pre_close      除權息前一日收盤價（要漲回的門檻）
+      fill_days      填息花的交易日數（除權息當日算第 1 天）；尚未填息為 None
+      pending_days   尚未填息時已經過的交易日數；已填息為 None
+      discount_pct   尚未填息時距離門檻還差幾 %；已填息為 None
+    """
+    if not events:
+        return None
+    rows = sorted(price_rows, key=lambda r: r["date"])
+    dates = [r["date"] for r in rows]
+    closes = {r["date"]: r["close"] for r in rows if r.get("close")}
+
+    ex_date = max(e["date"] for e in events)
+    # 歷史只留約 110 個交易日；事件落在歷史之外就算不出來，誠實回 None 不要硬猜。
+    after = [d for d in dates if d >= ex_date]
+    before = [d for d in dates if d < ex_date]
+    if not after or not before:
+        return None
+
+    pre_close = closes.get(before[-1])
+    if not pre_close or pre_close <= 0:
+        return None
+
+    for i, d in enumerate(after, start=1):
+        c = closes.get(d)
+        if c is not None and c >= pre_close:
+            return {"ex_date": ex_date, "pre_close": round(pre_close, 2),
+                    "fill_days": i, "pending_days": None, "discount_pct": None}
+
+    last_close = closes.get(after[-1])
+    discount = round((last_close - pre_close) / pre_close * 100, 2) if last_close else None
+    return {"ex_date": ex_date, "pre_close": round(pre_close, 2),
+            "fill_days": None, "pending_days": len(after), "discount_pct": discount}
+
+
 def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
     """從原始資料算出該股的指標字典；資料不足回 None。
     events：該股除權息事件（見 back_adjust_rows）。均線/糾結/黃金交叉/多頭排列/布林小詩/爆量突破
@@ -354,6 +397,8 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
         "sn_volume_support": sn["volume_support"],
         "sn_tags": sn_tags,
         "signal_shishi": signal_shishi,
+        # 填息進度（B 段第二段）：用原始成交價比對除權息前收盤價，見 dividend_fill()
+        "div_fill": dividend_fill(price_rows, events),
         "foreign_net": foreign_net,
         "trust_net": trust_net,
         "foreign_streak": foreign_streak,

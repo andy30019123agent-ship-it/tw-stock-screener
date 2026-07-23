@@ -14,11 +14,13 @@ const BLANK = {
   shishiAny: false, snSqueezeBreakout: false, snLowerReversal: false,
   snBreakLowRecover: false, snImmortalGuide: false, snVolumeSupport: false,
   minYield: 0, maxPe: 0, maxPb: 0, undervalued: false,
+  divFill: 'all', maxFillDays: 0,
 }
 const PRESETS = [
   { key: 'breakout', label: '爆量突破', icon: Rocket, patch: { ...BLANK, breakout: true } },
   { key: 'shishi', label: '小詩選股', icon: BookOpen, patch: { ...BLANK, shishiAny: true } },
   { key: 'value', label: '同業低估', icon: Gem, patch: { ...BLANK, undervalued: true } },
+  { key: 'fill', label: '填息快', icon: Gem, patch: { ...BLANK, divFill: 'filled', maxFillDays: 10 } },
   { key: 'signal', label: '糾結轉強', icon: Sparkles, patch: { ...BLANK, signalMa: true } },
   { key: 'foreign', label: '外資連買', icon: Landmark, patch: { ...BLANK, foreignDays: 3, trustDays: 0 } },
   { key: 'bull', label: '多頭排列', icon: TrendingUp, patch: { ...BLANK, bullAligned: true } },
@@ -179,6 +181,25 @@ export default function ConditionPanel({
             </div>
             <Toggle label="同業被低估" hint="本益比低於同產業中位數" icon={Gem}
               checked={c.undervalued} onChange={v => set('undervalued', v)} accent />
+          </div>
+        </div>
+
+        {/* 填息（B 段第二段）：配息拿到手不算賺，股價漲回除權息前才是真的填息 */}
+        <div className="cond-group">
+          <span className="cond-section-label"><Gem size={14} strokeWidth={1.75} />填息</span>
+          <div className="cond-chips">
+            <div className="seg">
+              {[['all', '不限'], ['filled', '已填息'], ['pending', '貼息中']].map(([v, label]) => (
+                <button key={v} className={`seg-btn ${c.divFill === v ? 'on' : ''}`}
+                  onClick={() => set('divFill', v)}>{label}</button>
+              ))}
+            </div>
+            <div className="num-field">
+              <label>填息天數 ≤</label>
+              <input type="number" inputMode="numeric" min="0" max="120" value={c.maxFillDays}
+                onChange={e => set('maxFillDays', parseInt(e.target.value, 10) || 0)} />
+              <span>天</span>
+            </div>
           </div>
         </div>
 

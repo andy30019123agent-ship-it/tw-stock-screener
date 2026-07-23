@@ -54,6 +54,14 @@ def _industry_name(code):
 def main():
     print("📡 取得全市場可交易普通股清單（TWSE/TPEX，免費）…")
     date_iso, listed_ohlc = ms.fetch_listed_ohlc_latest()
+    # 抓不到最新交易日（TWSE 擋 IP、或收盤資料未出）→ 沿用既有 universe.json，不要覆寫。
+    # 沒有這道防護時：date_iso=None 會讓 fetch_otc_ohlc(None) 直接爆掉；就算沒爆，
+    # 也會用 0 檔清單蓋掉整份全市場名單，把後面整條建置鏈一起帶走。
+    # 寫法對齊 daily_update.py 既有的降級策略：警告後保留現況，下次排程自動補上。
+    if not date_iso or not listed_ohlc:
+        print("  ⚠️ 上市最新交易日抓不到 → 保留既有 universe.json，本次不更新。")
+        return
+
     otc_ohlc = ms.fetch_otc_ohlc(date_iso)
     print(f"   最新交易日 {date_iso}：上市 {len(listed_ohlc)}、上櫃 {len(otc_ohlc)}")
 
@@ -73,6 +81,17 @@ def main():
     out = {"updated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
            "trade_date": date_iso, "count": len(stocks), "stocks": stocks}
     path = os.path.join(HERE, "universe.json")
+
+    # 第二道防護：部分抓到也可能是壞資料（TPEX 掛掉、TWSE 只回半份）。清單比既有的少
+    # 三成以上就不覆寫——全市場檔數不會一天之內真的掉三成，那一定是來源出問題。
+    try:
+        with open(path, encoding="utf-8") as f:
+            prev_count = json.load(f).get("count", 0)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        prev_count = 0
+    if prev_count and len(stocks) < prev_count * 0.7:
+        print(f"  ⚠️ 新清單 {len(stocks)} 檔遠少於既有 {prev_count} 檔 → 判定來源異常，保留既有檔案。")
+        return
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     print(f"\n✅ 全市場 {len(stocks)} 檔 → {os.path.relpath(path)}")

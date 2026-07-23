@@ -36,7 +36,14 @@ export default function App() {
   // 資料日期誠實化：主顯示「資料日期（交易日）」而非 build 時間，落後太多天要醒目警告。
   const daysStale = useMemo(() => {
     if (!data?.data_date) return null
-    return Math.floor((Date.now() - new Date(data.data_date).getTime()) / 86400000)
+    // 兩邊都換算成「台北日曆日」再相減。原本用 Date.now() 直接減 new Date('YYYY-MM-DD')
+    // （會被當成 UTC 午夜＝台北 08:00），天數要到台北早上 8 點才跳動，凌晨到 8 點之間
+    // 一律少算一天——資料其實已經過期，畫面卻還說沒過期。
+    const todayTaipei = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })
+    const today = Date.parse(`${todayTaipei}T00:00:00Z`)
+    const dataDay = Date.parse(`${data.data_date}T00:00:00Z`)
+    if (Number.isNaN(today) || Number.isNaN(dataDay)) return null
+    return Math.round((today - dataDay) / 86400000)
   }, [data])
   const stale = data && (daysStale === null || daysStale > 5 || data.fetch_ok === false)
 

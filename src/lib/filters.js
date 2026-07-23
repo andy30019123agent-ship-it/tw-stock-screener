@@ -21,6 +21,9 @@ export const DEFAULT_CONDITIONS = {
   maxPe: 0,               // 本益比 ≤ N（且 > 0）
   maxPb: 0,               // 本淨比 ≤ N
   undervalued: false,     // 同業被低估（本益比低於同產業中位數）
+  // 填息（B 段第二段）：'all' 不限 / 'filled' 已填息 / 'pending' 尚未填息（貼息中）
+  divFill: 'all',
+  maxFillDays: 0,         // 已填息且天數 ≤ N（0 = 不限），越快填息代表填息能力越強
   foreignDays: 3,         // 外資連買 ≥ N 天（0 = 不限）
   trustDays: 3,           // 投信連買 ≥ N 天（0 = 不限）
   chipLogic: 'and',       // 'and' 外資與投信都要 / 'or' 任一即可
@@ -59,6 +62,11 @@ export function applyFilters(stocks, c) {
     if (c.maxPb > 0 && !(s.pb > 0 && s.pb <= c.maxPb)) return false
     if (c.undervalued && !s.undervalued) return false
 
+    // 填息狀態
+    if (c.divFill === 'filled' && !(s.div_fill && s.div_fill.fill_days != null)) return false
+    if (c.divFill === 'pending' && !(s.div_fill && s.div_fill.pending_days != null)) return false
+    if (c.maxFillDays > 0 && !(s.div_fill && s.div_fill.fill_days > 0 && s.div_fill.fill_days <= c.maxFillDays)) return false
+
     // 市場 / 產業
     if (c.market && c.market !== 'all' && s.market !== c.market) return false
     if (c.industry && c.industry !== 'all' && s.industry !== c.industry) return false
@@ -85,9 +93,18 @@ const topVr = s => (s.breakout_cands || []).reduce((m, c) => Math.max(m, c.vr), 
 // 小詩形態命中數（給排序用）
 const snCount = s => (s.sn_tags || []).length
 
+// 填息排序權重：已填息用天數（越少越強）、貼息中排在已填息之後、沒除權息的墊底。
+// 不用 0 當「沒資料」的代表值——那會讓沒除權息的股票排到填息最快的位置。
+const fillRank = s => {
+  const f = s.div_fill
+  if (!f) return Number.MAX_SAFE_INTEGER
+  if (f.fill_days != null) return f.fill_days
+  return 100000 + (f.pending_days || 0)
+}
+
 // 排序鍵 → 中文標籤（給手機常駐工具列顯示目前排序）
 export const SORT_LABELS = {
-  signal: '訊號', breakout: '突破', shishi: '小詩', rs: '相對強弱',
+  signal: '訊號', breakout: '突破', shishi: '小詩', rs: '相對強弱', fill: '填息天數',
   change: '漲跌幅', yield: '殖利率', pe: '本益比',
   foreign: '外資', trust: '投信', close: '收盤',
 }
@@ -106,6 +123,8 @@ export function countActiveConditions(c) {
   if (c.minYield > 0) n++
   if (c.maxPe > 0) n++
   if (c.maxPb > 0) n++
+  if (c.divFill && c.divFill !== 'all') n++
+  if (c.maxFillDays > 0) n++
   if (c.market && c.market !== 'all') n++
   if (c.industry && c.industry !== 'all') n++
   if (c.keyword && c.keyword.trim()) n++
@@ -116,6 +135,8 @@ export const SORTS = {
   signal: (a, b) => (b.signal_ma - a.signal_ma) || (b.foreign_streak - a.foreign_streak),
   breakout: (a, b) => (b.signal_breakout - a.signal_breakout) || (topVr(b) - topVr(a)),
   shishi: (a, b) => (snCount(b) - snCount(a)) || (b.foreign_streak - a.foreign_streak),
+  // 填息天數：越少越前面；尚未填息的排最後（用 Infinity），沒除權息的再後面
+  fill: (a, b) => fillRank(a) - fillRank(b),
   foreign: (a, b) => b.foreign_streak - a.foreign_streak,
   trust: (a, b) => b.trust_streak - a.trust_streak,
   change: (a, b) => b.change_pct - a.change_pct,

@@ -26,6 +26,10 @@ function buildTags(s) {
   if (s.foreign_streak >= 3) tags.push([`外資連買${s.foreign_streak}`, 'tag-foreign'])
   if (s.trust_streak >= 3) tags.push([`投信連買${s.trust_streak}`, 'tag-trust'])
   if (s.undervalued) tags.push(['同業低估', 'tag-value'])
+  // 填息：已填息標天數（越少越強）、貼息中標已過幾天。標籤不用漲跌紅綠——
+  // 紅綠在這個站只留給漲跌與 RS（MASTER 設計鐵則）。
+  if (s.div_fill?.fill_days != null) tags.push([`${s.div_fill.fill_days}天填息`, 'tag-value'])
+  else if (s.div_fill?.pending_days != null) tags.push([`貼息${s.div_fill.pending_days}天`, 'tag-value'])
   if (s.holder_rising) tags.push([`千張大戶↑${s.holder_pct}%`, 'tag-holder'])
   if (s.earnings_date) tags.push([`${mmdd(s.earnings_date)}法說會`, 'tag-earnings'])
   return tags
@@ -58,6 +62,7 @@ const MOBILE_SORTS = [
   ['change', '漲跌幅'],
   ['yield', '殖利率'],
   ['pe', '本益比'],
+  ['fill', '填息天數'],
   ['foreign', '外資'],
   ['trust', '投信'],
 ]
