@@ -19,6 +19,29 @@ import urllib.request
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
+# 網站首頁「今日機會股 Top5」的產出，由 build_data → opportunities.run() 寫出。
+OPP_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "data", "opportunities.json")
+
+
+def load_opportunity_picks(dd):
+    """讀網站的「今日機會股 Top5」代號清單（依網站順序）。
+
+    為什麼要讀它：快報原本自己有一套手寫 3/2/1 分的排名，網站 Top5 卻是用回測權重排的，
+    同一天兩邊可能推薦完全不同的股票——使用者看到的是兩套互相矛盾的建議。以網站那份為準，
+    快報就只負責「把同一份結論寫成人看得懂的訊息」。
+
+    日期對不上或檔案讀不到就回 None，讓呼叫端退回自有排序——寧可推一份略舊邏輯的清單，
+    也不要因為缺一個檔案就整天不推。
+    """
+    try:
+        with open(OPP_PATH, encoding="utf-8") as f:
+            opp = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+    if dd and opp.get("date") and opp["date"] != dd:
+        return None
+    ids = [p["id"] for p in (opp.get("picks") or [])]
+    return ids or None
 
 
 def data_date(stocks):
@@ -54,9 +77,11 @@ def score(s):
         sc += 1
     if primary and s.get("undervalued"):        # 同業被低估（估值面加分）
         sc += 1
-    # 抑制追高：乖離（離 ma20 的乖離率）過大者扣分，讓快報偏向「還沒噴太遠、
+    # 抑制追高：乖離（現價離 20 日均線幾 %）過大者扣分，讓快報偏向「還沒噴太遠、
     # 相對安全的進場點」，而非已經漲一大段的追高點。
-    disp = s.get("dispersion_pct")
+    # ⚠️ 這裡曾經誤用 dispersion_pct——那是「四條均線彼此的離散度」，不是股價乖離。
+    # 兩者方向相關（噴過頭的股票均線也會攤開）所以沒露餡，但扣分依據和風險提示的數字都是錯的。
+    disp = s.get("bias20_pct")
     if disp is not None:
         if disp >= 20:
             sc -= 3
@@ -115,7 +140,7 @@ def price_note(s):
 
 def risk_warning(s, n_reasons):
     """只回「值得警示」的風險（緊湊）；無特別警示則回空字串。"""
-    disp = s.get("dispersion_pct")
+    disp = s.get("bias20_pct")
     if disp is not None and disp >= 12:
         return f"乖離 {disp:.0f}% 偏大"
     if n_reasons <= 1:
@@ -131,10 +156,16 @@ def build_message(d):
     # 交易日優先讀頂層 data_date；舊資料沒有才退回掃 ohlc（全市場版 ohlc 已拆出，掃不到）
     dd = d.get("data_date") or data_date(stocks)
     mmdd = "/".join(dd.split("-")[1:]) if dd else "—"
-    ranked = sorted(
-        [s for s in stocks if score(s) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
-        key=lambda s: (-score(s), -s.get("foreign_streak", 0)),
-    )[:5]
+    # 排名一律以網站的「今日機會股 Top5」為準（同一套回測權重），讓網站與 TG 說同一套話。
+    by_id = {s["id"]: s for s in stocks}
+    opp_ids = load_opportunity_picks(dd)
+    ranked = [by_id[i] for i in opp_ids if i in by_id] if opp_ids else []
+    if not ranked:
+        # 退路：機會股檔案缺席/日期對不上時，用自有分數排序，至少還推得出東西。
+        ranked = sorted(
+            [s for s in stocks if score(s) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
+            key=lambda s: (-score(s), -s.get("foreign_streak", 0)),
+        )[:5]
 
     cnt = d.get("count", len(stocks))
     sep = "━━━━━━━━━━"  # 卡片分隔線

@@ -70,32 +70,64 @@ def signal_flags(ind):
 
 
 def stats_to_weights(stats, min_sample=MIN_SAMPLE, default=DEFAULT_WEIGHT):
-    """把每訊號的 {wins, count, ret_sum} 統計換成勝率/平均報酬/權重。純函式（好手算對照）。"""
+    """把每訊號的統計換成勝率/超額報酬/權重。純函式（好手算對照）。
+
+    **權重一律看「超額勝率」而非「絕對勝率」**：絕對勝率是「20 日後有沒有漲」，多頭市場裡
+    隨便亂選也會超過 50%，拿它當證據等於把大盤的漲幅記在訊號頭上。超額＝該股報酬減掉
+    「同一天全市場的平均報酬」，衡量的是「這個訊號有沒有比隨便買強」，才是真的邊際價值。
+
+    **樣本不足一律 weight=0，不再給預設 1**：舊做法把「沒有證據」當成「中等證據」——
+    投信連買 0 筆樣本、外資連買 1 筆樣本，權重卻和 3,691 筆樣本的縮口帶量突破一樣大，
+    等於讓沒驗證過的條件左右機會股排名。沒證據就不該加分，但保留統計數字供觀察。
+    """
     out = {}
     for k in SIGNALS:
-        st = stats.get(k, {"wins": 0, "count": 0, "ret_sum": 0.0})
-        c = st["count"]
-        wr = (st["wins"] / c) if c else None
-        if c >= min_sample:
-            weight = max(0, round((wr - 0.5) * 20))
+        st = stats.get(k) or {}
+        c = st.get("count", 0)
+        wr = (st.get("wins", 0) / c) if c else None
+        exc_wr = (st.get("exc_wins", 0) / c) if c else None
+        validated = c >= min_sample
+        # 權重看「平均超額報酬」而不是「超額勝率」：訊號報酬是右偏的——多數事件小輸、
+        # 少數事件大贏。實測「大量撐」超額勝率只有 40%，平均超額卻是 +1.28pp，用勝率會
+        # 把它判成廢訊號。交易看的是期望值，不是贏的次數。
+        avg_exc_pp = (st.get("exc_sum", 0.0) / c * 100) if c else 0.0
+        if not validated or avg_exc_pp <= 0:
+            weight = 0
         else:
-            weight = default
+            weight = min(5, max(1, round(avg_exc_pp * 2)))
         out[k] = {
             "label": SIGNAL_LABELS.get(k, k),
-            "win_rate": round(wr, 4) if wr is not None else None,
-            "avg_ret": round(st["ret_sum"] / c * 100, 2) if c else None,  # 平均報酬（%）
+            "win_rate": round(wr, 4) if wr is not None else None,          # 絕對勝率（僅供對照）
+            "excess_win_rate": round(exc_wr, 4) if exc_wr is not None else None,  # 超額勝率（權重依據）
+            "avg_ret": round(st.get("ret_sum", 0.0) / c * 100, 2) if c else None,   # 平均報酬（%）
+            "avg_excess": round(st.get("exc_sum", 0.0) / c * 100, 2) if c else None,  # 平均超額報酬（百分點）
             "samples": c,
+            "validated": validated,
             "weight": weight,
         }
     return out
 
 
-def run_backtest(price_hist, chip_hist, div_hist, universe,
-                 forward=FORWARD, min_bars=MIN_BARS):
-    """對全市場逐檔、逐歷史交易日評估訊號並記錄下 forward 交易日的報酬（還原價）。
-    回傳 stats_to_weights 的輸出。"""
+def collect_events(price_hist, chip_hist, div_hist, universe,
+                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None):
+    """逐檔、逐歷史交易日評估訊號，回傳 (events, by_date)。
+
+    events：[{date, sid, ret, fired:[訊號…]}]，只收「有訊號成立」的事件。
+    by_date：{date: [該日所有可評估個股的 forward 報酬…]}，當「同日全市場平均」基準用——
+             這是唯一能從現有資料算出的乾淨對照組（指數歷史只有 39 天，蓋不住 110 天回測窗）。
+
+    三個刻意的設計，都是為了讓數字可信：
+    1. **流動性用當時的量**：舊版拿「完整序列（含今天）」的 20 日均量決定整檔要不要回測，
+       等於用未來資訊篩過去樣本——當年沒量、現在爆量的會被算進來，當年活躍、現在變殭屍的
+       整檔被丟掉。改成每個歷史時點各自用「那天當下」的 20 日均量判斷。
+    2. **同一檔同一訊號設冷卻期**：形態會在最近 3 日內重複成立，20 日持有期又高度重疊，
+       舊版把它們當成獨立樣本，樣本數嚴重虛胖（宣稱 3,496 筆其實遠少於此）。
+    3. **只用 pr[:i+1] 算指標**：這點舊版就做對了，保留。
+    """
     import build_data as bd  # 延遲載入避免與 build_data 的循環匯入
-    stats = {k: {"wins": 0, "count": 0, "ret_sum": 0.0} for k in SIGNALS}
+    cooldown = forward if cooldown is None else cooldown
+    events, by_date = [], {}
+
     for stock in universe:
         sid = stock["id"]
         pr = hs.to_price_rows(price_hist.get(sid, {}))
@@ -105,35 +137,62 @@ def run_backtest(price_hist, chip_hist, div_hist, universe,
         cr = hs.to_chip_rows(chip_hist.get(sid, {}))
         ev = hs.to_div_events(div_hist.get(sid))
 
-        # 先算「最新一根」的完整指標，順便當量能過濾（殭屍股跳過）
-        full = bd.compute_indicators(pr, cr, ev, None)
-        if full is None or full.get("avg_vol_lots", 0) < BACKTEST_MIN_VOL:
-            continue
-
         # 還原權息後的收盤序列（跟 pr 同順序），用來算前瞻報酬
         adj_close = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
+        last_fire = {}   # 訊號 → 最後一次採計的 i，做冷卻期
 
         for i in range(min_bars - 1, len(pr) - forward):
             di = pr[i]["date"]
-            slice_cr = [c for c in cr if c["date"] <= di]
-            ind = bd.compute_indicators(pr[:i + 1], slice_cr, ev, None)
-            if ind is None:
-                continue
-            flags = signal_flags(ind)
-            if not any(flags.values()):
-                continue
             base = adj_close[i]
             if not base:
                 continue
+            ind = bd.compute_indicators(pr[:i + 1], [c for c in cr if c["date"] <= di], ev, None)
+            if ind is None:
+                continue
+            # 流動性用「當下」的 20 日均量，不是最新的（point-in-time，避免前視偏誤）
+            if (ind.get("avg_vol_lots", 0) or 0) < BACKTEST_MIN_VOL:
+                continue
+
             ret = adj_close[i + forward] / base - 1
-            for k, fired in flags.items():
-                if fired:
-                    s = stats[k]
-                    s["count"] += 1
-                    s["ret_sum"] += ret
-                    if ret > 0:
-                        s["wins"] += 1
-    return stats_to_weights(stats)
+            by_date.setdefault(di, []).append(ret)   # 基準母體：所有「可評估」個股，不論有無訊號
+
+            fired = []
+            for k, hit in signal_flags(ind).items():
+                if not hit:
+                    continue
+                if k in last_fire and i - last_fire[k] < cooldown:
+                    continue                          # 冷卻期內，同一波訊號不重複採計
+                last_fire[k] = i
+                fired.append(k)
+            if fired:
+                events.append({"date": di, "sid": sid, "ret": ret, "fired": fired})
+    return events, by_date
+
+
+def events_to_stats(events, by_date):
+    """把事件與同日基準換算成每訊號統計。純函式，方便單測與手算對照。"""
+    bench = {d: (sum(v) / len(v)) for d, v in by_date.items() if v}
+    stats = {k: {"wins": 0, "count": 0, "ret_sum": 0.0, "exc_wins": 0, "exc_sum": 0.0} for k in SIGNALS}
+    for e in events:
+        b = bench.get(e["date"], 0.0)
+        exc = e["ret"] - b
+        for k in e["fired"]:
+            st = stats[k]
+            st["count"] += 1
+            st["ret_sum"] += e["ret"]
+            st["exc_sum"] += exc
+            if e["ret"] > 0:
+                st["wins"] += 1
+            if exc > 0:
+                st["exc_wins"] += 1
+    return stats
+
+
+def run_backtest(price_hist, chip_hist, div_hist, universe,
+                 forward=FORWARD, min_bars=MIN_BARS):
+    """對全市場回測訊號，回傳 stats_to_weights 的輸出。"""
+    events, by_date = collect_events(price_hist, chip_hist, div_hist, universe, forward, min_bars)
+    return stats_to_weights(events_to_stats(events, by_date))
 
 
 def _load(path):

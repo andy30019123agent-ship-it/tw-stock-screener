@@ -140,13 +140,14 @@ export default function Opportunities({ stocks, onPick, onCount }) {
           {showWeights && (
             <div className="opp-weights-body">
               <p className="opp-muted">
-                回測「訊號成立日的下 {weights.forward_days} 交易日報酬 &gt; 0」的勝率；
-                權重 = max(0, round((勝率−0.5)×20))，樣本 &lt; {weights.min_sample || 30} 用預設 1。
+                回測訊號成立日的下 {weights.forward_days} 交易日報酬，並減去「同一天全市場的平均報酬」
+                得到超額報酬——只看有沒有漲，多頭時亂選也會贏，那是大盤的功勞不是訊號的。
+                權重 = 平均超額（百分點）×2，取 1~5；平均超額 ≤ 0 或樣本 &lt; {weights.min_sample || 30} 一律 0。
               </p>
               <div className="opp-weights-scroll">
                 <table className="opp-weights-table">
                   <thead>
-                    <tr><th>訊號</th><th>勝率</th><th>平均報酬</th><th>樣本</th><th>權重</th></tr>
+                    <tr><th>訊號</th><th>勝率</th><th>平均報酬</th><th>平均超額</th><th>樣本</th><th>權重</th></tr>
                   </thead>
                   <tbody>
                     {Object.values(weights.signals)
@@ -156,6 +157,7 @@ export default function Opportunities({ stocks, onPick, onCount }) {
                           <td>{s.label}</td>
                           <td>{s.win_rate != null ? `${Math.round(s.win_rate * 100)}%` : '—'}</td>
                           <td className={s.avg_ret >= 0 ? 'good' : ''}>{s.avg_ret != null ? `${s.avg_ret >= 0 ? '+' : ''}${s.avg_ret}%` : '—'}</td>
+                          <td className={s.avg_excess > 0 ? 'good' : ''}>{s.avg_excess != null ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '—'}</td>
                           <td>{s.samples || '—'}</td>
                           <td><b>{s.weight}</b></td>
                         </tr>
@@ -164,7 +166,8 @@ export default function Opportunities({ stocks, onPick, onCount }) {
                 </table>
               </div>
               <p className="opp-muted opp-weights-note">
-                註：外資／投信連買、千張大戶、同業低估屬「當下籌碼/估值快照」，缺逐日歷史 → 樣本不足、暫用預設權重 1。
+                註：外資／投信連買、千張大戶、同業低估屬「當下籌碼/估值快照」，缺逐日歷史 → 樣本 0，權重一律 0（沒有證據就不加分，不再給預設 1）。
+                目前價格歷史只有 110 個交易日，扣掉指標暖身與 20 日持有期後可回測的區間很短，所有數字都應視為初步參考。
               </p>
             </div>
           )}

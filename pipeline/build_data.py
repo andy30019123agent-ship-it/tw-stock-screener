@@ -379,6 +379,9 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
         "ma5": round(ma5, 2), "ma10": round(ma10, 2),
         "ma20": round(ma20, 2), "ma60": round(ma60, 2),
         "rs20": rs20,                        # 相對強弱：個股近20日報酬 － 加權指數近20日報酬（百分點）
+        # 乖離率＝現價偏離 20 日均線幾 %。跟下面的 dispersion_pct（四條均線彼此的離散度）
+        # 是兩件事——notify_tg 曾經把 dispersion_pct 當乖離用，扣分和風險提示都扣在錯的量上。
+        "bias20_pct": round((last_close / ma20 - 1) * 100, 2) if ma20 else None,
         "recent_high20": recent_high20,      # 出場參考：近 20 日高點（原始成交價）
         "dispersion_pct": round(disp_now * 100, 2) if disp_now is not None else None,
         "bull_aligned": bull_aligned,
