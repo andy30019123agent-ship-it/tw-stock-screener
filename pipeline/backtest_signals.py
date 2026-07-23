@@ -24,6 +24,7 @@ import history_store as hs  # noqa: E402
 
 HERE = os.path.dirname(__file__)
 WEIGHTS_PATH = os.path.join(HERE, "signal_weights.json")
+BT_PRICE_PATH = os.path.join(HERE, "history", "bt_price.json")
 
 FORWARD = 20        # 下 N 交易日報酬
 MIN_SAMPLE = 30     # 低於此樣本數用預設權重
@@ -221,7 +222,22 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         return existing
 
     print("🧮 回測訊號權重（約每週重算一次）…")
-    weights = run_backtest(price_hist, chip_hist, div_hist, universe)
+    # 回測改吃「長歷史」：price.json 只有 110 天，扣掉指標暖身 65 天與 20 天持有期後
+    # 只剩約 25 個可回測交易日，而且全落在同一段市況——樣本不足以判斷訊號好壞。
+    # 長歷史每週在這裡從 price.json 補上新日期（price 視窗 110 天 ≫ 一週，不會漏接）。
+    bt_hist = hs.load(BT_PRICE_PATH) or hs.bt_empty()
+    added = hs.bt_merge_from_price(bt_hist, price_hist)
+    if added:
+        hs.save(BT_PRICE_PATH, bt_hist)
+        print(f"   長歷史併入 {added} 個新交易日 → 共 {len(bt_hist['dates'])} 天、{len(bt_hist['stocks'])} 檔")
+    long_price = hs.bt_to_price_hist(bt_hist)
+    if len(bt_hist.get("dates") or []) > len(next(iter(price_hist.values()), {})):
+        print(f"   使用長歷史回測（{len(bt_hist['dates'])} 個交易日）")
+        price_for_bt = long_price
+    else:
+        print("   長歷史尚未建立，暫用 110 天滾動歷史回測（樣本偏少）")
+        price_for_bt = price_hist
+    weights = run_backtest(price_for_bt, chip_hist, div_hist, universe)
     out = {
         "date": today.isoformat(),
         "computed": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),

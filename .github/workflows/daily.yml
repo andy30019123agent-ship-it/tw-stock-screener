@@ -13,6 +13,14 @@ on:
         description: '測試用：只跑指定股票（逗號分隔）'
         required: false
         default: ''
+      backfill_bt:
+        description: '一次性補齊回測長歷史 bt_price.json（約兩年，跑很久，只在需要時開）'
+        type: boolean
+        default: false
+      backfill_bt_months:
+        description: 'backfill_bt 往回補幾個月'
+        required: false
+        default: '24'
 
 permissions:
   contents: write
@@ -36,6 +44,11 @@ jobs:
         run: |
           python pipeline/build_universe.py
           python pipeline/backfill.py --months 6 --chip-days 20 --sleep 0.4
+
+      - name: （手動）補齊回測長歷史 bt_price.json
+        if: ${{ inputs.backfill_bt }}
+        timeout-minutes: 300
+        run: python pipeline/backfill_bt.py --months ${{ inputs.backfill_bt_months }} --sleep 0.8
 
       - name: 每日累積最新交易日（非 bootstrap）
         if: ${{ !inputs.bootstrap }}
@@ -61,7 +74,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pipeline/history/price.json pipeline/history/chip.json pipeline/history/dividends.json \
-                  pipeline/history/index.json \
+                  pipeline/history/index.json pipeline/history/bt_price.json \
                   pipeline/holders_history.json pipeline/notify_state.json pipeline/universe.json \
                   pipeline/fetch_state.json \
                   pipeline/signal_weights.json pipeline/picks_history.json \
