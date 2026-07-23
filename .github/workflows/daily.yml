@@ -21,6 +21,14 @@ on:
         description: 'backfill_bt 往回補幾個月'
         required: false
         default: '24'
+      finmind_fill:
+        description: '用 FinMind 補 bt 缺格（备援；TWSE 對某天永久回空時才需要）'
+        type: boolean
+        default: false
+      finmind_dates:
+        description: 'FinMind 补整日洞的日期（逗號分隔，如 2024-09-24）；留空＝只補個股零星缺格'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -49,6 +57,19 @@ jobs:
         if: ${{ inputs.backfill_bt }}
         timeout-minutes: 300
         run: python pipeline/backfill_bt.py --months ${{ inputs.backfill_bt_months }} --sleep 0.8
+
+      - name: （手動）FinMind 補 bt 缺格（备援）
+        if: ${{ inputs.finmind_fill }}
+        timeout-minutes: 300
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          FINMIND_DATES: ${{ inputs.finmind_dates }}   # 走 env 避免把輸入內插進 run（防注入）
+        run: |
+          if [ -n "$FINMIND_DATES" ]; then
+            python pipeline/finmind_fill.py --dates "$FINMIND_DATES"
+          else
+            python pipeline/finmind_fill.py
+          fi
 
       - name: 每日累積最新交易日（非 bootstrap）
         if: ${{ !inputs.bootstrap }}
