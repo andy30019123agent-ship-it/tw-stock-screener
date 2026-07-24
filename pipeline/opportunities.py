@@ -42,7 +42,9 @@ def build_opportunities(results, weights, revenue, data_date):
     picks = []
     for r in results:
         flags = bt.signal_flags(r)
-        fired = [k for k, v in flags.items() if v]
+        # 只用「引擎訊號」計分／當理由——多頭排列、填息快只做戰績展示，不進 Top5（否則
+        # 多頭排列太常見會亂洗排名）。展示型訊號的戰績在勝率榜/策略戰績表另外呈現。
+        fired = [k for k, v in flags.items() if v and k in bt.ENGINE_SIGNALS]
         if not fired:
             continue
         if (r.get("avg_vol_lots", 0) or 0) < MIN_VOL_LOTS:   # 流動性

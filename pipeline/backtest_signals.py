@@ -39,13 +39,18 @@ MIN_BARS = 65       # compute_indicators 至少要 65 根 K 線
 RECOMPUTE_DAYS = 6  # 距上次重算 ≥ 此天數才重算（約每週）
 BACKTEST_MIN_VOL = 300  # 只回測有一定量能的股票，避免殭屍股雜訊
 
-# 回測涵蓋的訊號（與 notify_tg.score()/reasons() 那批對齊）
-SIGNALS = [
+# 進 Top5 選股引擎計分的訊號（opportunities.build_opportunities 只加這些的權重）。
+# 這是「引擎基準」——不要為了展示戰績就亂加，會改動 Top5 排名（見 ENGINE_SIGNALS 用途）。
+ENGINE_SIGNALS = [
     "signal_ma", "signal_breakout",
     "sn_squeeze_breakout", "sn_lower_reversal", "sn_break_low_recover",
     "sn_immortal_guide", "sn_volume_support",
     "foreign_buy", "trust_buy", "holder_rising", "undervalued",
 ]
+# 回測＋勝率榜「展示」涵蓋的訊號＝引擎訊號 ＋ 只做戰績展示、不進引擎的（多頭排列/填息快）。
+# 多頭排列太常見，若進引擎會亂洗 Top5；填息快是狀態型訊號。兩者只給使用者看戰績，不改選股。
+DISPLAY_ONLY_SIGNALS = ["bull_aligned", "fill_fast"]
+SIGNALS = ENGINE_SIGNALS + DISPLAY_ONLY_SIGNALS
 
 # 中文標籤（給 opportunities 的 reasons 與網頁展示共用）
 SIGNAL_LABELS = {
@@ -55,6 +60,7 @@ SIGNAL_LABELS = {
     "sn_volume_support": "大量撐",
     "foreign_buy": "外資連買", "trust_buy": "投信連買",
     "holder_rising": "千張大戶↑", "undervalued": "同業低估",
+    "bull_aligned": "多頭排列", "fill_fast": "填息快",
 }
 
 
@@ -73,7 +79,16 @@ def signal_flags(ind):
         "trust_buy": (ind.get("trust_streak", 0) or 0) >= 3,
         "holder_rising": bool(ind.get("holder_rising")),
         "undervalued": bool(ind.get("undervalued")),
+        # 展示型（不進引擎）：多頭排列＝MA5>10>20>60；填息快＝已填息且天數 ≤10
+        "bull_aligned": bool(ind.get("bull_aligned")),
+        "fill_fast": _fill_fast(ind.get("div_fill")),
     }
+
+
+def _fill_fast(df):
+    """填息快：最近一次除權息已填息、且填息天數 ≤10。div_fill 用未來除權息日時會回未填息，
+    不會製造前視偏誤（保守）。與『填息快』快速套用（divFill=filled, maxFillDays=10）同義。"""
+    return bool(df) and df.get("fill_days") is not None and df["fill_days"] <= 10
 
 
 def stats_to_weights(stats, min_sample=MIN_SAMPLE, default=DEFAULT_WEIGHT):

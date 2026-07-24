@@ -34,13 +34,20 @@ const PRESET_SIGNAL = {
   value: ['undervalued'],
   signal: ['signal_ma'],
   foreign: ['foreign_buy'],
-  // fill（填息快）、bull（多頭排列）無對應回測訊號 → 排最後
+  fill: ['fill_fast'],
+  bull: ['bull_aligned'],
+}
+// 取該策略「最具代表性訊號」（有樣本者中平均超額最高）的回測戰績；無樣本回 null。
+function presetStat(key, weights) {
+  const keys = PRESET_SIGNAL[key]
+  if (!keys || !weights?.signals) return null
+  const cands = keys.map(k => weights.signals[k]).filter(s => s && s.samples > 0 && s.avg_excess != null)
+  if (!cands.length) return null
+  return cands.reduce((a, b) => (b.avg_excess > a.avg_excess ? b : a))
 }
 function presetScore(key, weights) {
-  const keys = PRESET_SIGNAL[key]
-  if (!keys || !weights?.signals) return -Infinity
-  const vals = keys.map(k => weights.signals[k]?.avg_excess).filter(v => v != null)
-  return vals.length ? Math.max(...vals) : -Infinity
+  const s = presetStat(key, weights)
+  return s ? s.avg_excess : -Infinity
 }
 
 export default function ConditionPanel({
@@ -70,17 +77,51 @@ export default function ConditionPanel({
       </button>
 
       <div className="cond-body">
-        {/* 一鍵套用 */}
+        {/* 一鍵套用（依勝率排序，按鈕上標戰績）＋ 策略戰績表 */}
         <div className="cond-presets">
           <span className="cond-section-label">快速套用</span>
           <div className="preset-row">
-            {orderedPresets.map((p, i) => (
-              <button key={p.key} className={`preset-chip ${activePreset === p.key ? 'on' : ''}`} style={{ '--i': i }}
-                onClick={() => applyPreset(p.key, p.patch)}>
-                <p.icon size={14} strokeWidth={1.75} />{p.label}
-              </button>
-            ))}
+            {orderedPresets.map((p, i) => {
+              const st = presetStat(p.key, weights)
+              return (
+                <button key={p.key} className={`preset-chip ${activePreset === p.key ? 'on' : ''}`} style={{ '--i': i }}
+                  onClick={() => applyPreset(p.key, p.patch)}>
+                  <p.icon size={14} strokeWidth={1.75} />{p.label}
+                  {st && <span className={`preset-score ${st.avg_excess > 0 ? 'good' : st.avg_excess < 0 ? 'bad' : ''}`}>
+                    {st.avg_excess >= 0 ? '+' : ''}{st.avg_excess}<small>pp</small></span>}
+                </button>
+              )
+            })}
           </div>
+          {weights?.signals && (
+            <details className="strategy-board">
+              <summary>各策略回測戰績（依平均超額排序）</summary>
+              <div className="strategy-scroll">
+                <table className="strategy-table">
+                  <thead><tr><th>策略</th><th>平均超額</th><th>勝率</th><th>樣本</th></tr></thead>
+                  <tbody>
+                    {orderedPresets.map(p => {
+                      const s = presetStat(p.key, weights)
+                      return (
+                        <tr key={p.key}>
+                          <td>{p.label}</td>
+                          <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
+                            {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '尚無回測'}</td>
+                          <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
+                          <td>{s ? s.samples : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="strategy-note">
+                平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
+                小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
+                同業低估／外資連買因缺逐日歷史、樣本 0，暫無戰績。
+              </p>
+            </details>
+          )}
         </div>
 
         {/* 範圍：市場 / 產業 */}
