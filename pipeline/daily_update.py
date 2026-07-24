@@ -28,10 +28,17 @@ def write_fetch_state(ok):
 
 
 def main():
-    date_iso, listed = ms.fetch_listed_ohlc_latest()   # 最新交易日 + 全上市
+    # 抓最新交易日：TWSE 偶爾會擋 runner IP、收盤資料未出、或「連線逾時」→ 一律優雅跳過本次
+    # 累積，用現有歷史繼續 build+部署，不讓整個流程崩掉；下次排程 TWSE 恢復後自動補上。
+    # ⚠️ 逾時是「raise 例外」（非回空），一定要 try 起來——否則例外會在下面的空值檢查之前
+    #    就炸掉，連帶擋掉整包部署（含跟資料無關的前端改動）。2026-07-24 踩過一次。
+    try:
+        date_iso, listed = ms.fetch_listed_ohlc_latest()   # 最新交易日 + 全上市
+    except Exception as e:
+        print(f"  ⚠️ 抓最新交易日失敗（{e}）→ 跳過本次累積，用現有歷史繼續建置。")
+        write_fetch_state(False)
+        return
     print(f"📅 最新交易日 {date_iso}：上市 {len(listed)} 檔")
-    # 抓不到最新交易日（TWSE 偶爾會擋 runner IP、或收盤資料未出）→ 優雅跳過本次累積，
-    # 用現有歷史繼續 build+部署，不讓整個流程崩掉；下次排程 TWSE 恢復後自動補上。
     if not date_iso or not listed:
         print("  ⚠️ 上市最新交易日抓不到 → 跳過本次累積，用現有歷史繼續建置。")
         write_fetch_state(False)
