@@ -26,11 +26,33 @@ const PRESETS = [
   { key: 'bull', label: '多頭排列', icon: TrendingUp, patch: { ...BLANK, bullAligned: true } },
 ]
 
+// 每個快速套用對應的回測訊號 → 用它的「平均超額報酬」當排序分數（勝率最高的排前面）。
+// 沒有對應訊號或無樣本者排到最後（維持原相對順序）。
+const PRESET_SIGNAL = {
+  breakout: ['signal_breakout'],
+  shishi: ['sn_squeeze_breakout', 'sn_lower_reversal', 'sn_break_low_recover', 'sn_immortal_guide', 'sn_volume_support'],
+  value: ['undervalued'],
+  signal: ['signal_ma'],
+  foreign: ['foreign_buy'],
+  // fill（填息快）、bull（多頭排列）無對應回測訊號 → 排最後
+}
+function presetScore(key, weights) {
+  const keys = PRESET_SIGNAL[key]
+  if (!keys || !weights?.signals) return -Infinity
+  const vals = keys.map(k => weights.signals[k]?.avg_excess).filter(v => v != null)
+  return vals.length ? Math.max(...vals) : -Infinity
+}
+
 export default function ConditionPanel({
   conditions, onChange, total, shown, holderReady, industries = [],
-  open: openProp, onOpenChange, id,
+  weights = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
+  // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
+  const orderedPresets = PRESETS
+    .map((p, i) => ({ p, i, s: presetScore(p.key, weights) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map(x => x.p)
   const set = (key, value) => onChange({ ...c, [key]: value })
   const [activePreset, setActivePreset] = useState(null)
   const applyPreset = (key, patch) => { onChange({ ...c, ...patch }); setActivePreset(key) }
@@ -52,7 +74,7 @@ export default function ConditionPanel({
         <div className="cond-presets">
           <span className="cond-section-label">快速套用</span>
           <div className="preset-row">
-            {PRESETS.map((p, i) => (
+            {orderedPresets.map((p, i) => (
               <button key={p.key} className={`preset-chip ${activePreset === p.key ? 'on' : ''}`} style={{ '--i': i }}
                 onClick={() => applyPreset(p.key, p.patch)}>
                 <p.icon size={14} strokeWidth={1.75} />{p.label}
@@ -220,7 +242,8 @@ export default function ConditionPanel({
 
 function Toggle({ label, hint, checked, onChange, accent, disabled, icon: Icon }) {
   return (
-    <label className={`toggle ${checked ? 'checked' : ''} ${accent ? 'accent' : ''} ${disabled ? 'disabled' : ''}`}>
+    <label className={`toggle ${checked ? 'checked' : ''} ${accent ? 'accent' : ''} ${disabled ? 'disabled' : ''}`}
+      title={hint ? `${label}｜${hint}` : label}>
       <input type="checkbox" checked={checked} disabled={disabled}
         onChange={e => onChange(e.target.checked)} />
       <span className="toggle-label">{Icon && <Icon size={14} strokeWidth={1.75} />}{label}</span>

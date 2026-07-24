@@ -330,7 +330,14 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .preset-chip.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
 .cond-group { padding-top: 16px; border-top: 1px solid var(--border); }
-.cond-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 勾選項改固定格線：等寬欄位對齊，不再因每項寬度不一而參差（桌機/手機皆適用）。
+   同列的格子等高，提示過長就換行、不截斷（保留完整資訊）。 */
+.cond-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; align-items: stretch; }
+.cond-checks .toggle { width: 100%; align-items: flex-start; flex-wrap: wrap; column-gap: 8px; row-gap: 2px; }
+.cond-checks .toggle input[type=checkbox] { margin-top: 1px; }
+/* 標籤放得下就與提示同列；放不下時提示整段換到下一行（不逐字直排）*/
+.cond-checks .toggle-label { flex: none; max-width: 100%; }
+.cond-checks .toggle-hint { min-width: 0; flex: 1 1 auto; }
 
 /* 範圍切換：pill segmented control */
 .seg { display: inline-flex; gap: 4px; background: var(--surface-tint); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 4px; }
