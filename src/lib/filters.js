@@ -109,6 +109,13 @@ export const SORT_LABELS = {
   foreign: '外資', trust: '投信', close: '收盤',
 }
 
+// 手機排序選單的顯示順序（工具列「排序 ▾」點開的選單共用；桌機用表頭排序不吃這個）
+export const MOBILE_SORTS = [
+  ['signal', '訊號'], ['breakout', '突破'], ['shishi', '小詩'], ['rs', '相對強弱'],
+  ['change', '漲跌幅'], ['yield', '殖利率'], ['pe', '本益比'], ['fill', '填息天數'],
+  ['foreign', '外資'], ['trust', '投信'],
+]
+
 // 目前有幾個條件在實際限縮清單（給工具列顯示「條件 N」）
 export function countActiveConditions(c) {
   let n = 0

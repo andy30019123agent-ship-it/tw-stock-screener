@@ -54,19 +54,6 @@ function Tags({ s }) {
   )
 }
 
-const MOBILE_SORTS = [
-  ['signal', '訊號'],
-  ['breakout', '突破'],
-  ['shishi', '小詩'],
-  ['rs', '相對強弱'],
-  ['change', '漲跌幅'],
-  ['yield', '殖利率'],
-  ['pe', '本益比'],
-  ['fill', '填息天數'],
-  ['foreign', '外資'],
-  ['trust', '投信'],
-]
-
 // 估值：本益比 / 本淨比 / 殖利率（缺值以 — 顯示）
 function Valuation({ s }) {
   const g = v => (v === null || v === undefined) ? '—' : v
@@ -113,15 +100,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
 
   return (
     <>
-      {/* 手機：排序列 */}
-      <div className="sort-bar">
-        <span className="sort-bar-label">排序</span>
-        {MOBILE_SORTS.map(([key, label]) => (
-          <button key={key} className={`sort-chip ${sortKey === key ? 'on' : ''}`}
-            onClick={() => onSort(key)}>{label}</button>
-        ))}
-      </div>
-
+      {/* 手機排序改由 sticky 工具列的「排序 ▾」點開選單（見 App.jsx），這裡不再放參差的 pill 列 */}
       {/* 手機：卡片列表 —— 首列代號/價格，第二列 3 個關鍵判斷（RS｜法人連買｜主訊號），估值降級小字 */}
       <div className="card-list">
         {stocks.map((s, i) => {

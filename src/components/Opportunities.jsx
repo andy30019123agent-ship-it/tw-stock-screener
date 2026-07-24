@@ -37,7 +37,8 @@ export default function Opportunities({ stocks, onPick, onCount }) {
   const [sortWin, setSortWin] = useState('all')   // 目前聚焦／排序的時間窗欄
   const [showWeights, setShowWeights] = useState(false)
   // 手機預設收合機會股 Top5（省捲動，Andy 2026-07-09 指定）；桌機不顯示收合鈕故恆展開。
-  const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 640 : true))
+  // 斷點用 720 對齊「手機卡片版」的斷點（641~720 也是手機版，之前用 640 會在這區間誤展開）。
+  const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 720 : true))
 
   // 點卡片開 K 線彈窗：優先用 screener.json 的完整資料（欄位齊全），
   // 抓不到（如尚未載入）才用 pick 本身的欄位墊底，讓彈窗至少開得起來。
@@ -67,7 +68,7 @@ export default function Opportunities({ stocks, onPick, onCount }) {
   // 桌機（≥641px）恆展開：視窗放大到桌機時強制 open=true，避免「手機載入收合→拉大到桌機、
   // 收合鈕被 CSS 藏起卻仍收合」導致桌機看不到機會股。
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 641px)')
+    const mq = window.matchMedia('(min-width: 721px)')
     const sync = () => { if (mq.matches) setOpen(true) }
     sync()
     mq.addEventListener('change', sync)
@@ -94,7 +95,7 @@ export default function Opportunities({ stocks, onPick, onCount }) {
     : []
 
   return (
-    <section className="opp" data-region="機會股 Top 5">
+    <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="機會股 Top 5">
       <div className="opp-head">
         <div>
           <span className="badge-pill"><Target size={14} strokeWidth={1.75} />今日機會股 Top 5</span>

@@ -495,23 +495,56 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .mobile-toolbar { display: none; }
 .mtb-btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
-  padding: 8px 16px; border: none; border-radius: var(--r-pill);
-  background: var(--primary-tint); color: var(--ink);
-  font-size: .875rem; font-weight: 700; white-space: nowrap; flex: none;
+  padding: 8px 14px; border: 1px solid transparent; border-radius: var(--r-pill);
+  background: var(--primary-tint); color: var(--ink); cursor: pointer;
+  font-family: inherit; font-size: .875rem; font-weight: 700; white-space: nowrap; flex: none;
 }
+.mtb-btn.on { border-color: var(--primary); }
 .mtb-btn b { color: var(--primary-strong); margin-left: 2px; }
-.mtb-sort {
-  flex: 1; min-width: 0; font-size: .875rem; color: var(--ink-muted);
+/* 中間「符合 N 檔」吃掉剩餘寬度、必要時省略 */
+.mtb-count {
+  flex: 1; min-width: 0; text-align: center; font-size: .875rem; color: var(--ink-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.mtb-sort b { color: var(--ink); font-weight: 700; margin-left: 4px; }
-.mtb-reset {
+.mtb-count b { color: var(--ink); font-weight: 800; margin: 0 2px; }
+/* 排序：可點、點開底部選單 */
+.mtb-sortbtn {
   display: inline-flex; align-items: center; gap: 4px; min-height: 44px;
-  padding: 8px 14px; border: 1px solid var(--border-strong); border-radius: var(--r-pill);
-  background: var(--surface); color: var(--ink-muted);
-  font-size: .875rem; font-weight: 700; white-space: nowrap; flex: none;
+  padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink-muted); cursor: pointer;
+  font-family: inherit; font-size: .875rem; font-weight: 700; white-space: nowrap; flex: none;
+}
+.mtb-sortbtn b { color: var(--ink); margin: 0 1px; }
+.mtb-sortbtn.on { border-color: var(--primary); color: var(--ink); }
+/* 重設：低頻動作 → 縮成 icon-only，不與高頻的篩選/排序等權搶版位 */
+.mtb-reset {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; min-width: 44px; padding: 8px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink-muted); flex: none; cursor: pointer;
 }
 .mtb-reset:hover { border-color: var(--primary); color: var(--ink); }
+
+/* 排序底部彈出選單（取代清單前那排參差的排序 pill）*/
+.sort-sheet-backdrop {
+  position: fixed; inset: 0; background: rgba(43, 10, 32, .45);
+  display: flex; align-items: flex-end; justify-content: center; z-index: 60;
+}
+.sort-sheet {
+  width: 100%; background: var(--surface);
+  border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow-lg);
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); animation: sheet-up .24s ease;
+}
+.sort-sheet-head { font-size: 1rem; font-weight: 800; color: var(--ink); margin: 0 4px 12px; }
+.sort-sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.sort-opt {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  width: 100%; min-height: 48px; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink-body); cursor: pointer;
+  font-family: inherit; font-size: .9375rem; font-weight: 700;
+}
+.sort-opt.on { background: var(--primary-tint); border-color: var(--primary); color: var(--primary-strong); }
 
 /* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
 .sort-bar, .card-list { display: none; }
@@ -630,8 +663,12 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
   /* 桌機表格隱藏，改用卡片 */
   .table-wrap { display: none; }
-  .sort-bar { display: flex; }
   .card-list { display: flex; }
+
+  /* 機會股收合時縮成一條窄列：藏副標與日期、縮 padding/margin，讓清單往上跑 */
+  .opp-collapsed { padding: 10px 14px; margin-bottom: 16px; }
+  .opp-collapsed .opp-head { margin-bottom: 0; align-items: center; }
+  .opp-collapsed .opp-sub, .opp-collapsed .opp-date { display: none; }
 
   /* 常駐工具列：吸頂、不透明底避免疊字，層級在卡片之上、彈窗之下 */
   .mobile-toolbar {
@@ -642,10 +679,12 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
     border-radius: var(--r-pill); box-shadow: var(--shadow-sm);
   }
 
-  /* 篩選面板：可摺疊、不再黏頂 */
+  /* 篩選面板：可摺疊、不再黏頂。手機隱藏面板自己的標題列——開合改由上方單一工具列的
+     「篩選」鈕驅動（原本兩條列重複，這是 Andy 圈出的凌亂主因）。 */
   .cond-panel { padding: 20px; gap: 16px; }
-  .cond-toggle { display: flex; }
-  .cond-panel.collapsed .cond-body { display: none; }
+  .cond-toggle { display: none; }
+  /* 收合時整個面板不佔位（標題已隱藏，否則會留一個空的框）；點工具列「篩選」才展開 */
+  .cond-panel.collapsed { display: none; }
 
   .search { font-size: 16px; }
   .knob input[type=range] { width: 110px; }

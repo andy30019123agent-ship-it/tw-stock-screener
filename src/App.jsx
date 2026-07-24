@@ -1,16 +1,17 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
-import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, countActiveConditions } from './lib/filters'
+import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions } from './lib/filters'
 
 export default function App() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS)
   const [sortKey, setSortKey] = useState('signal')
+  const [sortOpen, setSortOpen] = useState(false)   // 手機排序選單（工具列「排序 ▾」點開）
   const [picked, setPicked] = useState(null)
   const [oppCount, setOppCount] = useState(null)
   const [panelOpen, setPanelOpen] = useState(false)   // 手機常駐工具列與篩選面板連動；桌機面板恆展開（CSS）
@@ -123,17 +124,41 @@ export default function App() {
 
       {data && (
         <>
-          {/* 手機常駐（sticky）篩選/排序工具列：條件數｜目前排序｜重設；點左側展開完整篩選面板 */}
+          {/* 手機常駐（sticky）單一工具列：篩選數｜符合檔數｜排序（點開選單）｜重設。
+              取代舊版「mobile-toolbar＋ConditionPanel 標題」兩條重複列。桌機隱藏（用完整面板）。 */}
           <div className="mobile-toolbar">
-            <button className="mtb-btn" onClick={() => setPanelOpen(o => !o)}
+            <button className={`mtb-btn ${panelOpen ? 'on' : ''}`} onClick={() => setPanelOpen(o => !o)}
               aria-expanded={panelOpen} aria-controls="cond-panel">
-              <SlidersHorizontal size={16} strokeWidth={1.75} />條件<b>{activeConds}</b>
+              <SlidersHorizontal size={16} strokeWidth={1.75} />篩選<b>{activeConds}</b>
             </button>
-            <span className="mtb-sort">排序<b>{SORT_LABELS[sortKey] || sortKey}</b></span>
-            <button className="mtb-reset" onClick={resetAll}>
-              <RotateCcw size={14} strokeWidth={1.75} />重設
+            <span className="mtb-count">符合 <b key={filtered.length}>{filtered.length}</b> 檔</span>
+            <button className={`mtb-sortbtn ${sortOpen ? 'on' : ''}`} onClick={() => setSortOpen(true)}
+              aria-haspopup="listbox" aria-expanded={sortOpen}>
+              <ArrowUpDown size={14} strokeWidth={1.75} /><b>{SORT_LABELS[sortKey] || sortKey}</b>
+              <ChevronDown size={13} strokeWidth={2} />
+            </button>
+            <button className="mtb-reset" onClick={resetAll} aria-label="重設條件與排序">
+              <RotateCcw size={15} strokeWidth={1.75} />
             </button>
           </div>
+
+          {/* 排序選單：底部彈出，固定二欄格線（取代原本清單前參差的 10 顆排序 pill） */}
+          {sortOpen && (
+            <div className="sort-sheet-backdrop" onClick={() => setSortOpen(false)}>
+              <div className="sort-sheet" role="listbox" aria-label="排序方式" onClick={e => e.stopPropagation()}>
+                <div className="sort-sheet-head">排序方式</div>
+                <div className="sort-sheet-grid">
+                  {MOBILE_SORTS.map(([key, label]) => (
+                    <button key={key} role="option" aria-selected={sortKey === key}
+                      className={`sort-opt ${sortKey === key ? 'on' : ''}`}
+                      onClick={() => { setSortKey(key); setSortOpen(false) }}>
+                      {label}{sortKey === key && <Check size={15} strokeWidth={2.5} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           <ConditionPanel
             id="cond-panel"
             conditions={conditions}
