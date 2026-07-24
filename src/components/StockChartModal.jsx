@@ -58,7 +58,7 @@ export default function StockChartModal({ stock, onClose }) {
   // K 線按需載入（charts/<id>.json）；把「載入中／無資料／載入失敗」分成三態
   const load = useCallback(() => {
     if (!stock) return
-    setStatus('loading'); setOhlc(null); setReadout(null)
+    setStatus('loading'); setOhlc(null); setReadout(null); setLevels(null)  // 清掉上一檔的支撐壓力，別讓載入時閃現舊值
     let alive = true
     fetch(`${import.meta.env.BASE_URL}data/charts/${stock.id}.json`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('http'))))
@@ -75,8 +75,9 @@ export default function StockChartModal({ stock, onClose }) {
 
   // 建圖：只在資料 ready 時建；支撐/壓力就地由 ohlc 算（避免多一次 state 觸發重建）
   useEffect(() => {
-    if (status !== 'ready' || !ohlc?.length) return
+    if (status !== 'ready' || !ohlc?.length || !wrapRef.current) return
     const el = wrapRef.current
+    if (chartRef.current) { chartRef.current.chart.remove(); chartRef.current = null }  // 先拆舊圖再建新圖，避免殘留
     el.innerHTML = ''
 
     const inkMuted = cssVar('--ink-muted')
@@ -148,6 +149,12 @@ export default function StockChartModal({ stock, onClose }) {
     const c = chartRef.current
     if (c && ohlc?.length) applyRange(c.chart, ohlc.length, range)
   }, [range, ohlc])
+
+  // 關窗（stock 變 null）時確實拆圖——元件本身不會 unmount，建圖 effect 的 cleanup 不一定觸發，
+  // 不拆的話 chart/ResizeObserver 會殘留在已移除的 DOM 節點上（Codex 2026-07-24 指出）。
+  useEffect(() => {
+    if (!stock && chartRef.current) { chartRef.current.chart.remove(); chartRef.current = null }
+  }, [stock])
 
   // 無障礙：focus 移入、Esc 關、Tab focus trap、關閉還原 focus；並鎖背景捲動
   useEffect(() => {

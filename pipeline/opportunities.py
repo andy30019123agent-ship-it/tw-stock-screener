@@ -62,7 +62,9 @@ def build_opportunities(results, weights, revenue, data_date):
         if ma20 and close and (close - ma20) / ma20 * 100 > BIAS_FLAG_PCT:
             risk.append("乖離大")
 
-        score = sum(int(sig.get(k, {}).get("weight", bt.DEFAULT_WEIGHT)) for k in fired)
+        # 權重缺 key（舊版/部分損壞/新增訊號但快取未重算）時回退 0，不是 1——沒有回測證據
+        # 就不該給分（否則未驗證訊號會偷偷加分改變 Top5）。（Codex 2026-07-24 指出）
+        score = sum(int(sig.get(k, {}).get("weight", 0) or 0) for k in fired)
         reasons = [bt.SIGNAL_LABELS[k] for k in fired if k in bt.SIGNAL_LABELS]
         picks.append({
             "id": r["id"],

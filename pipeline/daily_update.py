@@ -38,12 +38,20 @@ def main():
         print(f"  ⚠️ 抓最新交易日失敗（{e}）→ 跳過本次累積，用現有歷史繼續建置。")
         write_fetch_state(False)
         return
-    print(f"📅 最新交易日 {date_iso}：上市 {len(listed)} 檔")
+    # 空值檢查要在 len() 之前——fetch 若回 (None, None) 不丟例外，len(None) 會炸（Codex 2026-07-24 指出）。
     if not date_iso or not listed:
         print("  ⚠️ 上市最新交易日抓不到 → 跳過本次累積，用現有歷史繼續建置。")
         write_fetch_state(False)
         return
-    otc = ms.fetch_otc_ohlc(date_iso)
+    print(f"📅 最新交易日 {date_iso}：上市 {len(listed)} 檔")
+    # 上櫃也要包起來：TPEX 逾時同樣會炸整包部署（跟上市同一類雷）。失敗就整次降級、不寫「只有
+    # 上市」的半套資料（避免上市新/上櫃舊卻標 fetch_ok=True 誤導前端）；下次排程自動補上。
+    try:
+        otc = ms.fetch_otc_ohlc(date_iso)
+    except Exception as e:
+        print(f"  ⚠️ 上櫃 {date_iso} 抓取失敗（{e}）→ 跳過本次累積（避免上市/上櫃不一致），用現有歷史繼續。")
+        write_fetch_state(False)
+        return
     print(f"   上櫃 {len(otc)} 檔")
 
     price = hs.load(PRICE_PATH)
