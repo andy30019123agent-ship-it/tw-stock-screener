@@ -4,6 +4,7 @@ import ConditionPanel from './components/ConditionPanel'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
+import MarketAdvice from './components/MarketAdvice'
 import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions } from './lib/filters'
 
 export default function App() {
@@ -34,6 +35,12 @@ export default function App() {
 
   const activeConds = useMemo(() => countActiveConditions(conditions), [conditions])
   const resetAll = () => { setConditions(DEFAULT_CONDITIONS); setSortKey('signal'); setPanelOpen(false) }
+  // 本週市況建議「套用」：從乾淨預設疊上該訊號條件、展開面板、捲到清單
+  const applyAdvice = patch => {
+    setConditions({ ...DEFAULT_CONDITIONS, bullAligned: false, ...patch })
+    setPanelOpen(true)
+    document.getElementById('cond-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}data/screener.json`)
@@ -148,6 +155,8 @@ export default function App() {
           </span>
         </div>
       )}
+
+      {data && <MarketAdvice breadth={data.market_breadth} regime={regime} onApply={applyAdvice} />}
 
       {!data && !error && (
         <div className="center-state">

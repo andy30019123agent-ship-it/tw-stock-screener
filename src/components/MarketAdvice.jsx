@@ -1,0 +1,60 @@
+import { TrendingUp, TrendingDown, Minus, Check } from 'lucide-react'
+
+// 本週市況建議：看現在大盤（市場廣度）是紅/黃/綠，從「市況分層」回測挑出「這個市況下歷史最強」的訊號。
+// 全天候（三種市況都正）會標記。可即時篩選的訊號給「套用」鈕；相對強弱/產業因需全市場排名只給戰績。
+const STATUS = {
+  green: { label: '偏強（多頭）', tone: 'up', icon: TrendingUp },
+  yellow: { label: '中性（盤整）', tone: 'flat', icon: Minus },
+  red: { label: '偏弱（空頭）', tone: 'down', icon: TrendingDown },
+  severe_red: { label: '明顯走弱（空頭）', tone: 'down', icon: TrendingDown },
+}
+const BUCKET = { green: 'green', yellow: 'yellow', red: 'red', severe_red: 'red' }
+const BUCKETS = ['green', 'yellow', 'red']
+// 訊號 → 可即時套用的篩選條件（相對強弱/產業需全市場排名，網站無法即時篩，不列）
+const APPLY = {
+  signal_ma: { signalMa: true }, signal_breakout: { breakout: true },
+  sn_squeeze_breakout: { snSqueezeBreakout: true }, sn_immortal_guide: { snImmortalGuide: true },
+  sn_volume_support: { snVolumeSupport: true }, sn_break_low_recover: { snBreakLowRecover: true },
+  sn_lower_reversal: { snLowerReversal: true }, bull_aligned: { bullAligned: true },
+}
+
+export default function MarketAdvice({ breadth, regime, onApply }) {
+  if (!breadth || !regime?.signals) return null
+  const st = STATUS[breadth.status]
+  const bucket = BUCKET[breadth.status]
+  if (!st || !bucket) return null
+
+  const ranked = Object.entries(regime.signals).map(([k, s]) => {
+    const allWeather = BUCKETS.every(b => s[b]?.samples >= 30 && s[b]?.avg_excess > 0)
+    return { k, label: s.label, cur: s[bucket], allWeather }
+  }).filter(x => x.cur && x.cur.samples >= 30 && x.cur.avg_excess > 0)
+    .sort((a, b) => b.cur.avg_excess - a.cur.avg_excess)
+    .slice(0, 5)
+
+  if (!ranked.length) return null
+  const Icon = st.icon
+
+  return (
+    <div className={`market-advice tone-${st.tone}`}>
+      <div className="ma-head">
+        <Icon size={18} strokeWidth={2} />
+        <span>本週市況：<b>{st.label}</b></span>
+        <small>全市場 {Math.round(breadth.breadth20 * 100)}% 站上月線</small>
+      </div>
+      <div className="ma-sub">這個市況下，歷史表現最強的訊號：</div>
+      <ol className="ma-list">
+        {ranked.map(x => (
+          <li key={x.k}>
+            <span className="ma-name">{x.label}
+              {x.allWeather && <span className="ma-tag" title="紅黃綠三種市況都有正超額，空頭也站得住">全天候</span>}</span>
+            <span className="ma-exc good">+{x.cur.avg_excess}pp</span>
+            {APPLY[x.k]
+              ? <button className="ma-apply" onClick={() => onApply(APPLY[x.k])}><Check size={13} strokeWidth={2.5} />套用</button>
+              : <span className="ma-info" title="相對強弱/產業訊號需全市場即時排名，網站只提供歷史戰績、無法即時篩選">僅戰績</span>}
+          </li>
+        ))}
+      </ol>
+      <p className="ma-note">依「市況分層」歷史回測——挑目前市況下超額最高、樣本足（≥30）的訊號；全天候＝空頭也有效。僅供參考、非投資建議。</p>
+    </div>
+  )
+}

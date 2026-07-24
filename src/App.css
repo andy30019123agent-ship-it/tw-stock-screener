@@ -366,6 +366,31 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .regime-table .regime-n { display: block; font-size: .7rem; color: var(--ink-muted); font-weight: 400; }
 .regime-table th:not(:first-child) { text-align: right; }
 
+/* 本週市況建議卡片 */
+.market-advice { margin: 14px 0; padding: 14px 16px; border-radius: 16px; background: var(--surface);
+  border: 1.5px solid color-mix(in srgb, var(--primary) 30%, var(--border)); box-shadow: 0 2px 12px rgba(0,0,0,.05); }
+.market-advice.tone-down { border-color: color-mix(in srgb, #E0A000 50%, var(--border));
+  background: color-mix(in srgb, #FBF0D8 35%, var(--surface)); }
+.ma-head { display: flex; align-items: center; gap: 8px; font-size: 1rem; color: var(--ink); }
+.ma-head svg { color: var(--primary); }
+.market-advice.tone-down .ma-head svg { color: #C08800; }
+.ma-head small { margin-left: auto; color: var(--ink-muted); font-size: .8125rem; font-weight: 400; }
+.ma-sub { margin: 10px 0 8px; font-size: .875rem; color: var(--ink-body); font-weight: 600; }
+.ma-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ma-list li { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.ma-name { font-weight: 600; display: flex; align-items: center; gap: 6px; color: var(--ink); }
+.ma-tag { font-size: .7rem; font-weight: 700; color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent); padding: 1px 7px; border-radius: 999px; }
+.ma-exc { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ma-exc.good { color: var(--up); }
+.ma-apply { display: inline-flex; align-items: center; gap: 3px; padding: 5px 12px; border-radius: 999px;
+  border: none; background: var(--primary); color: #fff; font-size: .8125rem; font-weight: 600; cursor: pointer;
+  min-width: 64px; justify-content: center; }
+.ma-apply:hover { filter: brightness(1.05); }
+.ma-info { font-size: .75rem; color: var(--ink-muted); padding: 5px 8px; white-space: nowrap; }
+.ma-note { margin: 10px 0 0; font-size: .75rem; color: var(--ink-muted); line-height: 1.5; }
+
 /* 組合戰績排行榜 */
 .combo-board { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
 .combo-toggle {
