@@ -29,6 +29,9 @@ export const DEFAULT_CONDITIONS = {
   chipLogic: 'and',       // 'and' 外資與投信都要 / 'or' 任一即可
   market: 'all',          // 'all' / '上市' / '上櫃'
   industry: 'all',        // 'all' 或產業名稱
+  // 風險濾網（Phase C，預設關閉、不影響 Top5，只是使用者自選）
+  minMoney: 0,            // 最低 20 日均成交額（億元），0 = 不限
+  excludeRunaway: false,  // 排除「極端暴走股」（乖離/短漲/波動過高）
   keyword: '',
 }
 
@@ -66,6 +69,10 @@ export function applyFilters(stocks, c) {
     if (c.divFill === 'filled' && !(s.div_fill && s.div_fill.fill_days != null)) return false
     if (c.divFill === 'pending' && !(s.div_fill && s.div_fill.pending_days != null)) return false
     if (c.maxFillDays > 0 && !(s.div_fill && s.div_fill.fill_days > 0 && s.div_fill.fill_days <= c.maxFillDays)) return false
+
+    // 風險濾網（Phase C，預設關閉）：最低成交額、排除極端暴走股
+    if (c.minMoney > 0 && !(s.avg_money_e >= c.minMoney)) return false
+    if (c.excludeRunaway && s.runaway_extreme) return false
 
     // 市場 / 產業
     if (c.market && c.market !== 'all' && s.market !== c.market) return false
@@ -134,6 +141,8 @@ export function countActiveConditions(c) {
   if (c.maxFillDays > 0) n++
   if (c.market && c.market !== 'all') n++
   if (c.industry && c.industry !== 'all') n++
+  if (c.minMoney > 0) n++
+  if (c.excludeRunaway) n++
   if (c.keyword && c.keyword.trim()) n++
   return n
 }

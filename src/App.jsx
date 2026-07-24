@@ -133,6 +133,19 @@ export default function App() {
         </div>
       )}
 
+      {data?.market_breadth && ['red', 'severe_red', 'yellow'].includes(data.market_breadth.status) && (
+        <div className={`banner ${data.market_breadth.status === 'yellow' ? 'banner-warn' : 'banner-error'}`} role="status">
+          <AlertTriangle size={18} strokeWidth={1.75} />
+          <span>
+            {data.market_breadth.status === 'severe_red' ? '大盤明顯走弱' :
+              data.market_breadth.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'}
+            ——全市場僅 <b>{Math.round(data.market_breadth.breadth20 * 100)}%</b> 的股票站上月線
+            （20 日報酬中位 {data.market_breadth.median_ret20_pct >= 0 ? '+' : ''}{data.market_breadth.median_ret20_pct}%）。
+            Top5 仍照常產生，<b>請自行斟酌降低曝險</b>。（此為市場廣度代理、非大盤指數；僅供參考、不改選股）
+          </span>
+        </div>
+      )}
+
       {!data && !error && (
         <div className="center-state">
           <div className="spin" />

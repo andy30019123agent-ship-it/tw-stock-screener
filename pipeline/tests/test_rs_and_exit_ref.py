@@ -146,3 +146,36 @@ def test_recent_high20_uses_raw_high_not_close():
     assert ind is not None
     # 最後一天收盤 100、但最高價被拉到 108（含 high_bump）→ recent_high20 應抓到 108，不是收盤價
     assert ind["recent_high20"] == 108.0
+
+
+# ── Phase C：暴走股旗標 ＋ 市場廣度（build_data）─────────────────────────
+def _smooth(n, start=100.0, step=0.01):
+    return [start + i * step for i in range(n)]
+
+
+def test_runaway_flags_乖離分級():
+    closes = _smooth(30)                       # 平滑上漲、波動極低 → 旗標由 bias 驅動
+    assert bd.runaway_flags(closes, 0.05)["runaway_warn"] is False    # 乖離 5% 正常
+    warn = bd.runaway_flags(closes, 0.20)      # 乖離 20% → 警示但非極端
+    assert warn["runaway_warn"] is True and warn["runaway_extreme"] is False
+    ext = bd.runaway_flags(closes, 0.30)       # 乖離 30% → 極端
+    assert ext["runaway_extreme"] is True
+    crash = bd.runaway_flags(closes, -0.20)    # 乖離 −20% → 暴跌警示（跟追高分開）
+    assert crash["crash_warn"] is True and crash["runaway_warn"] is False
+
+
+def test_runaway_flags_資料不足回False():
+    r = bd.runaway_flags(_smooth(10), 0.30)    # <21 根 → 不硬算
+    assert r["runaway_warn"] is False and r["rv20_pct"] is None
+
+
+def test_market_breadth_綠與紅():
+    green = [{"close": 110, "ma20": 100, "ret20_pct": 3.0} for _ in range(150)]
+    g = bd.market_breadth(green)
+    assert g["status"] == "green" and g["breadth20"] == 1.0
+    red = [{"close": 90, "ma20": 100, "ret20_pct": -3.0} for _ in range(150)]
+    assert bd.market_breadth(red)["status"] == "red"
+
+
+def test_market_breadth_樣本不足回unknown():
+    assert bd.market_breadth([{"close": 110, "ma20": 100, "ret20_pct": 1.0}] * 50)["status"] == "unknown"

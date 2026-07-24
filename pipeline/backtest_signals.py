@@ -696,6 +696,53 @@ def _adaptive_row(k, evx, idx, as_of, as_of_i, decay):
     return row
 
 
+def _apply_cost(gross):
+    """把毛報酬換成成本後淨報酬（來回手續費＋證交稅＋滑價，乘除式，與出場分析同一把尺）。"""
+    return (1 + gross) * (1 - EXIT_FEE - EXIT_TAX - EXIT_SLIP) / (1 + EXIT_FEE + EXIT_SLIP) - 1
+
+
+def signal_quality(events):
+    """每訊號的「防騙指標」：成本後期望值、賺賠比、獲利因子——讓「高勝率但期望值爛」現形。
+    回 {sigkey: {...}}。用 e['fired']（過冷卻、與單訊號統計同母體）。成本後（forward=20 毛報酬扣來回成本）。"""
+    acc = {k: {"n": 0, "nw": 0, "nl": 0, "sw": 0.0, "sl": 0.0, "s": 0.0} for k in SIGNALS}
+    for e in events:
+        net = _apply_cost(e["ret"])
+        for k in e["fired"]:
+            a = acc[k]
+            a["n"] += 1
+            a["s"] += net
+            if net > 0:
+                a["nw"] += 1
+                a["sw"] += net
+            elif net < 0:
+                a["nl"] += 1
+                a["sl"] += -net                       # 累積虧損絕對值
+    out = {}
+    for k in SIGNALS:
+        a = acc[k]
+        n = a["n"]
+        if n == 0:
+            out[k] = {"samples": 0, "net_expectancy": None, "payoff_ratio": None,
+                      "profit_factor": None, "net_win_rate": None, "high_win_trap": False}
+            continue
+        avg_win = a["sw"] / a["nw"] if a["nw"] else 0.0
+        avg_loss = a["sl"] / a["nl"] if a["nl"] else 0.0   # 已是絕對值
+        net_wr = a["nw"] / n
+        expct = a["s"] / n
+        out[k] = {
+            "samples": n,
+            "net_expectancy": round(expct * 100, 2),        # 成本後期望值（百分點）＝最重要的單一指標
+            "avg_win": round(avg_win * 100, 2),
+            "avg_loss": round(avg_loss * 100, 2),
+            "payoff_ratio": round(avg_win / avg_loss, 2) if avg_loss > 0 else None,
+            "profit_factor": round(a["sw"] / a["sl"], 2) if a["sl"] > 0 else None,
+            "net_win_rate": round(net_wr, 4),
+            # 高勝率陷阱：勝率高但成本後期望值 ≤0（樣本夠才判）
+            "high_win_trap": bool(n >= 20 and net_wr >= 0.60 and expct <= 0),
+        }
+    return out
+
+
 def attach_phase_a(weights, events, by_date):
     """把 OOS 與自適應候選權重併進 weights['signals'][k]（新增 oos/adaptive/spec_version 巢狀欄位）。
     現行 weight 完全不動——Top5 引擎這階段照舊，新指標只供驗證與展示。回 (oos_by_sig, total_folds)。"""
@@ -958,6 +1005,11 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     }
     # Phase A：樣本外驗證＋自適應候選權重（並行欄位，不動現行 weight/Top5）。純切片、幾乎零成本。
     oos, total_folds = attach_phase_a(out, events, by_date)
+    # Phase C：防騙指標（成本後期望值/賺賠比/獲利因子/高勝率陷阱），併進每訊號 quality 欄位。
+    quality = signal_quality(events)
+    for k, q in quality.items():
+        if k in out["signals"]:
+            out["signals"][k]["quality"] = q
     out["phase_a"] = {
         "spec_version": PHASE_A_SPEC, "total_folds": total_folds,
         "config": {"train_days": OOS_TRAIN_DAYS, "embargo_days": OOS_EMBARGO_DAYS,

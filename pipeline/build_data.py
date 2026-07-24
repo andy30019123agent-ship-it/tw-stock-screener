@@ -14,6 +14,7 @@ import sys
 import json
 import argparse
 import datetime as dt
+from math import log, sqrt
 from urllib.request import urlopen, Request
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -104,6 +105,33 @@ def dividend_fill(price_rows, events):
     discount = round((last_close - pre_close) / pre_close * 100, 2) if last_close else None
     return {"ex_date": ex_date, "pre_close": round(pre_close, 2),
             "fill_days": None, "pending_days": len(after), "discount_pct": discount}
+
+
+def runaway_flags(closes, bias20_frac):
+    """暴走股/暴跌旗標（Phase C：只加警示，不剔除、不扣權重——動能策略可能正是靠高波動獲利）。
+    closes＝還原後收盤序列（新到舊末尾）。bias20_frac＝(現價/ma20−1) 小數。回 dict。
+    只有還原收盤 → 不能算真跳空，jump 只算「收盤對收盤大幅跳動日」，不叫 gap。"""
+    out = {"runaway_warn": False, "runaway_extreme": False, "crash_warn": False,
+           "rv20_pct": None, "ret5_pct": None}
+    if len(closes) < 21:
+        return out
+    logret = [log(closes[i] / closes[i - 1]) for i in range(1, len(closes))
+              if closes[i] and closes[i - 1] and closes[i] > 0 and closes[i - 1] > 0]
+    if len(logret) < 20:
+        return out
+    r = logret[-20:]
+    mean = sum(r) / len(r)
+    var = sum((x - mean) ** 2 for x in r) / (len(r) - 1)
+    rv20 = (var ** 0.5) * sqrt(252)                       # 年化已實現波動度
+    ret5 = closes[-1] / closes[-6] - 1 if len(closes) >= 6 and closes[-6] else 0.0
+    jump10 = sum(1 for x in logret[-10:] if abs(x) >= log(1.08))   # 近10日「大幅跳動」日數
+    b = bias20_frac if bias20_frac is not None else 0.0
+    out["rv20_pct"] = round(rv20 * 100, 1)
+    out["ret5_pct"] = round(ret5 * 100, 2)
+    out["runaway_warn"] = bool(b >= 0.15 or ret5 >= 0.25 or rv20 >= 0.60 or jump10 >= 2)
+    out["runaway_extreme"] = bool(b >= 0.25 or ret5 >= 0.40 or rv20 >= 0.80 or jump10 >= 3)
+    out["crash_warn"] = bool(b <= -0.15 or ret5 <= -0.25 or rv20 >= 0.60)
+    return out
 
 
 def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
@@ -369,6 +397,9 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
     foreign_net = by_date[chip_dates[-1]].get("Foreign_Investor", 0) if chip_dates else 0
     trust_net = by_date[chip_dates[-1]].get("Investment_Trust", 0) if chip_dates else 0
 
+    # 暴走股/暴跌旗標（Phase C 防禦資訊；用還原 closes）
+    rw = runaway_flags(closes, (last_close / ma20 - 1) if ma20 else None)
+
     return {
         "close": round(last_close, 2),
         "change": change,
@@ -382,6 +413,11 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
         # 乖離率＝現價偏離 20 日均線幾 %。跟下面的 dispersion_pct（四條均線彼此的離散度）
         # 是兩件事——notify_tg 曾經把 dispersion_pct 當乖離用，扣分和風險提示都扣在錯的量上。
         "bias20_pct": round((last_close / ma20 - 1) * 100, 2) if ma20 else None,
+        "runaway_warn": rw["runaway_warn"],   # 暴走股警示（乖離/短漲/波動/跳動任一過高）
+        "runaway_extreme": rw["runaway_extreme"],
+        "crash_warn": rw["crash_warn"],       # 暴跌警示（跟追高分開）
+        "rv20_pct": rw["rv20_pct"], "ret5_pct": rw["ret5_pct"],
+        "ret20_pct": round((closes[-1] / closes[-21] - 1) * 100, 2) if len(closes) >= 21 and closes[-21] else None,
         "recent_high20": recent_high20,      # 出場參考：近 20 日高點（原始成交價）
         "dispersion_pct": round(disp_now * 100, 2) if disp_now is not None else None,
         "bull_aligned": bull_aligned,
@@ -528,6 +564,31 @@ def holder_signal(hist):
     }
 
 
+def market_breadth(results):
+    """市場廣度（Phase C 資訊型：只掛橫幅、不改 Top5 選股）。用全市場個股算——479 天全市場
+    比只有 40 天的 TAIEX 更適合判中期風險環境。breadth20＝收在 ma20 之上的比例；
+    median_ret20＝20 日還原報酬中位數。回 dict。狀態綠/黃/紅/嚴重紅/未知。"""
+    elig = [r for r in results if r.get("close") and r.get("ma20") and r.get("ret20_pct") is not None]
+    n = len(elig)
+    if n < 100:
+        return {"status": "unknown", "eligible": n}
+    above = sum(1 for r in elig if r["close"] > r["ma20"]) / n
+    rets = sorted(r["ret20_pct"] for r in elig)
+    med = rets[n // 2] if n % 2 else (rets[n // 2 - 1] + rets[n // 2]) / 2
+    med_frac = med / 100
+    if above >= 0.55 and med_frac >= 0.0:
+        status = "green"
+    elif above < 0.30 and med_frac <= -0.05:
+        status = "severe_red"
+    elif above < 0.40 and med_frac < 0.0:
+        status = "red"
+    else:
+        status = "yellow"
+    return {"status": status, "breadth20": round(above, 3), "median_ret20_pct": round(med, 2),
+            "eligible": n,
+            "note": "單日快照（未做3日確認）；股票池非 point-in-time、可能有存活者偏誤；僅供參考不改選股"}
+
+
 def annotate_valuation(results):
     """同業比：以「同產業本益比中位數」判斷是否被低估。
     對每檔加上 industry_pe_median 與 undervalued（本益比為正且低於同業中位數）。就地修改。"""
@@ -662,6 +723,7 @@ def main():
         "universe_count": len(universe),    # 全市場掃描檔數（資訊用）
         "holder_ready": holder_ready,
         "holder_week": holder_week,
+        "market_breadth": market_breadth(results),   # Phase C：市場廣度橫幅（資訊型、不改選股）
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")

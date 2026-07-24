@@ -430,3 +430,30 @@ def test_exit_analysis_路徑不足略過():
                "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]  # 65+40=105 >= 90 → 略過
     res = bt.exit_analysis(events, {"A": by}, {})
     assert res["n_events"] == 0
+
+
+# ── Phase C：防騙指標（signal_quality）─────────────────────────────────
+def test_apply_cost_扣成本():
+    assert bt._apply_cost(0.0) < 0                        # 沒漲也要付來回成本 → 淨為負
+    assert bt._apply_cost(0.10) < 0.10                    # 毛 10% 淨 <10%
+
+
+def test_signal_quality_高勝率陷阱():
+    # 19 筆小賺 +2%（撐得過成本）、1 筆大賠 −30%：勝率 95% 但一次大賠讓成本後期望值為負 → 陷阱成立
+    events = [{"date": f"d{i}", "sid": str(i), "i": 0, "ret": 0.02,
+               "fired": ["signal_ma"]} for i in range(19)]
+    events.append({"date": "dX", "sid": "X", "i": 0, "ret": -0.30, "fired": ["signal_ma"]})
+    q = bt.signal_quality(events)["signal_ma"]
+    assert q["samples"] == 20
+    assert q["net_win_rate"] >= 0.90                               # 高勝率
+    assert q["net_expectancy"] < 0                                  # 但成本後期望值為負
+    assert q["high_win_trap"] is True                              # 陷阱旗標成立
+    assert q["payoff_ratio"] is not None and q["payoff_ratio"] < 1  # 賺賠比 <1（賺小賠大）
+
+
+def test_signal_quality_正常訊號不觸發陷阱():
+    events = [{"date": f"d{i}", "sid": str(i), "i": 0, "ret": 0.05,
+               "fired": ["signal_ma"]} for i in range(30)]
+    q = bt.signal_quality(events)["signal_ma"]
+    assert q["net_expectancy"] > 0 and q["high_win_trap"] is False
+    assert q["profit_factor"] is None or q["profit_factor"] > 1

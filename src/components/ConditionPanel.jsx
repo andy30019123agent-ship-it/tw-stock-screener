@@ -125,17 +125,26 @@ export default function ConditionPanel({
               <summary>各策略回測戰績（依平均超額排序）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>策略</th><th>平均超額</th><th title="樣本外驗證：只用過去資料選、拿沒看過的日子驗，看效力是否還在">樣本外</th><th>勝率</th><th>樣本</th></tr></thead>
+                  <thead><tr><th>策略</th><th>平均超額</th><th title="樣本外驗證：只用過去資料選、拿沒看過的日子驗，看效力是否還在">樣本外</th>
+                    <th title="扣掉手續費、證交稅後平均每次真的賺多少——最重要的一個數字">成本後期望</th>
+                    <th title="平均獲利 ÷ 平均虧損。<1 代表賺小賠大、勝率再高也危險">賺賠比</th>
+                    <th>勝率</th><th>樣本</th></tr></thead>
                   <tbody>
                     {orderedPresets.map(p => {
                       const s = presetStat(p.key, weights)
                       const ob = oosBadge(s)
+                      const q = s?.quality
                       return (
                         <tr key={p.key}>
-                          <td>{p.label}</td>
+                          <td>{p.label}{q?.high_win_trap &&
+                            <span className="trap-flag" title="高勝率陷阱：勝率高但扣成本後期望值為負，別被勝率騙了">⚠️</span>}</td>
                           <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
                             {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '尚無回測'}</td>
                           <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
+                          <td className={q && q.net_expectancy > 0 ? 'good' : q && q.net_expectancy < 0 ? 'bad' : ''}>
+                            {q && q.net_expectancy != null ? `${q.net_expectancy >= 0 ? '+' : ''}${q.net_expectancy}pp` : '—'}</td>
+                          <td className={q && q.payoff_ratio != null && q.payoff_ratio < 1 ? 'bad' : ''}>
+                            {q && q.payoff_ratio != null ? q.payoff_ratio : '—'}</td>
                           <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
                           <td>{s ? s.samples : '—'}</td>
                         </tr>
@@ -146,9 +155,9 @@ export default function ConditionPanel({
               </div>
               <p className="strategy-note">
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
-                <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，<b>「穩健」才是真本事，「過擬合」是背答案</b>——
-                平均超額再高，樣本外過擬合就別太當真。小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
-                同業低估／外資連買因缺逐日歷史、樣本 0，暫無戰績。
+                <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
+                <b>成本後期望</b>＝扣掉手續費證交稅後平均每次真的賺多少（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
+                <b>⚠️</b> 是「勝率高但期望值為負」的陷阱。小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
               </p>
             </details>
           )}
@@ -237,6 +246,22 @@ export default function ConditionPanel({
                 {industries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* 風險濾網（Phase C，預設關閉、不影響 Top5，只是使用者自選過濾雜訊） */}
+        <div className="cond-group">
+          <span className="cond-section-label">風險濾網</span>
+          <div className="cond-chips">
+            <div className="num-field">
+              <label title="20 日平均成交額，太低的股不好進出。台股電子股 1 億以下算偏低">最低成交額（億）</label>
+              <input type="number" inputMode="decimal" min="0" step="0.5" value={c.minMoney}
+                onChange={e => set('minMoney', Math.max(0, Number(e.target.value) || 0))} />
+            </div>
+          </div>
+          <div className="cond-checks">
+            <Toggle label="排除極端暴走股" hint="乖離/短漲/波動過高（追高風險）"
+              checked={c.excludeRunaway} onChange={v => set('excludeRunaway', v)} />
           </div>
         </div>
 
