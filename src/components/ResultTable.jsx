@@ -75,7 +75,7 @@ function SortArrow() {
   )
 }
 
-export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
+export default function ResultTable({ stocks, sortKey, onSort, onPick, dense = true }) {
   // 可排序表頭：th 帶 aria-sort，內含可聚焦按鈕（pe 為升冪，其餘降冪）
   const col = (key, label) => (
     <th className={`sortable ${sortKey === key ? 'active' : ''}`}
@@ -110,38 +110,44 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick }) {
           // 其餘標籤：排除已在第二列呈現的主訊號與法人連買（避免重複）
           const rest = tags.filter(t => t !== primary && t[1] !== 'tag-foreign' && t[1] !== 'tag-trust')
           return (
-            <button key={s.id} className="stock-card" style={{ '--i': Math.min(i, 12) }}
+            <button key={s.id} className={`stock-card ${dense ? 'dense' : ''}`} style={{ '--i': Math.min(i, 12) }}
               onClick={() => onPick(s)}>
+              {/* 卡頭：第一行 代號+名稱｜收盤+漲跌；第二行 市場+產業（不再直向堆四行）*/}
               <div className="sc-top">
                 <div className="sc-name">
-                  <span className="sid">{s.id}</span>
-                  <span className="sname">{s.name}</span>
-                  <span className={`smarket ${s.market === '上櫃' ? 'otc' : ''}`}>{s.market}</span>
-                  <span className="sindustry">{s.industry}</span>
+                  <div className="sc-name-1">
+                    <span className="sid">{s.id}</span>
+                    <span className="sname">{s.name}</span>
+                  </div>
+                  <div className="sc-name-2">
+                    <span className={`smarket ${s.market === '上櫃' ? 'otc' : ''}`}>{s.market}</span>
+                    <span className="sindustry">{s.industry}</span>
+                  </div>
                 </div>
                 <div className={`sc-price ${up ? 'up' : 'down'}`}>
                   <span className="close">{s.close}</span>
                   <span className="chg">{up ? '+' : ''}{s.change_pct}%</span>
                 </div>
               </div>
+              {/* 關鍵資料固定四欄格線：RS｜外資｜投信｜主訊號（多檔沿同一直線比較）*/}
               <div className="sc-key">
                 <RS s={s} />
-                <span className="sc-streaks">
-                  <span>外資 <b className={s.foreign_streak >= 3 ? 'hot' : ''}>
-                    {s.foreign_streak > 0 ? `${s.foreign_streak}天` : '—'}</b></span>
-                  <span>投信 <b className={s.trust_streak >= 3 ? 'hot' : ''}>
-                    {s.trust_streak > 0 ? `${s.trust_streak}天` : '—'}</b></span>
-                </span>
-                {primary && <span className={`tag ${primary[1]}`}>{primary[0]}</span>}
+                <span className="sc-col"><span className="k-lbl">外資</span>
+                  <b className={s.foreign_streak >= 3 ? 'hot' : ''}>{s.foreign_streak > 0 ? `${s.foreign_streak}天` : '—'}</b></span>
+                <span className="sc-col"><span className="k-lbl">投信</span>
+                  <b className={s.trust_streak >= 3 ? 'hot' : ''}>{s.trust_streak > 0 ? `${s.trust_streak}天` : '—'}</b></span>
+                {primary ? <span className={`tag ${primary[1]}`}>{primary[0]}</span> : <span className="sc-nosig" />}
               </div>
+              {/* 走勢線恆留；估值 PE/PB/殖在精簡模式收起（完整模式才顯示）*/}
               <div className="sc-mid">
                 <Sparkline data={s.spark} />
-                <Valuation s={s} />
+                {!dense && <Valuation s={s} />}
               </div>
+              {/* 其餘標籤：精簡模式收成「+N 訊號」提示；完整模式全展開 */}
               {rest.length > 0 && (
-                <div className="tags">
-                  {rest.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}
-                </div>
+                dense
+                  ? <span className="sc-more">＋{rest.length} 個訊號／估值</span>
+                  : <div className="tags">{rest.map(([t, cls]) => <span key={t} className={`tag ${cls}`}>{t}</span>)}</div>
               )}
             </button>
           )

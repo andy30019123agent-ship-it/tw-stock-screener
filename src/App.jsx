@@ -12,6 +12,16 @@ export default function App() {
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS)
   const [sortKey, setSortKey] = useState('signal')
   const [sortOpen, setSortOpen] = useState(false)   // 手機排序選單（工具列「排序 ▾」點開）
+  // 手機卡片密度：精簡（預設，省滑）／完整；記住上次選擇
+  const [dense, setDense] = useState(() => {
+    if (typeof localStorage === 'undefined') return true
+    return localStorage.getItem('tw-screener:dense') !== 'full'
+  })
+  const toggleDense = () => setDense(d => {
+    const next = !d
+    try { localStorage.setItem('tw-screener:dense', next ? 'dense' : 'full') } catch { /* 隱私模式忽略 */ }
+    return next
+  })
   const [picked, setPicked] = useState(null)
   const [oppCount, setOppCount] = useState(null)
   const [panelOpen, setPanelOpen] = useState(false)   // 手機常駐工具列與篩選面板連動；桌機面板恆展開（CSS）
@@ -170,12 +180,23 @@ export default function App() {
             open={panelOpen}
             onOpenChange={setPanelOpen}
           />
+          {/* 手機卡片密度切換（桌機用表格、不顯示）：精簡預設，一鍵看完整 */}
+          <div className="density-bar">
+            <span className="density-label">顯示</span>
+            <div className="density-seg" role="group" aria-label="卡片顯示密度">
+              <button className={`density-btn ${dense ? 'on' : ''}`} aria-pressed={dense}
+                onClick={() => dense || toggleDense()}>精簡</button>
+              <button className={`density-btn ${!dense ? 'on' : ''}`} aria-pressed={!dense}
+                onClick={() => dense && toggleDense()}>完整</button>
+            </div>
+          </div>
           <ResultTable
             key={`${sortKey}:${filtered.length}`}
             stocks={filtered}
             sortKey={sortKey}
             onSort={setSortKey}
             onPick={setPicked}
+            dense={dense}
           />
         </>
       )}

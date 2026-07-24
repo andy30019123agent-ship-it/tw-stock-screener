@@ -408,7 +408,7 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
         "trust_streak": trust_streak,
         # 給前端畫迷你走勢圖用（最後 60 個收盤，用原始成交價，不還原權息）
         "spark": [round(c, 2) for c in raw_closes[-60:]],
-        # 給彈窗畫 K 線用（最後 80 根：日期, 開, 高, 低, 收, 量張）
+        # 給彈窗畫 K 線用（用完整可用歷史 ~110 根，讓「半年」範圍盡量給滿：日期,開,高,低,收,量張）
         "ohlc": [
             {
                 "t": r["date"],
@@ -416,7 +416,7 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
                 "l": round(r["min"], 2), "c": round(r["close"], 2),
                 "v": round((r.get("Trading_Volume", 0) or 0) / 1000),
             }
-            for r in price_rows[-80:]
+            for r in price_rows[-140:]
             if r.get("open") and r.get("close")
         ],
     }

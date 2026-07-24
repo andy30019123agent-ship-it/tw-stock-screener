@@ -569,28 +569,41 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 }
 .stock-card:active { transform: scale(.99); border-color: var(--primary); box-shadow: var(--shadow-md); }
 
+.stock-card.dense { gap: 8px; padding: 14px; }
 .sc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.sc-name { display: flex; flex-direction: column; gap: 3px; }
+.sc-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sc-name-1 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sc-name-2 { display: flex; align-items: center; gap: 8px; }
 .sc-name .sid { font-weight: 800; font-size: 1.0625rem; }
-.sc-name .sname { font-size: .9375rem; }
-.sc-name .sindustry { font-size: .875rem; color: var(--ink-muted); }
+.sc-name .sname { font-size: .9375rem; color: var(--ink-body); }
+.sc-name .sindustry { font-size: .8125rem; color: var(--ink-muted); }
 .sc-price { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .sc-price .close { font-weight: 800; font-size: 1.125rem; }
 .sc-price .chg { font-size: .875rem; font-weight: 700; }
 .sc-price.up { color: var(--up); }
 .sc-price.down { color: var(--down); }
 
-/* 第二列：3 個關鍵判斷（RS｜法人連買｜主訊號），視覺權重高於估值 */
-.sc-key { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+/* 關鍵資料固定四欄格線：RS｜外資｜投信｜主訊號 —— 各欄起點跨卡對齊，方便沿同一直線比較 */
+.sc-key {
+  display: grid; grid-template-columns: minmax(72px, auto) 58px 58px 1fr;
+  align-items: center; gap: 8px; font-variant-numeric: tabular-nums;
+}
 .sc-key .rs-badge { font-size: .9375rem; }
-.sc-key .tag { margin-left: auto; }
+.sc-col { font-size: .875rem; color: var(--ink-muted); white-space: nowrap; }
+.sc-col .k-lbl { margin-right: 3px; }
+.sc-col b { color: var(--ink); font-weight: 700; }
+.sc-col b.hot { color: var(--on-accent); }
+.sc-key .tag { justify-self: end; }
+.sc-nosig { justify-self: end; }
 
 .sc-mid { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 /* 估值降級為次要小字 */
 .sc-mid .valuation { font-size: .875rem; }
-.sc-streaks { display: flex; gap: 12px; font-size: .875rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.sc-streaks b { color: var(--ink); font-weight: 700; margin-left: 3px; }
-.sc-streaks b.hot { color: var(--on-accent); }
+/* 精簡模式的「＋N 訊號/估值」提示（點卡片看 K 線、或切完整看全部）*/
+.sc-more { font-size: .8125rem; color: var(--ink-muted); font-weight: 600; }
+
+/* 卡片密度切換（桌機隱藏，手機用）*/
+.density-bar { display: none; }
 
 /* 市場別徽章（上市/上櫃）*/
 .smarket {
@@ -624,28 +637,53 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 }
 .modal-close:hover { color: var(--ink); border-color: var(--primary); }
 
-.modal-chips {
-  display: flex; gap: 16px; flex-wrap: wrap; padding: 14px 24px;
-  border-bottom: 1px solid var(--border); font-size: .875rem; color: var(--ink-muted);
-}
-.modal-chips b { color: var(--ink); font-weight: 700; }
-.modal-chips .sep { color: var(--border-strong); }
-.modal-chips .lg-ma5 { color: var(--accent); font-weight: 700; }
-.modal-chips .lg-ma20 { color: var(--primary); font-weight: 700; }
-.modal-chips .lg-ma60 { color: var(--deco-lavender); font-weight: 700; }
+/* 頂部把手：手機「下滑關閉」的視覺提示（桌機隱藏）*/
+.modal-handle { display: none; }
 
-/* 出場參考：MA20 支撐/壓力 + 近 20 日高點 */
-.exit-ref {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 12px 24px; font-size: .875rem; color: var(--ink-muted);
-  border-bottom: 1px solid var(--border);
+/* 圖例 ＋ 時間範圍切換（同列，不橫向捲動）*/
+.modal-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 24px; border-bottom: 1px solid var(--border);
 }
-.exit-ref b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
-.exit-ref-note { font-size: .875rem; color: var(--ink-muted); margin-left: auto; }
+.ma-legend { display: flex; gap: 12px; font-size: .875rem; font-weight: 700; }
+.ma-legend .lg-ma5 { color: var(--accent); }
+.ma-legend .lg-ma20 { color: var(--primary); }
+.ma-legend .lg-ma60 { color: var(--deco-lavender); }
+.range-seg { display: inline-flex; background: var(--surface-tint); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px; }
+.range-seg button {
+  min-height: 40px; padding: 6px 16px; border: none; border-radius: var(--r-pill);
+  background: none; color: var(--ink-muted); font-family: inherit; font-size: .875rem; font-weight: 700; cursor: pointer;
+}
+.range-seg button.on { background: var(--primary); color: var(--on-primary); }
+
+/* 籌碼摘要 / 參考價位：flex-wrap 換行、不橫向捲動 */
+.modal-stats, .modal-levels {
+  display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: center;
+  padding: 12px 24px; font-size: .875rem; color: var(--ink-muted); border-bottom: 1px solid var(--border);
+}
+.modal-stats b, .modal-levels b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+.modal-levels .lv-note { flex-basis: 100%; font-size: .8125rem; color: var(--ink-muted); }
 
 .tv-chart { width: 100%; height: 460px; position: relative; }
 .tv-canvas { width: 100%; height: 100%; }
-.chart-msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-muted); font-size: 1rem; pointer-events: none; }
+.chart-msg { position: absolute; inset: 0; display: grid; place-items: center; gap: 10px; color: var(--ink-muted); font-size: 1rem; }
+.chart-retry {
+  min-height: 40px; padding: 8px 20px; border: 1px solid var(--primary); border-radius: var(--r-pill);
+  background: var(--primary-tint); color: var(--primary-strong); font-family: inherit; font-weight: 700; cursor: pointer;
+}
+/* 十字準星讀數：圖表左上角浮層（點哪天顯示那天日期＋開高低收）*/
+.chart-readout {
+  position: absolute; top: 8px; left: 8px; z-index: 2; pointer-events: none;
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 6px 10px; font-size: .8125rem; color: var(--ink-muted); font-variant-numeric: tabular-nums;
+  max-width: calc(100% - 16px);
+}
+.chart-readout b { color: var(--ink); font-weight: 700; margin-left: 2px; }
+.chart-readout .ro-date { font-weight: 800; color: var(--ink); }
+.chart-readout .up b { color: var(--up); }
+.chart-readout .down b { color: var(--down); }
 @media (max-width: 720px) { .tv-chart { height: 360px; } }
 
 /* ── RWD ────────────────────────────────── */
@@ -664,6 +702,16 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   /* 桌機表格隱藏，改用卡片 */
   .table-wrap { display: none; }
   .card-list { display: flex; }
+
+  /* 密度切換：靠右小控制、不佔整行視覺重量 */
+  .density-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 4px 0 -4px; }
+  .density-label { font-size: .8125rem; color: var(--ink-muted); }
+  .density-seg { display: inline-flex; background: var(--surface-tint); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px; }
+  .density-btn {
+    min-height: 40px; padding: 4px 16px; border: none; border-radius: var(--r-pill);
+    background: none; color: var(--ink-muted); font-family: inherit; font-size: .8125rem; font-weight: 700; cursor: pointer;
+  }
+  .density-btn.on { background: var(--primary); color: var(--on-primary); }
 
   /* 機會股收合時縮成一條窄列：藏副標與日期、縮 padding/margin，讓清單往上跑 */
   .opp-collapsed { padding: 10px 14px; margin-bottom: 16px; }
@@ -698,12 +746,11 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
     border-radius: var(--r-xl) var(--r-xl) 0 0;
     animation: sheet-up .28s ease;
   }
+  /* 頂部把手：下滑關閉提示（只綁把手、不碰圖表，免與 K 線拖動衝突）*/
+  .modal-handle { display: flex; justify-content: center; padding: 8px 0 2px; touch-action: none; cursor: grab; }
+  .modal-handle span { width: 40px; height: 4px; border-radius: 2px; background: var(--border-strong); }
   /* 標題與關閉鈕固定頂部 */
-  .modal-head { position: sticky; top: 0; background: var(--surface); z-index: 2; padding: 16px 20px; }
-  /* chips（MA 圖例、法人、支撐/壓力）可橫向滑動 */
-  .modal-chips, .exit-ref { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .modal-chips > *, .exit-ref > * { flex: none; white-space: nowrap; }
-  .exit-ref-note { margin-left: 8px; }
+  .modal-head { position: sticky; top: 0; background: var(--surface); z-index: 2; padding: 12px 20px; }
   /* 圖表吃滿剩餘空間 */
   .tv-chart { flex: 1 1 auto; height: auto; min-height: 0; }
 }
