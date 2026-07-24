@@ -358,6 +358,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .oos-badge.oos-warn { color: #9A6A00; background: #FBF0D8; }
 .oos-badge.oos-bad { color: var(--up); background: var(--up-bg); }
 .oos-badge.oos-muted { color: var(--ink-muted); background: var(--surface-2, rgba(0,0,0,.05)); }
+.strategy-table tr.exit-control { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.strategy-table tr.exit-control td:first-child { font-weight: 700; }
+.strategy-table tr.exit-control small { color: var(--primary); font-weight: 600; margin-left: 2px; }
 
 /* 組合戰績排行榜 */
 .combo-board { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }

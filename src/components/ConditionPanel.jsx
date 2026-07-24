@@ -69,9 +69,17 @@ function oosBadge(stat) {
   return b ? { text: b[0], cls: b[1], title: b[2] } : null
 }
 
+// Phase B 橫斷面新訊號（相對強弱＋產業輪動）——只做回測展示、不進 Top5 選股、不做即時篩選
+// （即時篩選需橫斷面全市場排名，網頁端沒有；戰績來自後端回測）
+const XSECT_SIGNALS = [
+  { key: 'rs_strong_60', label: '強勢股（60日）', hint: '近 60 日漲幅排全市場前 20%' },
+  { key: 'rs_confirmed_60_120', label: '強勢雙確認', hint: '60 日強、120 日也不弱' },
+  { key: 'industry_hot', label: '熱門產業', hint: '所屬產業近期輪動居前' },
+]
+
 export default function ConditionPanel({
   conditions, onChange, total, shown, holderReady, industries = [],
-  weights = null, combos = null, open: openProp, onOpenChange, id,
+  weights = null, combos = null, exits = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
   // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
@@ -145,6 +153,71 @@ export default function ConditionPanel({
             </details>
           )}
           <ComboBoard combos={combos} />
+
+          {/* Phase B：相對強弱＋產業輪動新訊號的樣本外驗證（研究展示，不進 Top5、不做即時篩選） */}
+          {weights?.signals && XSECT_SIGNALS.some(s => (weights.signals[s.key]?.samples || 0) > 0) && (
+            <details className="strategy-board">
+              <summary>新訊號研究：相對強弱＋產業輪動（樣本外驗證中）</summary>
+              <div className="strategy-scroll">
+                <table className="strategy-table">
+                  <thead><tr><th>新訊號</th><th>平均超額</th><th>樣本外</th><th>勝率</th><th>樣本</th></tr></thead>
+                  <tbody>
+                    {XSECT_SIGNALS.map(x => {
+                      const s = weights.signals[x.key]
+                      const ob = oosBadge(s)
+                      return (
+                        <tr key={x.key}>
+                          <td title={x.hint}>{x.label}</td>
+                          <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
+                            {s && s.avg_excess != null ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '尚無回測'}</td>
+                          <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
+                          <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
+                          <td>{s && s.samples ? s.samples : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="strategy-note">
+                「相對強弱」＝拿個股近期漲幅跟全市場排名（比大盤強的股）；「熱門產業」＝所屬產業近期輪動居前。
+                這些是<b>橫斷面（跨股票比較）</b>訊號，只做回測與樣本外驗證，<b>先不進 Top5 選股、也不做即時篩選</b>
+                （即時排名需全市場資料）。通過樣本外穩健門檻才會考慮納入。
+              </p>
+            </details>
+          )}
+
+          {/* Phase B：出場優化——同一批訊號、比較不同持有期的成本後結果 */}
+          {exits?.strategies?.some(s => s.samples > 0) && (
+            <details className="strategy-board">
+              <summary>出場分析：持有多久最划算（已扣交易成本）</summary>
+              <div className="strategy-scroll">
+                <table className="strategy-table">
+                  <thead><tr><th>出場方式</th><th>淨報酬</th><th>淨超額</th><th>勝率</th><th>賺賠比</th><th>平均持有</th></tr></thead>
+                  <tbody>
+                    {exits.strategies.filter(s => s.samples > 0).map(s => (
+                      <tr key={s.key} className={s.key === exits.control ? 'exit-control' : ''}>
+                        <td>{s.label}{s.key === exits.control && <small>（現行）</small>}</td>
+                        <td className={s.avg_net_return > 0 ? 'good' : s.avg_net_return < 0 ? 'bad' : ''}>
+                          {s.avg_net_return >= 0 ? '+' : ''}{s.avg_net_return}pp</td>
+                        <td className={s.avg_net_excess > 0 ? 'good' : s.avg_net_excess < 0 ? 'bad' : ''}>
+                          {s.avg_net_excess != null ? `${s.avg_net_excess >= 0 ? '+' : ''}${s.avg_net_excess}pp` : '—'}</td>
+                        <td>{Math.round(s.net_win_rate * 100)}%</td>
+                        <td>{s.payoff_ratio != null ? s.payoff_ratio : '—'}</td>
+                        <td>{s.avg_holding_days}日</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="strategy-note">
+                以所有訊號事件為樣本、進場價用訊號次日收盤，比較不同出場方式的<b>成本後</b>結果
+                （來回成本約 {exits.cost?.round_trip_pct}%）。淨超額＝扣成本後淨報酬減同期全市場平均。
+                <b>這是全樣本比較</b>，要真的改「持有 20 日」的現行設定，還需通過樣本外驗證才算數（先不動）。
+                ATR 停損停利因只有還原收盤、暫緩。
+              </p>
+            </details>
+          )}
         </div>
 
         {/* 範圍：市場 / 產業 */}

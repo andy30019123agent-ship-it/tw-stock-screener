@@ -190,6 +190,9 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     combos = bt._load(bt.COMBOS_PATH)          # 組合戰績排行榜
     if combos:
         _write_json(os.path.join(OUT_DIR, "signal_combos.json"), combos)
+    exits = bt._load(bt.EXITS_PATH)            # 出場優化分析
+    if exits:
+        _write_json(os.path.join(OUT_DIR, "signal_exits.json"), exits)
 
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"]) or "（今日無符合標的）"
     print(f"   Top {len(opp['picks'])}：{names}")

@@ -29,6 +29,7 @@ HERE = os.path.dirname(__file__)
 WEIGHTS_PATH = os.path.join(HERE, "signal_weights.json")
 WINDOWS_PATH = os.path.join(HERE, "signal_windows.json")
 COMBOS_PATH = os.path.join(HERE, "signal_combos.json")
+EXITS_PATH = os.path.join(HERE, "signal_exits.json")
 BT_PRICE_PATH = os.path.join(HERE, "history", "bt_price.json")
 
 # 勝率榜的時間窗（曆日數，從最新資料日往回；歷史=全部）。
@@ -54,7 +55,11 @@ ENGINE_SIGNALS = [
 # 回測＋勝率榜「展示」涵蓋的訊號＝引擎訊號 ＋ 只做戰績展示、不進引擎的（多頭排列/填息快）。
 # 多頭排列太常見，若進引擎會亂洗 Top5；填息快是狀態型訊號。兩者只給使用者看戰績，不改選股。
 DISPLAY_ONLY_SIGNALS = ["bull_aligned", "fill_fast"]
-SIGNALS = ENGINE_SIGNALS + DISPLAY_ONLY_SIGNALS
+# Phase B 的橫斷面訊號（相對強弱 RS ＋ 產業輪動）：也只先做展示＋OOS 驗證，不進引擎。
+# 這些是「跨股票比較」出來的（個股 N 日報酬在全市場的百分位），不能在單股 pr[:i+1] 內算，
+# 要先建 PIT 橫斷面 cache（build_xsect_cache）再由 collect_events 查詢，見下方 XSECT_SIGNALS。
+XSECT_SIGNALS = ["rs_strong_60", "rs_confirmed_60_120", "industry_hot"]
+SIGNALS = ENGINE_SIGNALS + DISPLAY_ONLY_SIGNALS + XSECT_SIGNALS
 
 # 中文標籤（給 opportunities 的 reasons 與網頁展示共用）
 SIGNAL_LABELS = {
@@ -65,7 +70,19 @@ SIGNAL_LABELS = {
     "foreign_buy": "外資連買", "trust_buy": "投信連買",
     "holder_rising": "千張大戶↑", "undervalued": "同業低估",
     "bull_aligned": "多頭排列", "fill_fast": "填息快",
+    "rs_strong_60": "強勢股60日", "rs_confirmed_60_120": "強勢雙確認", "industry_hot": "熱門產業",
 }
+
+# Phase B 橫斷面訊號的 frozen 參數（同 Phase A：首次看結果前鎖定，改動＝升 spec_version）
+RS_WINDOWS = (20, 60, 120)     # 相對強弱回看的交易日數
+RS_MIN_UNIVERSE = 300          # 當日橫斷面母體 <300 檔則該日 RS/產業不可評估（避免薄母體排名失真）
+RS_STRONG_PCT = 0.80           # 「強勢」門檻：N 日報酬在全市場的百分位
+RS_CONFIRM_120_PCT = 0.70      # 雙確認：60 日強且 120 日也不弱
+IND_MIN_MEMBERS = 10           # 產業當日最少幾檔可評估才納入
+IND_MIN_COVERAGE = 0.30        # 且需達該產業母體的三成
+IND_TOP_K = 7                  # 熱門產業取分數前 K（34 產業約前 20%）
+IND_MIN_ELIGIBLE = 20          # 當日合格產業 <20 則不產生 industry_hot（市況太亂不判）
+IND_WINSOR = 0.05              # 產業報酬前先對橫斷面報酬做 5%/95% winsorize（壓極端飆股）
 
 
 def signal_flags(ind):
@@ -134,8 +151,166 @@ def stats_to_weights(stats, min_sample=MIN_SAMPLE, default=DEFAULT_WEIGHT):
     return out
 
 
+# ── Phase B：橫斷面訊號（相對強弱 RS ＋ 產業輪動）的 PIT cache ─────────────────────
+
+def _pct_rank_avg(values):
+    """{key: value} → {key: 百分位 [0,1]}，最弱 0、最強 1，同分用平均排名。"""
+    items = sorted(values.items(), key=lambda kv: kv[1])
+    n = len(items)
+    if n <= 1:
+        return {k: 0.5 for k in values}
+    ranks, i = {}, 0
+    while i < n:
+        j = i
+        while j + 1 < n and items[j + 1][1] == items[i][1]:
+            j += 1
+        avg_rank = (i + j) / 2 + 1                # 1-based 平均排名
+        for t in range(i, j + 1):
+            ranks[items[t][0]] = avg_rank
+        i = j + 1
+    return {k: (r - 1) / (n - 1) for k, r in ranks.items()}
+
+
+def _quantile_sorted(sorted_vals, q):
+    """已排序序列的分位數（線性內插）。"""
+    if not sorted_vals:
+        return None
+    n = len(sorted_vals)
+    if n == 1:
+        return sorted_vals[0]
+    pos = q * (n - 1)
+    lo = int(pos)
+    frac = pos - lo
+    if lo + 1 < n:
+        return sorted_vals[lo] * (1 - frac) + sorted_vals[lo + 1] * frac
+    return sorted_vals[-1]
+
+
+def _winsorize(values, p=IND_WINSOR):
+    """對一批數值做 p/(1-p) winsorize（把極端值夾到分位數），回同鍵 dict。"""
+    if not values:
+        return values
+    s = sorted(values.values())
+    lo, hi = _quantile_sorted(s, p), _quantile_sorted(s, 1 - p)
+    return {k: min(max(v, lo), hi) for k, v in values.items()}
+
+
+def build_xsect_cache(price_hist, div_hist, universe):
+    """建立橫斷面 PIT cache：對每個交易日，算各股「近 N 日還原報酬」在全市場的百分位（RS），
+    以及所屬產業當日是否「熱門」（產業輪動）。回 {date: {sid: {rs_pct_60, rs_pct_120, industry_hot}}}。
+
+    刻意設計（避免前視）：交易日 t 只用 t 與 t−N 的還原收盤算報酬，母體＝當日有價的全部個股；
+    母體 <300 檔則該日不評估。產業報酬先對橫斷面報酬 winsorize（壓少數飆股），產業內等權平均
+    （沒有長期市值、且成交額加權會把當日爆量混進來與爆量突破重疊，故用等權）。"""
+    industry = {s["id"]: s.get("industry") for s in universe}
+    universe_ind_count = {}
+    for s in universe:
+        g = s.get("industry")
+        universe_ind_count[g] = universe_ind_count.get(g, 0) + 1
+
+    # 每檔還原收盤序列 {sid: {date: adj_close}}（跟回測同一把尺）
+    import build_data as bd
+    adj = {}
+    all_dates = set()
+    for sid, by in price_hist.items():
+        pr = hs.to_price_rows(by)
+        if not pr:
+            continue
+        ev = hs.to_div_events(div_hist.get(sid))
+        ac = {r["date"]: r["close"] for r in bd.back_adjust_rows(sorted(pr, key=lambda r: r["date"]), ev)
+              if r.get("close") and r["close"] > 0}
+        if ac:
+            adj[sid] = ac
+            all_dates.update(ac)
+
+    dates = sorted(all_dates)
+    didx = {d: i for i, d in enumerate(dates)}
+    cache = {}
+
+    for ti, t in enumerate(dates):
+        # 各 N 的個股報酬與百分位
+        rs_pct = {N: {} for N in RS_WINDOWS}
+        ret_by_N = {N: {} for N in RS_WINDOWS}
+        for N in RS_WINDOWS:
+            if ti < N:
+                continue
+            t_n = dates[ti - N]
+            rets = {}
+            for sid, ac in adj.items():
+                p, pn = ac.get(t), ac.get(t_n)
+                if p and pn:
+                    rets[sid] = p / pn - 1
+            if len(rets) < RS_MIN_UNIVERSE:
+                continue
+            ret_by_N[N] = rets
+            rs_pct[N] = _pct_rank_avg(rets)
+
+        # 產業輪動：需要 20/60 日報酬母體都在
+        hot_set = None
+        if ret_by_N[20] and ret_by_N[60]:
+            hot_set = _hot_industries(ret_by_N[20], ret_by_N[60], industry, universe_ind_count)
+
+        # 寫入 cache（只存有 60 日 RS 的個股，其餘查不到＝視為未成立）
+        day = {}
+        for sid in rs_pct[60]:
+            g = industry.get(sid)
+            day[sid] = {
+                "rs_pct_60": round(rs_pct[60].get(sid), 4),
+                "rs_pct_120": round(rs_pct[120][sid], 4) if sid in rs_pct[120] else None,
+                "industry_hot": bool(hot_set and g in hot_set),
+            }
+        if day:
+            cache[t] = day
+    return cache
+
+
+def _hot_industries(ret20, ret60, industry, universe_ind_count):
+    """當日熱門產業集合。ret20/ret60＝{sid: N日報酬}。回 set(產業名) 或 None（市況太亂不判）。"""
+    w20 = _winsorize(ret20)
+    w60 = _winsorize(ret60)
+    market_median_20 = _quantile_sorted(sorted(w20.values()), 0.5)
+
+    def ind_mean(w):
+        by_g = {}
+        for sid, v in w.items():
+            g = industry.get(sid)
+            by_g.setdefault(g, []).append(v)
+        out = {}
+        for g, vals in by_g.items():
+            tot = universe_ind_count.get(g, 0)
+            if len(vals) >= IND_MIN_MEMBERS and tot and len(vals) / tot >= IND_MIN_COVERAGE:
+                out[g] = sum(vals) / len(vals)
+        return out
+
+    ind20, ind60 = ind_mean(w20), ind_mean(w60)
+    eligible = [g for g in ind20 if g in ind60]
+    if len(eligible) < IND_MIN_ELIGIBLE:
+        return None
+    pct20 = _pct_rank_avg({g: ind20[g] for g in eligible})
+    pct60 = _pct_rank_avg({g: ind60[g] for g in eligible})
+    score = {g: 0.70 * pct20[g] + 0.30 * pct60[g] for g in eligible}
+    # 分數前 K（同分用產業名固定排序，確保可重現）
+    top = sorted(eligible, key=lambda g: (-score[g], str(g)))[:IND_TOP_K]
+    hot = {g for g in top
+           if ind20[g] > market_median_20 and pct60[g] >= 0.50}
+    return hot
+
+
+def _xsect_flags(x):
+    """把 cache 裡某 (date,sid) 的橫斷面數值翻成三個訊號旗標；查不到一律 False（未成立、非缺值）。"""
+    if not x:
+        return {"rs_strong_60": False, "rs_confirmed_60_120": False, "industry_hot": False}
+    p60, p120 = x.get("rs_pct_60"), x.get("rs_pct_120")
+    strong60 = p60 is not None and p60 >= RS_STRONG_PCT
+    return {
+        "rs_strong_60": bool(strong60),
+        "rs_confirmed_60_120": bool(strong60 and p120 is not None and p120 >= RS_CONFIRM_120_PCT),
+        "industry_hot": bool(x.get("industry_hot")),
+    }
+
+
 def collect_events(price_hist, chip_hist, div_hist, universe,
-                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None):
+                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None, xsect=None):
     """逐檔、逐歷史交易日評估訊號，回傳 (events, by_date)。
 
     events：[{date, sid, ret, fired:[訊號…]}]，只收「有訊號成立」的事件。
@@ -185,8 +360,11 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
             # raw_fired＝當天所有「原始成立」的訊號（不管冷卻）；eligible＝過了單訊號冷卻期的。
             # 單訊號統計吃 eligible（維持原結果不變）；組合統計吃 raw_fired（才是「當天真的同時
             # 成立 A+B」，否則 A 在冷卻期時 A+B 會被漏算——Codex 2026-07-24 指出）。
+            flags = signal_flags(ind)
+            if xsect is not None:                 # Phase B 橫斷面訊號（RS/產業）從 PIT cache 併入
+                flags.update(_xsect_flags(xsect.get(di, {}).get(sid)))
             raw_fired, eligible_fired = [], []
-            for k, hit in signal_flags(ind).items():
+            for k, hit in flags.items():
                 if not hit:
                     continue
                 raw_fired.append(k)
@@ -532,6 +710,152 @@ def attach_phase_a(weights, events, by_date):
     return oos, F
 
 
+# ── Phase B-5：出場優化（並行成本後報表，不動 forward=20 基準）──────────────────
+EXIT_HOLDINGS = [5, 10, 20, 40]     # 固定持有交易日；20＝現行 control
+EXIT_TRAIL_CAP = 40                 # 收盤回落停利的最長持有
+EXIT_TRAIL_DROP = 0.10             # 收盤自波段高點回落 ≥10% 出場（close-based，非 ATR）
+# 台股來回成本（保守用全額未打折）＋每邊滑價；ATR/盤中停損因只有還原收盤、暫緩（見 note）
+EXIT_FEE = 0.001425                 # 手續費（買賣各一次）
+EXIT_TAX = 0.003                    # 證交稅（賣出）
+EXIT_SLIP = 0.001                   # 每邊滑價 0.1%（另有 0.2% 壓力測試，只在說明標示）
+EXIT_SPEC = "phase-b-exit-v1"
+
+
+def _net_return(entry, exit_price):
+    """成本後淨報酬：買進含手續費+滑價、賣出再扣手續費+證交稅+滑價（乘除、非直接減）。"""
+    return exit_price * (1 - EXIT_FEE - EXIT_TAX - EXIT_SLIP) / (entry * (1 + EXIT_FEE + EXIT_SLIP)) - 1
+
+
+def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
+    """比較不同出場方式的「成本後」淨報酬（並行報表、不改 forward=20，Top5 引擎不動）。
+
+    進場價＝訊號次日還原收盤（保守、不前視）；比較固定持有 5/10/20/40 日 ＋「收盤自波段高點
+    回落 10%」停利。淨超額＝該股成本後淨報酬 − 同一進場日、同持有期的全市場毛報酬平均（基準不扣
+    成本，因為它只是評估基準、不是實際買進）。所有出場用同一批「進場後 40 日路徑完整」的事件，
+    確保各持有期公平可比。回 dict（給 signal_exits.json）。"""
+    import build_data as bd
+    # 每檔還原收盤序列（list 與 price_rows 排序對齊）＋日期→序列 index
+    adj_by_sid = {}
+    for sid, by in price_hist.items():
+        pr = sorted(hs.to_price_rows(by), key=lambda r: r["date"])
+        if not pr:
+            continue
+        ev = hs.to_div_events(div_hist.get(sid))
+        ac = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
+        adj_by_sid[sid] = ([r["date"] for r in pr], ac)
+
+    max_h = max(holdings + [EXIT_TRAIL_CAP])
+    # 全市場基準：每個「進場日 → 持有 H 日」的毛報酬平均（母體＝所有有完整路徑的個股，非只有事件股）
+    bench = {h: {} for h in holdings}
+    for sid, (ds, ac) in adj_by_sid.items():
+        n = len(ac)
+        for j in range(n):
+            base = ac[j]
+            if not base or base <= 0:
+                continue
+            for h in holdings:
+                k = j + h
+                if k < n and ac[k]:
+                    bench[h].setdefault(ds[j], []).append(ac[k] / base - 1)
+    bench_mean = {h: {d: sum(v) / len(v) for d, v in m.items() if v} for h, m in bench.items()}
+
+    # 各出場策略累積器
+    strat_keys = [f"h{h}" for h in holdings] + ["trail10"]
+    acc = {k: {"net": [], "exc": [], "hold": [], "mae": []} for k in strat_keys}
+    n_events = 0
+    entry_dates = set()
+
+    for e in events:
+        sid, i = e["sid"], e.get("i")
+        rec = adj_by_sid.get(sid)
+        if rec is None or i is None:
+            continue
+        ds, ac = rec
+        entry_i = i + 1                              # 次日進場
+        if entry_i + max_h >= len(ac):               # 需 40 日完整路徑，各持有期才公平可比
+            continue
+        entry = ac[entry_i]
+        if not entry or entry <= 0:
+            continue
+        entry_date = ds[entry_i]
+        n_events += 1
+        entry_dates.add(entry_date)
+
+        for h in holdings:
+            exit_price = ac[entry_i + h]
+            net = _net_return(entry, exit_price)
+            b = bench_mean[h].get(entry_date)
+            path = [ac[entry_i + d] for d in range(0, h + 1) if ac[entry_i + d]]
+            mae = min(p / entry - 1 for p in path) if path else 0.0
+            a = acc[f"h{h}"]
+            a["net"].append(net)
+            if b is not None:
+                a["exc"].append(net - b)
+            a["hold"].append(h)
+            a["mae"].append(mae)
+
+        # 收盤回落停利：從進場走到高點回落 10%，或到 40 日上限
+        run_max = entry
+        exit_i = entry_i + EXIT_TRAIL_CAP
+        for d in range(1, EXIT_TRAIL_CAP + 1):
+            c = ac[entry_i + d]
+            if not c:
+                continue
+            if c > run_max:
+                run_max = c
+            if c <= run_max * (1 - EXIT_TRAIL_DROP):
+                exit_i = entry_i + d
+                break
+        hold = exit_i - entry_i
+        net = _net_return(entry, ac[exit_i])
+        # trail 的基準用最接近的固定持有期（就近取 20 日毛報酬平均，僅供粗略對照）
+        b = bench_mean.get(20, {}).get(entry_date)
+        path = [ac[entry_i + d] for d in range(0, hold + 1) if ac[entry_i + d]]
+        mae = min(p / entry - 1 for p in path) if path else 0.0
+        t = acc["trail10"]
+        t["net"].append(net)
+        if b is not None:
+            t["exc"].append(net - b)
+        t["hold"].append(hold)
+        t["mae"].append(mae)
+
+    labels = {**{f"h{h}": f"持有{h}日" for h in holdings}, "trail10": "回落10%停利"}
+    strategies = [_exit_row(k, labels[k], acc[k]) for k in strat_keys]
+    return {
+        "spec_version": EXIT_SPEC, "control": "h20", "n_events": n_events,
+        "n_entry_dates": len(entry_dates),
+        "cost": {"fee": EXIT_FEE, "tax": EXIT_TAX, "slippage_per_side": EXIT_SLIP,
+                 "round_trip_pct": round((EXIT_FEE * 2 + EXIT_TAX + EXIT_SLIP * 2) * 100, 3)},
+        "strategies": strategies,
+    }
+
+
+def _exit_row(key, label, a):
+    """單一出場策略的成本後統計。"""
+    net = a["net"]
+    n = len(net)
+    if n == 0:
+        return {"key": key, "label": label, "samples": 0}
+    exc = a["exc"]
+    wins = [r for r in net if r > 0]
+    losses = [-r for r in net if r < 0]
+    avg_win = sum(wins) / len(wins) if wins else 0.0
+    avg_loss = sum(losses) / len(losses) if losses else 0.0
+    wr = len(wins) / n
+    return {
+        "key": key, "label": label, "samples": n,
+        "avg_net_return": round(sum(net) / n * 100, 2),
+        "avg_net_excess": round(sum(exc) / len(exc) * 100, 2) if exc else None,
+        "net_win_rate": round(wr, 4),
+        "avg_win": round(avg_win * 100, 2),
+        "avg_loss": round(avg_loss * 100, 2),
+        "payoff_ratio": round(avg_win / avg_loss, 2) if avg_loss > 0 else None,
+        "expectancy": round((wr * avg_win - (1 - wr) * avg_loss) * 100, 2),
+        "avg_mae": round(sum(a["mae"]) / len(a["mae"]) * 100, 2),
+        "avg_holding_days": round(sum(a["hold"]) / len(a["hold"]), 1),
+    }
+
+
 def _latest_date(price_hist):
     """歷史裡最新的交易日（時間窗的錨點；ISO 字串大小比較即日期先後）。"""
     latest = ""
@@ -618,8 +942,12 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     else:
         print("   長歷史尚未建立，暫用 110 天滾動歷史回測（樣本偏少）")
         price_for_bt = price_hist
+    # Phase B：先建橫斷面 PIT cache（相對強弱 RS ＋ 產業輪動），collect_events 逐日查詢併入訊號。
+    print("   建立橫斷面快取（相對強弱＋產業輪動）…")
+    xsect = build_xsect_cache(price_for_bt, div_hist, universe)
+    print(f"   橫斷面快取：{len(xsect)} 個交易日有 RS/產業資料")
     # 事件只收集一次（逐檔重算指標的重活），再分別算「全歷史權重」與「多時間窗勝率榜」。
-    events, by_date = collect_events(price_for_bt, chip_hist, div_hist, universe)
+    events, by_date = collect_events(price_for_bt, chip_hist, div_hist, universe, xsect=xsect)
     weights = stats_to_weights(events_to_stats(events, by_date))
     out = {
         "date": today.isoformat(),
@@ -675,6 +1003,17 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         print(f"   組合戰績：{len(combos)} 組排行 + {len(pairs)} 個兩兩配對（最強 "
               f"{'＋'.join(combos[0]['labels'])} 超額 {combos[0]['avg_excess']}pp、"
               f"下界 {combos[0]['excess_lb']}pp、樣本 {combos[0]['samples']}）")
+
+    # 出場優化（並行成本後報表；不改 forward=20 基準）
+    exits = exit_analysis(events, price_for_bt, div_hist)
+    exits.update({"date": today.isoformat(), "computed": out["computed"], "forward_days": FORWARD})
+    with open(EXITS_PATH, "w", encoding="utf-8") as f:
+        json.dump(exits, f, ensure_ascii=False, separators=(",", ":"))
+    best = max((s for s in exits["strategies"] if s.get("samples")),
+               key=lambda s: (s.get("avg_net_excess") if s.get("avg_net_excess") is not None else -99), default=None)
+    if best:
+        print(f"   出場分析：{exits['n_events']} 筆事件、來回成本 {exits['cost']['round_trip_pct']}%，"
+              f"淨超額最高＝{best['label']}（{best['avg_net_excess']}pp、勝率 {round(best['net_win_rate']*100)}%）")
 
     strong = max(weights.items(), key=lambda kv: (kv[1]["weight"], kv[1]["samples"]))
     print(f"   權重已更新，最強訊號：{strong[1]['label']}（權重 {strong[1]['weight']}、樣本 {strong[1]['samples']}）")

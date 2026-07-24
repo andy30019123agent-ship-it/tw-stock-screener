@@ -314,3 +314,119 @@ def test_attach_phase_a_併入欄位不動原weight():
     assert sig["spec_version"] == bt.PHASE_A_SPEC
     assert sig["oos"]["status"] == "robust"
     assert sig["adaptive"]["candidate_weight"] >= 1
+
+
+# ── Phase B：橫斷面訊號（相對強弱 RS ＋ 產業輪動）─────────────────────────
+def test_pct_rank_avg():
+    r = bt._pct_rank_avg({"a": 1, "b": 2, "c": 3, "d": 4, "e": 5})
+    assert r["a"] == 0.0 and r["e"] == 1.0 and r["c"] == 0.5   # 最弱0、最強1、中位0.5
+    r2 = bt._pct_rank_avg({"a": 1, "b": 1, "c": 3})            # 同分 → 平均排名
+    assert r2["a"] == r2["b"] == 0.25 and r2["c"] == 1.0
+
+
+def test_winsorize_夾極端值():
+    w = bt._winsorize({"a": -100, "b": 1, "c": 2, "d": 3, "e": 100})
+    assert w["a"] > -100 and w["e"] < 100                       # 極端值被夾
+    assert w["c"] == 2                                          # 中間不動
+
+
+def test_xsect_flags_門檻():
+    assert bt._xsect_flags(None) == {"rs_strong_60": False, "rs_confirmed_60_120": False,
+                                     "industry_hot": False}
+    full = bt._xsect_flags({"rs_pct_60": 0.85, "rs_pct_120": 0.75, "industry_hot": True})
+    assert full == {"rs_strong_60": True, "rs_confirmed_60_120": True, "industry_hot": True}
+    # 60 強但 120 不足 → 只有 strong、沒有雙確認
+    assert bt._xsect_flags({"rs_pct_60": 0.85, "rs_pct_120": 0.6, "industry_hot": False})["rs_confirmed_60_120"] is False
+    # 60 不強 → 都不成立
+    assert bt._xsect_flags({"rs_pct_60": 0.5, "rs_pct_120": 0.9, "industry_hot": False})["rs_strong_60"] is False
+
+
+def test_build_xsect_cache_相對強弱與產業():
+    dates = _seq_dates(65)
+    n_stocks, n_ind = 300, 30
+    # 產業編號越大漲越多（IND29 最強、IND00 最弱）；每產業 10 檔
+    universe = [{"id": f"S{i:03d}", "name": str(i), "market": "上市", "industry": f"IND{i % n_ind:02d}"}
+                for i in range(n_stocks)]
+    price_hist = {}
+    for i in range(n_stocks):
+        rate = (i % n_ind + 1) / n_ind          # 0.033 ~ 1.0
+        by = {}
+        for d, day in enumerate(dates):
+            close = round(100 * (1 + rate * d / 60), 4)
+            by[day] = [close, close, close, close, 1000, 0]
+        price_hist[f"S{i:03d}"] = by
+    cache = bt.build_xsect_cache(price_hist, {}, universe)
+    last = dates[-1]
+    assert last in cache
+    strong = cache[last]["S029"]                 # 屬 IND29（最強產業）
+    weak = cache[last]["S000"]                    # 屬 IND00（最弱產業）
+    assert strong["rs_pct_60"] >= 0.80 and strong["industry_hot"] is True
+    assert weak["rs_pct_60"] < 0.80 and weak["industry_hot"] is False
+    # 併進 collect_events 後，最強股會有 rs_strong_60 訊號
+    assert bt._xsect_flags(strong)["rs_strong_60"] is True
+    assert bt._xsect_flags(weak)["rs_strong_60"] is False
+
+
+def test_collect_events_併入橫斷面訊號():
+    # 用同一組合成資料跑 collect_events，最強股的事件 fired 應含 rs_strong_60
+    dates = _seq_dates(90)                        # 要夠長：min_bars 65 + forward 20
+    universe = [{"id": f"S{i:03d}", "name": str(i), "market": "上市", "industry": f"IND{i % 30:02d}"}
+                for i in range(300)]
+    price_hist = {}
+    for i in range(300):
+        rate = (i % 30 + 1) / 30
+        by = {}
+        for d, day in enumerate(dates):
+            close = round(100 * (1 + rate * d / 60), 4)
+            by[day] = [close, close, close, close, 500000, 0]   # 50 萬股＝500 張，過流動性門檻
+        price_hist[f"S{i:03d}"] = by
+    xsect = bt.build_xsect_cache(price_hist, {}, universe)
+    events, by_date = bt.collect_events(price_hist, {}, {}, universe, xsect=xsect)
+    # 最強產業的股票應該有 rs_strong_60 事件（不保證每檔每日，但整體要出現）
+    fired_all = set()
+    for e in events:
+        fired_all.update(e["raw_fired"])
+    assert "rs_strong_60" in fired_all
+
+
+# ── Phase B-5：出場優化（exit_analysis）─────────────────────────────────
+def test_net_return_成本後公式():
+    # 進場 100、出場 110：毛報酬 10%，扣來回成本後淨報酬應略低於 10%
+    net = bt._net_return(100, 110)
+    gross = 110 / 100 - 1
+    assert net < gross                                   # 成本拖累
+    # 手算：110*(1-0.001425-0.003-0.001)/(100*(1+0.001425+0.001)) - 1
+    expect = 110 * (1 - 0.001425 - 0.003 - 0.001) / (100 * (1 + 0.001425 + 0.001)) - 1
+    assert abs(net - expect) < 1e-12
+
+
+def test_exit_analysis_持有期比較與結構():
+    dates = _seq_dates(120)
+    # 線性上漲 close=100+d：持有越久毛報酬越高
+    by = {d: [100 + i, 100 + i, 100 + i, 100 + i, 500000, 0] for i, d in enumerate(dates)}
+    price_hist = {"A": by}
+    events = [{"date": dates[64], "sid": "A", "i": 64, "ret": 0.1,
+               "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]
+    res = bt.exit_analysis(events, price_hist, {})
+    assert res["n_events"] == 1 and res["control"] == "h20"
+    rows = {s["key"]: s for s in res["strategies"]}
+    assert set(rows) == {"h5", "h10", "h20", "h40", "trail10"}
+    # 進場＝次日收盤 ac[65]=165；持有 20 日 → 出場 ac[85]=185
+    expect_h20 = round(bt._net_return(165, 185) * 100, 2)
+    assert rows["h20"]["avg_net_return"] == expect_h20
+    # 上漲行情：持有越久淨報酬越高
+    assert rows["h5"]["avg_net_return"] < rows["h20"]["avg_net_return"] < rows["h40"]["avg_net_return"]
+    # 單一股票時，基準＝自己的毛報酬 → 淨超額約等於「負的成本拖累」
+    assert rows["h20"]["avg_net_excess"] < 0
+    # 一路上漲不會回落 10% → 停利策略持有到 40 日上限
+    assert rows["trail10"]["avg_holding_days"] == 40.0
+
+
+def test_exit_analysis_路徑不足略過():
+    # 進場後不足 40 日完整路徑的事件要被略過（各持有期才公平可比）
+    dates = _seq_dates(90)
+    by = {d: [100 + i, 100 + i, 100 + i, 100 + i, 500000, 0] for i, d in enumerate(dates)}
+    events = [{"date": dates[64], "sid": "A", "i": 64, "ret": 0.1,
+               "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]  # 65+40=105 >= 90 → 略過
+    res = bt.exit_analysis(events, {"A": by}, {})
+    assert res["n_events"] == 0
