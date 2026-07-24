@@ -147,3 +147,33 @@ def test_windowed_stats_沒事件的訊號各窗樣本為零():
 def test_windowed_stats_無as_of回空():
     assert bt.windowed_stats([{"date": "2026-07-01", "sid": "A", "ret": 0.05,
                                "fired": ["signal_ma"]}], {"2026-07-01": [0.05]}, "") == {}
+
+
+# ── 組合戰績（combo_stats）────────────────────────────────────────────
+def test_combo_stats_兩兩組合超額與樣本():
+    # A、B 常一起出現且贏；C 單獨出現。基準均值 0（[x,-x]）→ 超額＝報酬。
+    events = [
+        {"date": "d1", "sid": "1", "ret": 0.05, "fired": ["signal_ma", "signal_breakout"]},
+        {"date": "d2", "sid": "2", "ret": 0.03, "fired": ["signal_ma", "signal_breakout"]},
+        {"date": "d3", "sid": "3", "ret": -0.01, "fired": ["signal_ma", "signal_breakout"]},
+        {"date": "d4", "sid": "4", "ret": 0.02, "fired": ["sn_squeeze_breakout"]},  # 單一，不成組合
+    ]
+    by_date = {"d1": [0.05, -0.05], "d2": [0.03, -0.03], "d3": [-0.01, 0.01], "d4": [0.02, -0.02]}
+    out = bt.combo_stats(events, by_date, min_sample=1)
+    ma_bo = [c for c in out if set(c["sigs"]) == {"signal_ma", "signal_breakout"}]
+    assert len(ma_bo) == 1
+    c = ma_bo[0]
+    assert c["samples"] == 3                       # 三筆同時成立
+    assert c["avg_excess"] == round((0.05 + 0.03 - 0.01) / 3 * 100, 2)  # 2.33pp
+    assert c["excess_win_rate"] == round(2 / 3, 4) # 兩筆超額為正
+    assert "糾結轉強" in c["labels"] and "爆量突破" in c["labels"]
+    # 單一訊號 sn_squeeze_breakout 不會自成組合
+    assert not any(len(c["sigs"]) < 2 for c in out)
+
+
+def test_combo_stats_樣本門檻與排序():
+    events = [{"date": "d1", "sid": "1", "ret": 0.10, "fired": ["signal_ma", "signal_breakout"]}]
+    by_date = {"d1": [0.0]}
+    assert bt.combo_stats(events, by_date, min_sample=5) == []   # 1 筆 <5 被濾掉
+    got = bt.combo_stats(events, by_date, min_sample=1)
+    assert got and got[0]["samples"] == 1

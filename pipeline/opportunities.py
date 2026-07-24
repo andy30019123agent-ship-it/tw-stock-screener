@@ -185,6 +185,9 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     windows = bt._load(bt.WINDOWS_PATH)
     if windows:
         _write_json(os.path.join(OUT_DIR, "signal_windows.json"), windows)
+    combos = bt._load(bt.COMBOS_PATH)          # 組合戰績排行榜
+    if combos:
+        _write_json(os.path.join(OUT_DIR, "signal_combos.json"), combos)
 
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"]) or "（今日無符合標的）"
     print(f"   Top {len(opp['picks'])}：{names}")

@@ -352,6 +352,50 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-table td.bad { color: var(--down); font-weight: 700; }
 .strategy-note { margin-top: 8px; font-size: .8125rem; line-height: 1.6; color: var(--ink-muted); }
 
+/* 組合戰績排行榜 */
+.combo-board { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.combo-toggle {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  background: none; border: none; font-family: inherit; font-size: .9375rem; font-weight: 800;
+  color: var(--ink); padding: 6px 0; min-height: 40px;
+}
+.combo-toggle:hover { color: var(--primary); }
+.combo-intro { margin: 4px 0 10px; font-size: .8125rem; line-height: 1.6; color: var(--ink-muted); }
+.combo-intro b { color: var(--ink-body); }
+.combo-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.combo-chip {
+  min-height: 36px; padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--ink-muted); font-family: inherit; font-size: .8125rem; font-weight: 700; cursor: pointer;
+}
+.combo-chip.on { background: var(--primary-tint); border-color: var(--primary); color: var(--primary-strong); }
+.combo-clear { min-height: 36px; padding: 4px 12px; border: none; background: none; color: var(--primary); font-family: inherit; font-size: .8125rem; font-weight: 700; cursor: pointer; }
+.combo-scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.combo-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.combo-table th, .combo-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.combo-table th { position: sticky; top: 0; background: var(--surface); font-size: .8125rem; font-weight: 700; color: var(--ink-muted); }
+.combo-table td { font-size: .875rem; color: var(--ink-body); }
+.combo-table .combo-name { text-align: left; font-weight: 600; white-space: normal; }
+.combo-table th:first-child { text-align: left; }
+.combo-table td.good { color: var(--up); font-weight: 700; }
+.combo-table td.bad { color: var(--down); font-weight: 700; }
+.combo-weak { color: var(--ink-muted); }
+.combo-weak small { font-size: .6875rem; }
+.combo-empty { text-align: center; color: var(--ink-muted); padding: 16px; }
+
+/* 熱力圖：桌機才顯示（手機用排行榜就好，矩陣太擠）*/
+.combo-heat-wrap { display: none; }
+@media (min-width: 721px) {
+  .combo-heat-wrap { display: block; margin-top: 16px; }
+  .combo-heat-title { font-size: .8125rem; font-weight: 700; color: var(--ink-muted); margin-bottom: 8px; }
+  .combo-heat-scroll { overflow-x: auto; }
+  .combo-heat { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .combo-heat th, .combo-heat td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; font-size: .75rem; white-space: nowrap; min-width: 44px; }
+  .combo-heat thead th, .combo-heat tbody th { background: var(--surface-tint); color: var(--ink-muted); font-weight: 700; position: sticky; }
+  .combo-heat tbody th { left: 0; text-align: left; }
+  .combo-heat td { color: var(--ink); }
+  .combo-heat .heat-diag { background: var(--surface-tint); color: var(--ink-muted); }
+}
+
 .cond-group { padding-top: 16px; border-top: 1px solid var(--border); }
 /* 勾選項改固定格線：等寬欄位對齊，不再因每項寬度不一而參差（桌機/手機皆適用）。
    同列的格子等高，提示過長就換行、不截斷（保留完整資訊）。 */

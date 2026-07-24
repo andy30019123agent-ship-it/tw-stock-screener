@@ -13,6 +13,7 @@ export default function App() {
   const [sortKey, setSortKey] = useState('signal')
   const [sortOpen, setSortOpen] = useState(false)   // 手機排序選單（工具列「排序 ▾」點開）
   const [weights, setWeights] = useState(null)       // signal_weights.json：快速套用依勝率排序用
+  const [combos, setCombos] = useState(null)         // signal_combos.json：組合戰績排行榜
   // 手機卡片密度：精簡（預設，省滑）／完整；記住上次選擇
   const [dense, setDense] = useState(() => {
     if (typeof localStorage === 'undefined') return true
@@ -40,6 +41,8 @@ export default function App() {
     // 回測權重：給「快速套用」依超額報酬排序用（抓不到就維持原順序）
     fetch(`${import.meta.env.BASE_URL}data/signal_weights.json`)
       .then(r => (r.ok ? r.json() : null)).then(setWeights).catch(() => setWeights(null))
+    fetch(`${import.meta.env.BASE_URL}data/signal_combos.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setCombos).catch(() => setCombos(null))
   }, [])
 
   const filtered = useMemo(() => {
@@ -182,6 +185,7 @@ export default function App() {
             holderReady={!!data.holder_ready}
             industries={industries}
             weights={weights}
+            combos={combos}
             open={panelOpen}
             onOpenChange={setPanelOpen}
           />

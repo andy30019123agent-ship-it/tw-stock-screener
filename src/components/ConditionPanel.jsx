@@ -3,6 +3,7 @@ import {
   SlidersHorizontal, Search, ChevronDown,
   Rocket, BookOpen, Gem, Sparkles, Landmark, TrendingUp,
 } from 'lucide-react'
+import ComboBoard from './ComboBoard'
 
 const isMobile = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
@@ -52,7 +53,7 @@ function presetScore(key, weights) {
 
 export default function ConditionPanel({
   conditions, onChange, total, shown, holderReady, industries = [],
-  weights = null, open: openProp, onOpenChange, id,
+  weights = null, combos = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
   // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
@@ -122,6 +123,7 @@ export default function ConditionPanel({
               </p>
             </details>
           )}
+          <ComboBoard combos={combos} />
         </div>
 
         {/* 範圍：市場 / 產業 */}

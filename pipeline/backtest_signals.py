@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import datetime as dt
+from itertools import combinations
 
 sys.path.insert(0, os.path.dirname(__file__))
 import history_store as hs  # noqa: E402
@@ -25,6 +26,7 @@ import history_store as hs  # noqa: E402
 HERE = os.path.dirname(__file__)
 WEIGHTS_PATH = os.path.join(HERE, "signal_weights.json")
 WINDOWS_PATH = os.path.join(HERE, "signal_windows.json")
+COMBOS_PATH = os.path.join(HERE, "signal_combos.json")
 BT_PRICE_PATH = os.path.join(HERE, "history", "bt_price.json")
 
 # 勝率榜的時間窗（曆日數，從最新資料日往回；歷史=全部）。
@@ -217,6 +219,50 @@ def run_backtest(price_hist, chip_hist, div_hist, universe,
     return stats_to_weights(events_to_stats(events, by_date))
 
 
+# ── 組合戰績（A＋B、A＋B＋C 同時成立的勝率）──────────────────────────
+COMBO_MIN_SAMPLE = 5    # 至少幾筆才收（1~2 筆純巧合、會誤導）；Andy 要「樣本少沒關係、找最高勝率」
+COMBO_MAX_SIZE = 3      # 最多幾個訊號同時成立（兩兩＋三個一組）
+COMBO_TOP = 120         # 依平均超額取前 N（控制檔案大小）
+
+
+def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX_SIZE, top=COMBO_TOP):
+    """算「多個訊號同時成立」的組合戰績。每筆 event 已帶 fired=[當天同時成立的訊號]，
+    對每筆事件把它 fired 的所有 2~max_size 子集各記一次，最後套同日超額基準算統計。
+    回依平均超額排序的前 top 個（樣本 ≥ min_sample）。純函式、好單測。"""
+    bench = {d: (sum(v) / len(v)) for d, v in by_date.items() if v}
+    acc = {}
+    for e in events:
+        fired = tuple(sorted(set(e["fired"])))
+        if len(fired) < 2:
+            continue
+        exc = e["ret"] - bench.get(e["date"], 0.0)
+        win, exc_win = e["ret"] > 0, exc > 0
+        for size in range(2, min(max_size, len(fired)) + 1):
+            for combo in combinations(fired, size):
+                st = acc.setdefault(combo, {"count": 0, "exc_sum": 0.0, "exc_wins": 0, "wins": 0, "ret_sum": 0.0})
+                st["count"] += 1
+                st["exc_sum"] += exc
+                st["ret_sum"] += e["ret"]
+                st["exc_wins"] += exc_win
+                st["wins"] += win
+    out = []
+    for combo, st in acc.items():
+        c = st["count"]
+        if c < min_sample:
+            continue
+        out.append({
+            "sigs": list(combo),
+            "labels": [SIGNAL_LABELS.get(s, s) for s in combo],
+            "avg_excess": round(st["exc_sum"] / c * 100, 2),
+            "excess_win_rate": round(st["exc_wins"] / c, 4),
+            "win_rate": round(st["wins"] / c, 4),
+            "avg_ret": round(st["ret_sum"] / c * 100, 2),
+            "samples": c,
+        })
+    out.sort(key=lambda x: -x["avg_excess"])
+    return out[:top]
+
+
 def _latest_date(price_hist):
     """歷史裡最新的交易日（時間窗的錨點；ISO 字串大小比較即日期先後）。"""
     latest = ""
@@ -331,6 +377,21 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         }
         with open(WINDOWS_PATH, "w", encoding="utf-8") as f:
             json.dump(windows_out, f, ensure_ascii=False, separators=(",", ":"))
+
+    # 組合戰績（A＋B、A＋B＋C 同時成立）——給網頁「組合排行榜」用
+    combos = combo_stats(events, by_date)
+    combos_out = {
+        "date": today.isoformat(),
+        "computed": out["computed"],
+        "forward_days": FORWARD,
+        "min_sample": COMBO_MIN_SAMPLE,
+        "combos": combos,
+    }
+    with open(COMBOS_PATH, "w", encoding="utf-8") as f:
+        json.dump(combos_out, f, ensure_ascii=False, separators=(",", ":"))
+    if combos:
+        print(f"   組合戰績：{len(combos)} 組（最強 {'＋'.join(combos[0]['labels'])} "
+              f"超額 {combos[0]['avg_excess']}pp、樣本 {combos[0]['samples']}）")
 
     strong = max(weights.items(), key=lambda kv: (kv[1]["weight"], kv[1]["samples"]))
     print(f"   權重已更新，最強訊號：{strong[1]['label']}（權重 {strong[1]['weight']}、樣本 {strong[1]['samples']}）")
