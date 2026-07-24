@@ -267,6 +267,32 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .opp-weights-table td.good { color: var(--up); }
 .opp-weights-note { margin-top: 8px; line-height: 1.6; }
 
+/* 多時間窗勝率榜（每格＝平均超額，欄位可點聚焦排序） */
+.wq-table th, .wq-table td { padding: 8px 10px; vertical-align: middle; }
+.wq-table .wq-sig {
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+  text-align: left; font-weight: 600; color: var(--ink-body); white-space: nowrap;
+}
+.wq-table thead .wq-sig { color: var(--ink-muted); }
+.wq-h { cursor: pointer; user-select: none; }
+.wq-h:hover, .wq-h.wq-active { color: var(--primary); }
+.wq-caret { margin-left: 2px; font-size: .7rem; }
+.wq-cell { text-align: right; }
+.wq-cell.wq-active { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.wq-cell.wq-empty { color: var(--ink-muted); }
+.wq-exc { display: block; font-weight: 700; font-size: .9375rem; }
+.wq-exc.good { color: var(--up); }
+.wq-exc.bad { color: var(--down); }
+.wq-exc small { font-size: .7rem; font-weight: 600; opacity: .7; margin-left: 1px; }
+.wq-sub { display: block; font-size: .7rem; color: var(--ink-muted); margin-top: 1px; }
+.wq-cell.wq-weak, .wq-cell.wq-weak .wq-exc { color: var(--ink-muted); }
+.wq-cell.wq-weak .wq-exc { font-weight: 600; }
+.wq-trend { margin-left: 5px; font-weight: 700; }
+.wq-trend.wq-up { color: var(--up); }
+.wq-trend.wq-down { color: var(--down); }
+.wq-trend.wq-flat { color: var(--ink-muted); }
+.wq-weak-inline { color: var(--ink-muted); }
+
 /* ===== Condition Panel ===== */
 .cond-panel {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);

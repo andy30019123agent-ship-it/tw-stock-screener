@@ -178,6 +178,11 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     _write_json(os.path.join(OUT_DIR, "signal_weights.json"), weights)
     _write_json(os.path.join(OUT_DIR, "scoreboard.json"), scoreboard)
     _write_json(SCOREBOARD_PATH, scoreboard)
+    # 多時間窗勝率榜：由 ensure_weights 每週重算時寫 pipeline/signal_windows.json，
+    # 這裡每天把它複製到 public/data 給前端（沒有就略過，跟其他區塊一樣不硬性依賴）。
+    windows = bt._load(bt.WINDOWS_PATH)
+    if windows:
+        _write_json(os.path.join(OUT_DIR, "signal_windows.json"), windows)
 
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"]) or "（今日無符合標的）"
     print(f"   Top {len(opp['picks'])}：{names}")

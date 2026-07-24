@@ -24,7 +24,13 @@ import history_store as hs  # noqa: E402
 
 HERE = os.path.dirname(__file__)
 WEIGHTS_PATH = os.path.join(HERE, "signal_weights.json")
+WINDOWS_PATH = os.path.join(HERE, "signal_windows.json")
 BT_PRICE_PATH = os.path.join(HERE, "history", "bt_price.json")
+
+# 勝率榜的時間窗（曆日數，從最新資料日往回；歷史=全部）。
+# ⚠️ 沒有「近1月」：勝率是「進場後 20 交易日報酬」，最近 ~20 個交易日的訊號還沒有結果可算，
+#    近1月窗幾乎必然是空的（答案尚未揭曉，不是 bug），列了只會誤導。最短從近3月起。
+WINDOWS = [("3m", "近3月", 90), ("6m", "近半年", 180), ("1y", "近一年", 365), ("all", "歷史", None)]
 
 FORWARD = 20        # 下 N 交易日報酬
 MIN_SAMPLE = 30     # 低於此樣本數用預設權重
@@ -196,6 +202,51 @@ def run_backtest(price_hist, chip_hist, div_hist, universe,
     return stats_to_weights(events_to_stats(events, by_date))
 
 
+def _latest_date(price_hist):
+    """歷史裡最新的交易日（時間窗的錨點；ISO 字串大小比較即日期先後）。"""
+    latest = ""
+    for by in price_hist.values():
+        if by:
+            m = max(by)
+            if m > latest:
+                latest = m
+    return latest
+
+
+def windowed_stats(events, by_date, as_of_iso):
+    """把「一次收集好的事件」切成多個時間窗各算一次統計 → 勝率榜的多視窗資料。
+
+    刻意設計：collect_events（逐檔重算指標，很重）只跑一次，這裡各窗只是「按日期篩事件」
+    再套 events_to_stats/stats_to_weights，幾乎零額外成本。每個窗的基準（同日全市場平均）
+    也只用「該窗內」的日期，確保近3月的超額是跟近3月的大盤比，不被歷史平均污染。
+
+    回 signals-major：{sigkey: {label, "3m":{...}, "6m":{...}, "1y":{...}, "all":{...}}}，
+    方便前端「一列一訊號、橫向多窗」直接畫表。
+    """
+    if not as_of_iso:
+        return {}
+    as_of = dt.date.fromisoformat(as_of_iso)
+    per_window = {}
+    for key, _label, days in WINDOWS:
+        if days is None:
+            evs, bd = events, by_date
+        else:
+            cutoff = (as_of - dt.timedelta(days=days)).isoformat()
+            evs = [e for e in events if e["date"] >= cutoff]
+            bd = {d: v for d, v in by_date.items() if d >= cutoff}
+        per_window[key] = stats_to_weights(events_to_stats(evs, bd))
+
+    signals = {}
+    for k in SIGNALS:
+        row = {"label": SIGNAL_LABELS.get(k, k)}
+        for key, _label, _days in WINDOWS:
+            s = per_window[key][k]
+            row[key] = {"avg_excess": s["avg_excess"], "excess_win_rate": s["excess_win_rate"],
+                        "samples": s["samples"], "validated": s["validated"], "weight": s["weight"]}
+        signals[k] = row
+    return signals
+
+
 def _load(path):
     if os.path.exists(path):
         try:
@@ -237,7 +288,9 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     else:
         print("   長歷史尚未建立，暫用 110 天滾動歷史回測（樣本偏少）")
         price_for_bt = price_hist
-    weights = run_backtest(price_for_bt, chip_hist, div_hist, universe)
+    # 事件只收集一次（逐檔重算指標的重活），再分別算「全歷史權重」與「多時間窗勝率榜」。
+    events, by_date = collect_events(price_for_bt, chip_hist, div_hist, universe)
+    weights = stats_to_weights(events_to_stats(events, by_date))
     out = {
         "date": today.isoformat(),
         "computed": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -247,6 +300,23 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     }
     with open(WEIGHTS_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+
+    # 多時間窗勝率榜（近3月/近半年/近一年/歷史）——給網頁勝率榜切窗與看趨勢用
+    as_of = _latest_date(price_for_bt)
+    windows_signals = windowed_stats(events, by_date, as_of)
+    if windows_signals:
+        windows_out = {
+            "date": today.isoformat(),
+            "computed": out["computed"],
+            "forward_days": FORWARD,
+            "min_sample": MIN_SAMPLE,
+            "as_of": as_of,
+            "windows": [{"key": k, "label": lb} for k, lb, _ in WINDOWS],
+            "signals": windows_signals,
+        }
+        with open(WINDOWS_PATH, "w", encoding="utf-8") as f:
+            json.dump(windows_out, f, ensure_ascii=False, separators=(",", ":"))
+
     strong = max(weights.items(), key=lambda kv: (kv[1]["weight"], kv[1]["samples"]))
     print(f"   權重已更新，最強訊號：{strong[1]['label']}（權重 {strong[1]['weight']}、樣本 {strong[1]['samples']}）")
     return out

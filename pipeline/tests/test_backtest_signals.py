@@ -107,3 +107,43 @@ def test_大盤更強時_上漲也算輸():
     st = bt.events_to_stats(events, by_date)
     assert st["signal_ma"]["wins"] == 1
     assert st["signal_ma"]["exc_wins"] == 0
+
+
+# ── 多時間窗勝率榜（windowed_stats）────────────────────────────────────
+def test_windowed_stats_依日期切窗與per窗基準():
+    # 三個事件分佈在不同時間；as_of=2026-07-23
+    #   3m 界=2026-04-24、6m 界=2026-01-24、1y 界=2025-07-23
+    events = [
+        {"date": "2026-07-01", "sid": "A", "ret": 0.05, "fired": ["signal_ma"]},  # 落在所有窗
+        {"date": "2026-01-01", "sid": "B", "ret": 0.03, "fired": ["signal_ma"]},  # 只在 1y、all
+        {"date": "2024-09-01", "sid": "C", "ret": 0.02, "fired": ["signal_ma"]},  # 只在 all
+    ]
+    by_date = {  # 每日基準均值為 0（[x,-x]），讓超額＝該股報酬，方便手算
+        "2026-07-01": [0.05, -0.05],
+        "2026-01-01": [0.03, -0.03],
+        "2024-09-01": [0.02, -0.02],
+    }
+    w = bt.windowed_stats(events, by_date, "2026-07-23")
+    s = w["signal_ma"]
+    # 窗內樣本數：3m 只 7/1（1）；6m 同（1/1 早於 1/24 被排除）；1y 加上 1/1（2）；all 全部（3）
+    assert s["3m"]["samples"] == 1
+    assert s["6m"]["samples"] == 1
+    assert s["1y"]["samples"] == 2
+    assert s["all"]["samples"] == 3
+    # per-窗基準：3m 只用窗內那天 → 超額＝5pp；all 平均 (5+3+2)/3 = 3.33pp
+    assert s["3m"]["avg_excess"] == 5.0
+    assert s["all"]["avg_excess"] == 3.33
+    # 結構：每訊號有 label 與四個窗
+    assert s["label"] == "糾結轉強"
+    assert set(k for k in s if k != "label") == {"3m", "6m", "1y", "all"}
+
+
+def test_windowed_stats_沒事件的訊號各窗樣本為零():
+    w = bt.windowed_stats([], {}, "2026-07-23")
+    assert w["signal_breakout"]["all"]["samples"] == 0
+    assert w["signal_breakout"]["3m"]["avg_excess"] is None
+
+
+def test_windowed_stats_無as_of回空():
+    assert bt.windowed_stats([{"date": "2026-07-01", "sid": "A", "ret": 0.05,
+                               "fired": ["signal_ma"]}], {"2026-07-01": [0.05]}, "") == {}
