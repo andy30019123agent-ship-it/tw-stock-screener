@@ -18,6 +18,8 @@ import os
 import sys
 import json
 import datetime as dt
+from math import log, exp, floor, sqrt
+from collections import Counter
 from itertools import combinations
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -224,6 +226,20 @@ def run_backtest(price_hist, chip_hist, div_hist, universe,
     return stats_to_weights(events_to_stats(events, by_date))
 
 
+# ── Phase A 地基：walk-forward 樣本外(OOS)驗證 ＋ EWMA 時間自適應權重 ──────────
+# 🔒 frozen config：首次看 OOS 結果前就鎖定，事後不准回頭調參數去迎合結果（那叫過擬合 harness）。
+#    要改任何一個數字＝升 spec_version，且舊 OOS 已淪為「開發資料」不能再當乾淨樣本外。
+#    新東西全部「並行輸出」到 signal_weights.json 的 oos/adaptive 欄位，現行 weight（Top5 引擎）一律不動。
+OOS_TRAIN_DAYS = 252    # 訓練窗（交易日）：約一年
+OOS_EMBARGO_DAYS = 20   # 隔離帶：train 最後事件的 20 日報酬要在 test 開始前成熟，否則假 OOS 會洩漏未來價
+OOS_TEST_DAYS = 20      # 測試窗
+OOS_STEP_DAYS = 20      # 每次前滾 20（＝test 寬，故各 fold 的 test 不重疊、事件不重複計）
+OOS_MIN_TRAIN = 30      # 訓練期該訊號最少事件數，否則此 fold 不評該訊號
+EWMA_HALF_LIFE = 63     # 近期加權半衰期（交易日）：約一季、約 3 個持有期；比 20 穩、比 126 更反映近況
+EWMA_MAX_RECENT_SHARE = 0.30  # 近期最多佔混合權重的比例（樣本足才給到滿）
+SHRINK_K = 30.0         # 樣本感知收縮：effective = blended × ESS/(ESS+K)，K=30 與最低樣本門檻一致
+PHASE_A_SPEC = "phase-a-v1"
+
 # ── 組合戰績（A＋B、A＋B＋C 同時成立的勝率）──────────────────────────
 COMBO_MIN_SAMPLE = 5    # 至少幾筆才收（1~2 筆純巧合、會誤導）；Andy 要「樣本少沒關係、找最高勝率」
 COMBO_MAX_SIZE = 3      # 最多幾個訊號同時成立（兩兩＋三個一組）
@@ -284,6 +300,236 @@ def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX
     combos = sorted(rows, key=lambda x: -x["avg_excess"])[:top]
     pairs = sorted([r for r in rows if len(r["sigs"]) == 2], key=lambda x: -x["avg_excess"])
     return combos, pairs
+
+
+# ── Phase A：樣本外驗證 ＋ 自適應權重（純函式、吃已收集好的 events/by_date，可單測）─────────
+
+def _signal_event_excess(events, by_date):
+    """每訊號 → [(date, excess_pp)]。excess＝該事件報酬 − 同日全市場平均，單位百分點(pp)。
+    用 e["fired"]（過單訊號冷卻的），與單訊號統計/勝率榜同一把尺，OOS 與現況才可直接對照。"""
+    bench = {d: (sum(v) / len(v)) for d, v in by_date.items() if v}
+    per = {k: [] for k in SIGNALS}
+    for e in events:
+        exc = (e["ret"] - bench.get(e["date"], 0.0)) * 100.0
+        for k in e["fired"]:
+            per[k].append((e["date"], exc))
+    return per
+
+
+def walk_forward_oos(events, by_date):
+    """滾動樣本外驗證。回 (per_signal_oos, total_folds)。
+
+    fold＝train(252 交易日) → embargo(20) → test(20)，每次前滾 20（test 不重疊）。
+    embargo 是關鍵：train 最後一天訊號的 20 日報酬會延伸進 test，不留空窗就會用到未來價、
+    假 OOS 真洩漏。每個 fold 內用 train 期算該訊號平均超額，>0 且樣本 ≥30 才「合格」，
+    合格才把該訊號在 test 期的實際事件收進 OOS 池——這才是「事前只用得到的資訊選、事後才驗」。"""
+    dates = sorted(by_date.keys())          # 可評分交易日曆（皆已有 forward 報酬）
+    N = len(dates)
+    per = _signal_event_excess(events, by_date)
+
+    folds = []                              # [(train_dates:set, test_dates:set)]
+    s = 0
+    span = OOS_TRAIN_DAYS + OOS_EMBARGO_DAYS + OOS_TEST_DAYS
+    while s + span <= N:
+        train_dates = set(dates[s:s + OOS_TRAIN_DAYS])
+        t0 = s + OOS_TRAIN_DAYS + OOS_EMBARGO_DAYS
+        test_dates = set(dates[t0:t0 + OOS_TEST_DAYS])
+        folds.append((train_dates, test_dates))
+        s += OOS_STEP_DAYS
+    F = len(folds)
+
+    out = {}
+    for k in SIGNALS:
+        evx = per[k]                        # [(date, excess_pp)]
+        selected_x, selected_dates = [], []
+        selected_folds = 0
+        is_num, is_den = 0.0, 0             # is_selected＝Σ len(T_f)*train_avg / Σ len(T_f)
+        for train_dates, test_dates in folds:
+            train_x = [x for (d, x) in evx if d in train_dates]
+            if len(train_x) < OOS_MIN_TRAIN:
+                continue
+            train_avg = sum(train_x) / len(train_x)
+            if train_avg <= 0.0:            # 訓練期就沒有正超額 → 此 fold 不選這個訊號
+                continue
+            selected_folds += 1
+            test_ev = [(d, x) for (d, x) in evx if d in test_dates]
+            for d, x in test_ev:
+                selected_x.append(x)
+                selected_dates.append(d)
+            if test_ev:
+                is_num += len(test_ev) * train_avg
+                is_den += len(test_ev)
+        out[k] = _oos_row(k, len(evx), selected_folds, F, selected_x, selected_dates, is_num, is_den)
+    return out, F
+
+
+def _oos_row(k, total_hist, selected_folds, F, sel_x, sel_dates, is_num, is_den):
+    """把某訊號跨 fold 的 OOS 結果整理成一列，含穩健度分類（誠實標示樣本不足）。"""
+    n = len(sel_x)
+    active_dates = len(set(sel_dates))
+    row = {
+        "label": SIGNAL_LABELS.get(k, k),
+        "excess_pp": None, "win_rate": None, "samples": n, "active_dates": active_dates,
+        "selected_folds": selected_folds, "total_folds": F,
+        "selected_fraction": round(selected_folds / F, 4) if F else None,
+        "is_selected_excess_pp": None, "shrinkage_pp": None, "retention_ratio": None,
+    }
+    # 狀態優先序：先排除「根本不夠資格評」的，最後才做穩健度分類
+    if total_hist == 0:
+        row["status"] = "no_events"; return row
+    if total_hist < OOS_MIN_TRAIN:
+        row["status"] = "insufficient_history"; return row
+    if selected_folds == 0:
+        row["status"] = "never_qualified"; return row
+    if n == 0:
+        row["status"] = "no_selected_oos_events"; return row
+
+    oos = sum(sel_x) / n
+    row["excess_pp"] = round(oos, 2)
+    row["win_rate"] = round(sum(1 for x in sel_x if x > 0.0) / n, 4)   # x==0 算非勝
+    is_sel = (is_num / is_den) if is_den else None
+    if is_sel is not None:
+        row["is_selected_excess_pp"] = round(is_sel, 2)
+        row["shrinkage_pp"] = round(is_sel - oos, 2)
+        row["retention_ratio"] = round(oos / is_sel, 3) if abs(is_sel) > 1e-9 else None
+
+    rr, sf = row["retention_ratio"], row["selected_fraction"]
+    if selected_folds < 3 or n < 30 or active_dates < 10 or rr is None:
+        row["status"] = "insufficient_oos"
+    elif oos <= 0:
+        row["status"] = "overfit"           # 訓練看好、樣本外變負 → 過擬合
+    elif rr < 0.25:
+        row["status"] = "severe_shrinkage"
+    elif rr < 0.50:
+        row["status"] = "fragile"
+    elif sf < 0.30:
+        row["status"] = "regime_specific"   # 只有少數市況合格 → 挑市況
+    else:
+        row["status"] = "robust"            # 又高又穩、跨市況、樣本外站得住
+    return row
+
+
+def adaptive_weights(events, by_date):
+    """EWMA 時間自適應候選權重。回 {sigkey: {...adaptive 欄位...}}。**並行輸出、不改現行 weight。**
+
+    近期表現用「交易日 index 指數衰減」加權（半衰期 63 日）；近期占比隨近期有效樣本動態放大
+    （最多 30%）；再乘樣本感知收縮（ESS 少就往 0 拉）得 effective，映射成 candidate_weight。
+    有效樣本數(ESS)用同日群聚保守化——同一天幾十檔同時觸發不是幾十個獨立證據。"""
+    dates = sorted(by_date.keys())
+    idx = {d: i for i, d in enumerate(dates)}
+    as_of_i = len(dates) - 1
+    as_of = dates[-1] if dates else None
+    per = _signal_event_excess(events, by_date)
+    decay = exp(-log(2) / EWMA_HALF_LIFE)
+    return {k: _adaptive_row(k, per[k], idx, as_of, as_of_i, decay) for k in SIGNALS}
+
+
+def _ess_by_date(dates_list, weights=None):
+    """同日群聚的有效樣本數 ESS＝1/Σ(每日權重佔比)²。weights=None 時每筆等權。"""
+    if not dates_list:
+        return 0.0
+    if weights is None:
+        cnt = Counter(dates_list)
+        tot = len(dates_list)
+        return 1.0 / sum((c / tot) ** 2 for c in cnt.values())
+    W = sum(weights)
+    if W <= 0:
+        return 0.0
+    by_d = {}
+    for d, w in zip(dates_list, weights):
+        by_d[d] = by_d.get(d, 0.0) + w
+    return 1.0 / sum((q / W) ** 2 for q in by_d.values())
+
+
+def _adaptive_row(k, evx, idx, as_of, as_of_i, decay):
+    """單一訊號的自適應候選權重明細。evx＝[(date, excess_pp)]。"""
+    label = SIGNAL_LABELS.get(k, k)
+    hist_n = len(evx)
+    row = {
+        "label": label, "as_of": as_of, "matured_through": None,
+        "half_life_days": EWMA_HALF_LIFE, "decay_lambda": round(decay, 5),
+        "hist_samples": hist_n, "hist_n_eff": None, "hist_excess_pp": None,
+        "recent_excess_pp": None, "recent_n_eff": None, "recent_se_pp": None,
+        "recent_lcb90_pp": None, "recent_share": None, "blended_excess_pp": None,
+        "blend_n_eff": None, "shrink_factor": None, "effective_excess_pp": None,
+        "candidate_weight": 0, "status": "no_events",
+    }
+    if hist_n == 0:
+        return row
+
+    hdates = [d for d, _ in evx]
+    row["matured_through"] = max(hdates)
+    hist_excess = sum(x for _, x in evx) / hist_n
+    row["hist_excess_pp"] = round(hist_excess, 2)
+    hist_n_eff = _ess_by_date(hdates)          # 全歷史等權、同日群聚 ESS
+    row["hist_n_eff"] = round(hist_n_eff, 1)
+
+    if hist_n < MIN_SAMPLE:                     # 全歷史 <30 不夠評，仍回明細但候選權重 0
+        row["status"] = "insufficient_history"
+        return row
+
+    # EWMA 近期加權平均（用交易日 index 的年齡指數衰減）
+    ws = [decay ** (as_of_i - idx[d]) for d, _ in evx if d in idx]
+    xs = [x for d, x in evx if d in idx]
+    ds = [d for d, _ in evx if d in idx]
+    W = sum(ws)
+    recent_excess = recent_n_eff = None
+    if W > 1e-12:
+        recent_excess = sum(w * x for w, x in zip(ws, xs)) / W
+        ps = [w / W for w in ws]
+        event_n_eff = 1.0 / sum(p * p for p in ps)
+        date_n_eff = _ess_by_date(ds, ws)
+        recent_n_eff = min(event_n_eff, date_n_eff)
+        row["recent_excess_pp"] = round(recent_excess, 2)
+        row["recent_n_eff"] = round(recent_n_eff, 1)
+        # 近期有效樣本 >1 才算加權變異數 → SE / 90% 單側下界（診斷用，不直接控權重）
+        denom = 1.0 - sum(p * p for p in ps)
+        if denom > 1e-12 and recent_n_eff and recent_n_eff > 1:
+            wvar = sum(p * (x - recent_excess) ** 2 for p, x in zip(ps, xs)) / denom
+            se = sqrt(wvar / recent_n_eff) if wvar >= 0 else None
+            if se is not None:
+                row["recent_se_pp"] = round(se, 2)
+                row["recent_lcb90_pp"] = round(recent_excess - 1.2816 * se, 2)
+
+    # 近期占比動態化：近期有效樣本越足、給越多（上限 30%）
+    if recent_excess is None:
+        recent_share = 0.0
+        blended = hist_excess
+    else:
+        recent_share = EWMA_MAX_RECENT_SHARE * min(1.0, recent_n_eff / 30.0)
+        blended = (1.0 - recent_share) * hist_excess + recent_share * recent_excess
+    history_share = 1.0 - recent_share
+    row["recent_share"] = round(recent_share, 3)
+    row["blended_excess_pp"] = round(blended, 2)
+
+    # 樣本感知收縮：混合有效樣本少就把估計往 0 拉
+    blend_n_eff = history_share * hist_n_eff + (recent_share * recent_n_eff if recent_n_eff else 0.0)
+    shrink = blend_n_eff / (blend_n_eff + SHRINK_K) if blend_n_eff > 0 else 0.0
+    effective = blended * shrink
+    row["blend_n_eff"] = round(blend_n_eff, 1)
+    row["shrink_factor"] = round(shrink, 3)
+    row["effective_excess_pp"] = round(effective, 2)
+
+    if effective <= 0:
+        row["candidate_weight"] = 0
+    else:
+        row["candidate_weight"] = min(5, max(1, floor(effective * 2.0 + 0.5)))  # half-up，非 bankers
+    row["status"] = "eligible"
+    return row
+
+
+def attach_phase_a(weights, events, by_date):
+    """把 OOS 與自適應候選權重併進 weights['signals'][k]（新增 oos/adaptive/spec_version 巢狀欄位）。
+    現行 weight 完全不動——Top5 引擎這階段照舊，新指標只供驗證與展示。回 (oos_by_sig, total_folds)。"""
+    oos, F = walk_forward_oos(events, by_date)
+    adaptive = adaptive_weights(events, by_date)
+    sigs = weights.get("signals", {})
+    for k in SIGNALS:
+        if k in sigs:
+            sigs[k]["oos"] = oos.get(k)
+            sigs[k]["adaptive"] = adaptive.get(k)
+            sigs[k]["spec_version"] = PHASE_A_SPEC
+    return oos, F
 
 
 def _latest_date(price_hist):
@@ -382,8 +628,20 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         "min_sample": MIN_SAMPLE,
         "signals": weights,
     }
+    # Phase A：樣本外驗證＋自適應候選權重（並行欄位，不動現行 weight/Top5）。純切片、幾乎零成本。
+    oos, total_folds = attach_phase_a(out, events, by_date)
+    out["phase_a"] = {
+        "spec_version": PHASE_A_SPEC, "total_folds": total_folds,
+        "config": {"train_days": OOS_TRAIN_DAYS, "embargo_days": OOS_EMBARGO_DAYS,
+                   "test_days": OOS_TEST_DAYS, "step_days": OOS_STEP_DAYS,
+                   "min_train_samples": OOS_MIN_TRAIN, "ewma_half_life_days": EWMA_HALF_LIFE,
+                   "ewma_max_recent_share": EWMA_MAX_RECENT_SHARE, "shrink_k": SHRINK_K},
+    }
     with open(WEIGHTS_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    robust = [v["label"] for v in weights.values() if (v.get("oos") or {}).get("status") == "robust"]
+    print(f"   樣本外驗證：{total_folds} folds，穩健訊號 {len(robust)} 個"
+          + (f"（{'、'.join(robust)}）" if robust else "（尚無訊號通過 OOS 穩健門檻）"))
 
     # 多時間窗勝率榜（近3月/近半年/近一年/歷史）——給網頁勝率榜切窗與看趨勢用
     as_of = _latest_date(price_for_bt)

@@ -50,6 +50,24 @@ function presetScore(key, weights) {
   const s = presetStat(key, weights)
   return s ? s.avg_excess : -Infinity
 }
+// 樣本外(OOS)穩健度徽章：把回測狀態翻成白話。robust＝訓練期看好、沒看過的日子也站得住；
+// overfit＝訓練期看好但樣本外變負（等於背答案）；其餘為縮水/挑市況/樣本不足。
+const OOS_BADGE = {
+  robust: ['穩健', 'oos-robust', '樣本外仍為正、效力保留過半、跨多個市況、樣本足'],
+  regime_specific: ['挑市況', 'oos-warn', '樣本外為正，但只有少數市況合格，換市況可能失靈'],
+  fragile: ['脆弱', 'oos-warn', '樣本外效力縮水一半以上，不太穩'],
+  severe_shrinkage: ['大幅縮水', 'oos-bad', '樣本外只剩不到四分之一，多半是過擬合'],
+  overfit: ['過擬合', 'oos-bad', '訓練期看好、樣本外卻變負 → 等於背答案，不是真本事'],
+  insufficient_oos: ['資料不足', 'oos-muted', '樣本外事件太少或集中在少數日期，還無法判斷'],
+  insufficient_history: ['資料不足', 'oos-muted', '全歷史樣本 <30，無法做樣本外驗證'],
+  never_qualified: ['未達標', 'oos-muted', '沒有任何一段訓練期看好過這個策略'],
+  no_selected_oos_events: ['資料不足', 'oos-muted', '合格期間內樣本外剛好沒有事件'],
+  no_events: ['—', 'oos-muted', '此策略沒有回測事件'],
+}
+function oosBadge(stat) {
+  const b = OOS_BADGE[stat?.oos?.status]
+  return b ? { text: b[0], cls: b[1], title: b[2] } : null
+}
 
 export default function ConditionPanel({
   conditions, onChange, total, shown, holderReady, industries = [],
@@ -99,15 +117,17 @@ export default function ConditionPanel({
               <summary>各策略回測戰績（依平均超額排序）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>策略</th><th>平均超額</th><th>勝率</th><th>樣本</th></tr></thead>
+                  <thead><tr><th>策略</th><th>平均超額</th><th title="樣本外驗證：只用過去資料選、拿沒看過的日子驗，看效力是否還在">樣本外</th><th>勝率</th><th>樣本</th></tr></thead>
                   <tbody>
                     {orderedPresets.map(p => {
                       const s = presetStat(p.key, weights)
+                      const ob = oosBadge(s)
                       return (
                         <tr key={p.key}>
                           <td>{p.label}</td>
                           <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
                             {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '尚無回測'}</td>
+                          <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
                           <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
                           <td>{s ? s.samples : '—'}</td>
                         </tr>
@@ -118,7 +138,8 @@ export default function ConditionPanel({
               </div>
               <p className="strategy-note">
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
-                小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
+                <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，<b>「穩健」才是真本事，「過擬合」是背答案</b>——
+                平均超額再高，樣本外過擬合就別太當真。小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
                 同業低估／外資連買因缺逐日歷史、樣本 0，暫無戰績。
               </p>
             </details>

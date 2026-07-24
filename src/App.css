@@ -351,6 +351,13 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-table td.good { color: var(--up); font-weight: 700; }
 .strategy-table td.bad { color: var(--down); font-weight: 700; }
 .strategy-note { margin-top: 8px; font-size: .8125rem; line-height: 1.6; color: var(--ink-muted); }
+/* 樣本外(OOS)穩健度徽章：穩健=綠、警示=琥珀、過擬合=紅、資料不足=灰 */
+.oos-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem;
+  font-weight: 700; line-height: 1.5; white-space: nowrap; cursor: help; }
+.oos-badge.oos-robust { color: var(--down); background: var(--down-bg); }
+.oos-badge.oos-warn { color: #9A6A00; background: #FBF0D8; }
+.oos-badge.oos-bad { color: var(--up); background: var(--up-bg); }
+.oos-badge.oos-muted { color: var(--ink-muted); background: var(--surface-2, rgba(0,0,0,.05)); }
 
 /* 組合戰績排行榜 */
 .combo-board { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }

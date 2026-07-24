@@ -7,9 +7,16 @@
 """
 import os
 import sys
+import datetime as _dt
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import backtest_signals as bt
+
+
+def _seq_dates(n, start="2024-01-01"):
+    """n 個遞增且可排序的日期字串（單測把 by_date 的鍵當交易日曆用，週末與否無所謂）。"""
+    d0 = _dt.date.fromisoformat(start)
+    return [(d0 + _dt.timedelta(days=i)).isoformat() for i in range(n)]
 
 
 def test_stats_to_weights_hand_calc():
@@ -208,3 +215,102 @@ def test_combo_stats_穩健度下界壓低小樣本波動():
     c = combos[0]
     assert c["avg_excess"] == 5.0                   # (20-10)/2 = 5pp
     assert c["excess_lb"] < c["avg_excess"]         # 波動大 → 下界被壓低
+
+
+# ── Phase A：walk-forward 樣本外驗證（walk_forward_oos）────────────────────
+def test_oos_fold_count_math():
+    # N=312 → (312-292)//20+1 = 2 folds；N=291 → 不足一個 fold（0）
+    o2, f2 = bt.walk_forward_oos([], {d: [0.0] for d in _seq_dates(312)})
+    assert f2 == 2
+    o0, f0 = bt.walk_forward_oos([], {d: [0.0] for d in _seq_dates(291)})
+    assert f0 == 0
+    assert o0["signal_ma"]["status"] == "no_events"
+
+
+def test_oos_穩健訊號_一致正超額():
+    # 每天都有正 +5pp 超額的訊號 → 每個 fold 訓練都合格、樣本外也 +5 → robust、retention 1.0
+    dates = _seq_dates(440)                          # F = (440-292)//20+1 = 8 folds
+    by_date = {d: [0.0] for d in dates}              # 基準 0 → 超額＝報酬
+    events = [{"date": d, "sid": s, "ret": 0.05, "fired": ["signal_ma"]}
+              for d in dates for s in ("A", "B")]
+    oos, F = bt.walk_forward_oos(events, by_date)
+    r = oos["signal_ma"]
+    assert F == 8
+    assert r["status"] == "robust"
+    assert r["excess_pp"] == 5.0
+    assert r["selected_fraction"] == 1.0
+    assert r["retention_ratio"] == 1.0
+    assert r["selected_folds"] == 8 and r["active_dates"] >= 10
+
+
+def test_oos_過擬合訊號_訓練正樣本外負():
+    # 前 252 天 +8pp、之後 −8pp：早期 fold 訓練期看好（合格），但其樣本外落在負區 → overfit
+    dates = _seq_dates(440)
+    by_date = {d: [0.0] for d in dates}
+    events = []
+    for i, d in enumerate(dates):
+        ret = 0.08 if i < 252 else -0.08
+        for s in ("A", "B"):
+            events.append({"date": d, "sid": s, "ret": ret, "fired": ["signal_ma"]})
+    oos, _ = bt.walk_forward_oos(events, by_date)
+    r = oos["signal_ma"]
+    assert r["selected_folds"] >= 3                  # 早期 fold 訓練期為正、確實被選
+    assert r["excess_pp"] < 0                         # 但樣本外是負的
+    assert r["status"] == "overfit"
+
+
+def test_oos_樣本不足誠實標示():
+    # 只有 5 筆歷史事件 → 連訓練門檻都不到，標 insufficient_history、不硬算
+    dates = _seq_dates(400)
+    by_date = {d: [0.0] for d in dates}
+    events = [{"date": dates[i], "sid": "A", "ret": 0.05, "fired": ["signal_ma"]}
+              for i in range(5)]
+    oos, _ = bt.walk_forward_oos(events, by_date)
+    assert oos["signal_ma"]["status"] == "insufficient_history"
+
+
+# ── Phase A：EWMA 時間自適應權重（adaptive_weights）──────────────────────
+def test_ess_by_date_群聚():
+    assert bt._ess_by_date([]) == 0.0
+    assert bt._ess_by_date(["d1", "d1", "d1"]) == 1.0        # 全同一天 → 相當於 1 個獨立樣本
+    assert round(bt._ess_by_date(["d1", "d2", "d3", "d4"]), 6) == 4.0   # 全不同天 → 4
+
+
+def test_adaptive_近期加權高於歷史():
+    # 前 50 天 +2pp、最後 10 天 +10pp → EWMA 近期均值應被拉高，且介於歷史與最新之間
+    dates = _seq_dates(60)
+    by_date = {d: [0.0] for d in dates}
+    events = [{"date": dates[i], "sid": "A", "ret": (0.10 if i >= 50 else 0.02),
+               "fired": ["signal_ma"]} for i in range(60)]
+    adp = bt.adaptive_weights(events, by_date)["signal_ma"]
+    assert adp["status"] == "eligible"
+    assert adp["hist_excess_pp"] == round((50 * 2 + 10 * 10) / 60, 2)   # 3.33pp
+    assert adp["recent_excess_pp"] > adp["hist_excess_pp"]              # 近期被拉高
+    assert adp["effective_excess_pp"] < adp["blended_excess_pp"]        # 收縮後變小
+    assert 1 <= adp["candidate_weight"] <= 5
+
+
+def test_adaptive_樣本不足與零樣本():
+    dates = _seq_dates(60)
+    by_date = {d: [0.0] for d in dates}
+    few = [{"date": dates[i], "sid": "A", "ret": 0.05, "fired": ["signal_ma"]} for i in range(10)]
+    adp = bt.adaptive_weights(few, by_date)
+    assert adp["signal_ma"]["status"] == "insufficient_history"
+    assert adp["signal_ma"]["candidate_weight"] == 0
+    assert adp["signal_breakout"]["status"] == "no_events"              # 完全沒出現
+    assert adp["signal_breakout"]["candidate_weight"] == 0
+
+
+def test_attach_phase_a_併入欄位不動原weight():
+    dates = _seq_dates(440)
+    by_date = {d: [0.0] for d in dates}
+    events = [{"date": d, "sid": s, "ret": 0.05, "fired": ["signal_ma"]}
+              for d in dates for s in ("A", "B")]
+    weights = {"signals": bt.stats_to_weights(bt.events_to_stats(events, by_date))}
+    before = weights["signals"]["signal_ma"]["weight"]
+    oos, F = bt.attach_phase_a(weights, events, by_date)
+    sig = weights["signals"]["signal_ma"]
+    assert sig["weight"] == before                    # 現行 weight 一律不動
+    assert sig["spec_version"] == bt.PHASE_A_SPEC
+    assert sig["oos"]["status"] == "robust"
+    assert sig["adaptive"]["candidate_weight"] >= 1
