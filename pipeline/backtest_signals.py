@@ -30,6 +30,7 @@ WEIGHTS_PATH = os.path.join(HERE, "signal_weights.json")
 WINDOWS_PATH = os.path.join(HERE, "signal_windows.json")
 COMBOS_PATH = os.path.join(HERE, "signal_combos.json")
 EXITS_PATH = os.path.join(HERE, "signal_exits.json")
+REGIME_PATH = os.path.join(HERE, "signal_regime.json")
 BT_PRICE_PATH = os.path.join(HERE, "history", "bt_price.json")
 
 # 勝率榜的時間窗（曆日數，從最新資料日往回；歷史=全部）。
@@ -696,6 +697,81 @@ def _adaptive_row(k, evx, idx, as_of, as_of_i, decay):
     return row
 
 
+# ── 市況分層回測（Andy 選：同一訊號在多頭 vs 空頭效果差多少）─────────────────────
+# 市況用「市場廣度」代理（全市場收在 ma20 之上比例＋20 日報酬中位），跟前端 market_breadth 橫幅同門檻。
+# 🔑 point-in-time：交易日 t 的市況只用 ≤t 的資料（close_t、ma20_t、t−20→t 報酬），
+#    絕不用 t→t+20 的前瞻報酬判市況（那是結果標籤、拿來判市況＝前視）。
+REGIME_MIN_UNIVERSE = 100      # 當日可評估個股 <100 檔 → 市況 unknown（不硬判）
+
+
+def _breadth_status(breadth, med_ret):
+    """由廣度（收在 ma20 之上比例）＋20 日報酬中位判市況。與 build_data.market_breadth 同門檻。
+    回 green/yellow/red（severe_red 併進 red，讓分層樣本夠）。"""
+    if breadth >= 0.55 and med_ret >= 0.0:
+        return "green"
+    if breadth < 0.40 and med_ret < 0.0:
+        return "red"
+    return "yellow"
+
+
+def build_regime_series(price_hist, div_hist):
+    """每個歷史交易日的市況（green/yellow/red/unknown），point-in-time、無前視。
+    回 {date: status}。breadth＝當日收在 ma20 之上的比例；med＝20 日還原報酬中位數。"""
+    import build_data as bd
+    above = {}    # date -> [n_above, n_total]
+    rets = {}     # date -> [20 日報酬…]
+    for sid, by in price_hist.items():
+        pr = sorted(hs.to_price_rows(by), key=lambda r: r["date"])
+        ev = hs.to_div_events(div_hist.get(sid))
+        ac = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
+        ds = [r["date"] for r in pr]
+        run = 0.0                                  # ma20 滾動和
+        for i in range(len(ac)):
+            c = ac[i]
+            run += c or 0.0
+            if i >= 20:
+                run -= ac[i - 20] or 0.0
+            if i >= 19 and c:                       # 有 20 根才算 ma20
+                ma20 = run / 20
+                a = above.setdefault(ds[i], [0, 0])
+                a[1] += 1
+                if c > ma20:
+                    a[0] += 1
+            if i >= 20 and ac[i - 20] and c:
+                rets.setdefault(ds[i], []).append(c / ac[i - 20] - 1)
+    series = {}
+    for d, (n_ab, n_tot) in above.items():
+        if n_tot < REGIME_MIN_UNIVERSE:
+            series[d] = "unknown"
+            continue
+        rr = sorted(rets.get(d, []))
+        med = rr[len(rr) // 2] if len(rr) % 2 else (rr[len(rr) // 2 - 1] + rr[len(rr) // 2]) / 2 if rr else 0.0
+        series[d] = _breadth_status(n_ab / n_tot, med)
+    return series
+
+
+def regime_stratified_stats(events, by_date, regime):
+    """把回測事件依「當時市況」分層，算每訊號在 green/yellow/red 的超額與勝率。
+    回 {sigkey: {label, green:{...}, yellow:{...}, red:{...}}}，讓使用者看「只在多頭有效」vs「全天候」。"""
+    buckets = ("green", "yellow", "red")
+    ev_by = {b: [] for b in buckets}
+    bd_all = by_date
+    for e in events:
+        st = regime.get(e["date"])
+        if st in ev_by:
+            ev_by[st].append(e)
+    per_bucket = {b: stats_to_weights(events_to_stats(ev_by[b], bd_all)) for b in buckets}
+    out = {}
+    for k in SIGNALS:
+        row = {"label": SIGNAL_LABELS.get(k, k)}
+        for b in buckets:
+            s = per_bucket[b][k]
+            row[b] = {"avg_excess": s["avg_excess"], "excess_win_rate": s["excess_win_rate"],
+                      "win_rate": s["win_rate"], "samples": s["samples"]}
+        out[k] = row
+    return out
+
+
 def _apply_cost(gross):
     """把毛報酬換成成本後淨報酬（來回手續費＋證交稅＋滑價，乘除式，與出場分析同一把尺）。"""
     return (1 + gross) * (1 - EXIT_FEE - EXIT_TAX - EXIT_SLIP) / (1 + EXIT_FEE + EXIT_SLIP) - 1
@@ -1055,6 +1131,18 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         print(f"   組合戰績：{len(combos)} 組排行 + {len(pairs)} 個兩兩配對（最強 "
               f"{'＋'.join(combos[0]['labels'])} 超額 {combos[0]['avg_excess']}pp、"
               f"下界 {combos[0]['excess_lb']}pp、樣本 {combos[0]['samples']}）")
+
+    # 市況分層回測（Andy 選：同一訊號在多頭/盤整/空頭效果差多少；point-in-time 判市況）
+    regime = build_regime_series(price_for_bt, div_hist)
+    regime_stats = regime_stratified_stats(events, by_date, regime)
+    from collections import Counter as _C
+    rc = _C(regime.values())
+    regime_out = {"date": today.isoformat(), "computed": out["computed"], "forward_days": FORWARD,
+                  "regime_days": {b: rc.get(b, 0) for b in ("green", "yellow", "red", "unknown")},
+                  "signals": regime_stats}
+    with open(REGIME_PATH, "w", encoding="utf-8") as f:
+        json.dump(regime_out, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"   市況分層：紅{rc.get('red',0)}/黃{rc.get('yellow',0)}/綠{rc.get('green',0)} 交易日")
 
     # 出場優化（並行成本後報表；不改 forward=20 基準）
     exits = exit_analysis(events, price_for_bt, div_hist)

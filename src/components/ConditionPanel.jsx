@@ -77,9 +77,19 @@ const XSECT_SIGNALS = [
   { key: 'industry_hot', label: '熱門產業', hint: '所屬產業近期輪動居前' },
 ]
 
+// 市況分層表要顯示的訊號（有代表性、避免整排 0 樣本的塞版面）
+const REGIME_SHOW = ['sn_squeeze_breakout', 'signal_breakout', 'signal_ma', 'bull_aligned',
+  'rs_strong_60', 'rs_confirmed_60_120', 'industry_hot', 'sn_immortal_guide', 'sn_volume_support']
+const REGIME_COLS = [['green', '綠（強）'], ['yellow', '黃（中）'], ['red', '紅（弱）']]
+function regimeCell(cell) {
+  if (!cell || !cell.samples) return { txt: '—', cls: '', dim: true }
+  const v = cell.avg_excess
+  return { txt: `${v >= 0 ? '+' : ''}${v}`, cls: v > 0 ? 'good' : v < 0 ? 'bad' : '', dim: cell.samples < 30, n: cell.samples }
+}
+
 export default function ConditionPanel({
   conditions, onChange, total, shown, holderReady, industries = [],
-  weights = null, combos = null, exits = null, open: openProp, onOpenChange, id,
+  weights = null, combos = null, exits = null, regime = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
   // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
@@ -224,6 +234,39 @@ export default function ConditionPanel({
                 （來回成本約 {exits.cost?.round_trip_pct}%）。淨超額＝扣成本後淨報酬減同期全市場平均。
                 <b>這是全樣本比較</b>，要真的改「持有 20 日」的現行設定，還需通過樣本外驗證才算數（先不動）。
                 ATR 停損停利因只有還原收盤、暫緩。
+              </p>
+            </details>
+          )}
+
+          {/* 市況分層回測：同一訊號在紅/黃/綠市況各自的超額——看「只在多頭有效」vs「全天候」 */}
+          {regime?.signals && (
+            <details className="strategy-board">
+              <summary>市況分層：訊號在多頭/盤整/空頭各自表現</summary>
+              <div className="strategy-scroll">
+                <table className="strategy-table regime-table">
+                  <thead><tr><th>訊號</th>{REGIME_COLS.map(([k, l]) => <th key={k} title="平均超額(pp)｜下方為樣本數">{l}</th>)}</tr></thead>
+                  <tbody>
+                    {REGIME_SHOW.map(k => regime.signals[k]).filter(Boolean).map(s => (
+                      <tr key={s.label}>
+                        <td>{s.label}</td>
+                        {REGIME_COLS.map(([col]) => {
+                          const c = regimeCell(s[col])
+                          return (
+                            <td key={col} className={`${c.cls} ${c.dim ? 'regime-dim' : ''}`}>
+                              {c.txt}{c.n != null && <small className="regime-n">{c.n}</small>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="strategy-note">
+                每格＝該訊號在「當時市況」的平均超額（pp），下方小字為樣本數。市況用<b>市場廣度</b>判
+                （綠＝多數股站上月線、紅＝多數在月線下），且用<b>當下能看到的資料</b>判（不偷看未來）。
+                看一個訊號是<b>「全天候」（紅黃綠都正）還是「只有多頭有效」（綠正、紅負）</b>——後者在空頭要小心。
+                樣本 &lt;30 淡色僅參考。空頭天數少，紅市況樣本本來就偏少。
               </p>
             </details>
           )}

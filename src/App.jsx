@@ -15,6 +15,7 @@ export default function App() {
   const [weights, setWeights] = useState(null)       // signal_weights.json：快速套用依勝率排序用
   const [combos, setCombos] = useState(null)         // signal_combos.json：組合戰績排行榜
   const [exits, setExits] = useState(null)           // signal_exits.json：出場優化分析
+  const [regime, setRegime] = useState(null)         // signal_regime.json：市況分層回測
   // 手機卡片密度：精簡（預設，省滑）／完整；記住上次選擇
   const [dense, setDense] = useState(() => {
     if (typeof localStorage === 'undefined') return true
@@ -46,6 +47,8 @@ export default function App() {
       .then(r => (r.ok ? r.json() : null)).then(setCombos).catch(() => setCombos(null))
     fetch(`${import.meta.env.BASE_URL}data/signal_exits.json`)
       .then(r => (r.ok ? r.json() : null)).then(setExits).catch(() => setExits(null))
+    fetch(`${import.meta.env.BASE_URL}data/signal_regime.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setRegime).catch(() => setRegime(null))
   }, [])
 
   const filtered = useMemo(() => {
@@ -203,6 +206,7 @@ export default function App() {
             weights={weights}
             combos={combos}
             exits={exits}
+            regime={regime}
             open={panelOpen}
             onOpenChange={setPanelOpen}
           />

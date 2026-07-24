@@ -362,6 +362,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-table tr.exit-control td:first-child { font-weight: 700; }
 .strategy-table tr.exit-control small { color: var(--primary); font-weight: 600; margin-left: 2px; }
 .trap-flag { margin-left: 4px; font-size: .8rem; cursor: help; }
+.regime-table td.regime-dim { opacity: .45; }
+.regime-table .regime-n { display: block; font-size: .7rem; color: var(--ink-muted); font-weight: 400; }
+.regime-table th:not(:first-child) { text-align: right; }
 
 /* 組合戰績排行榜 */
 .combo-board { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }

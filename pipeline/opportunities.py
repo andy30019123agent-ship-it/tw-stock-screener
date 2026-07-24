@@ -193,6 +193,9 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     exits = bt._load(bt.EXITS_PATH)            # 出場優化分析
     if exits:
         _write_json(os.path.join(OUT_DIR, "signal_exits.json"), exits)
+    regime = bt._load(bt.REGIME_PATH)         # 市況分層回測
+    if regime:
+        _write_json(os.path.join(OUT_DIR, "signal_regime.json"), regime)
 
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"]) or "（今日無符合標的）"
     print(f"   Top {len(opp['picks'])}：{names}")

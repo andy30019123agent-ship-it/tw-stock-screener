@@ -457,3 +457,39 @@ def test_signal_quality_正常訊號不觸發陷阱():
     q = bt.signal_quality(events)["signal_ma"]
     assert q["net_expectancy"] > 0 and q["high_win_trap"] is False
     assert q["profit_factor"] is None or q["profit_factor"] > 1
+
+
+# ── 市況分層回測（build_regime_series / regime_stratified_stats）──────────
+def test_breadth_status_門檻():
+    assert bt._breadth_status(0.60, 0.01) == "green"     # 多數站上月線、報酬正
+    assert bt._breadth_status(0.30, -0.02) == "red"      # 多數在月線下、報酬負
+    assert bt._breadth_status(0.50, 0.0) == "yellow"     # 中間
+
+
+def test_build_regime_series_多頭與空頭():
+    dates = _seq_dates(30)
+    up = {f"S{i}": {d: [100 + j, 100 + j, 100 + j, 100 + j, 500000, 0]
+                    for j, d in enumerate(dates)} for i in range(120)}
+    assert bt.build_regime_series(up, {})[dates[-1]] == "green"     # 一路漲 → 綠
+    down = {f"S{i}": {d: [200 - j * 2, 200 - j * 2, 200 - j * 2, 200 - j * 2, 500000, 0]
+                      for j, d in enumerate(dates)} for i in range(120)}
+    assert bt.build_regime_series(down, {})[dates[-1]] == "red"     # 一路跌 → 紅
+
+
+def test_build_regime_series_樣本不足unknown():
+    dates = _seq_dates(30)
+    few = {f"S{i}": {d: [100 + j] * 4 + [500000, 0] for j, d in enumerate(dates)} for i in range(50)}
+    assert bt.build_regime_series(few, {})[dates[-1]] == "unknown"  # <100 檔不判
+
+
+def test_regime_stratified_stats_依市況分層():
+    events = [
+        {"date": "g1", "sid": "A", "i": 0, "ret": 0.05, "fired": ["signal_ma"]},
+        {"date": "r1", "sid": "B", "i": 0, "ret": -0.03, "fired": ["signal_ma"]},
+    ]
+    by_date = {"g1": [0.0], "r1": [0.0]}
+    regime = {"g1": "green", "r1": "red"}
+    out = bt.regime_stratified_stats(events, by_date, regime)["signal_ma"]
+    assert out["green"]["samples"] == 1 and out["green"]["avg_excess"] == 5.0
+    assert out["red"]["samples"] == 1 and out["red"]["avg_excess"] == -3.0
+    assert out["yellow"]["samples"] == 0                 # 無盤整事件
