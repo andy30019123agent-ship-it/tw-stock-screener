@@ -378,6 +378,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .combo-table th:first-child { text-align: left; }
 .combo-table td.good { color: var(--up); font-weight: 700; }
 .combo-table td.bad { color: var(--down); font-weight: 700; }
+.combo-table td.combo-lb { font-weight: 600; opacity: .85; }
 .combo-weak { color: var(--ink-muted); }
 .combo-weak small { font-size: .6875rem; }
 .combo-empty { text-align: center; color: var(--ink-muted); padding: 16px; }

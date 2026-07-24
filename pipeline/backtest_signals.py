@@ -180,16 +180,21 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
             ret = adj_close[i + forward] / base - 1
             by_date.setdefault(di, []).append(ret)   # 基準母體：所有「可評估」個股，不論有無訊號
 
-            fired = []
+            # raw_fired＝當天所有「原始成立」的訊號（不管冷卻）；eligible＝過了單訊號冷卻期的。
+            # 單訊號統計吃 eligible（維持原結果不變）；組合統計吃 raw_fired（才是「當天真的同時
+            # 成立 A+B」，否則 A 在冷卻期時 A+B 會被漏算——Codex 2026-07-24 指出）。
+            raw_fired, eligible_fired = [], []
             for k, hit in signal_flags(ind).items():
                 if not hit:
                     continue
+                raw_fired.append(k)
                 if k in last_fire and i - last_fire[k] < cooldown:
-                    continue                          # 冷卻期內，同一波訊號不重複採計
+                    continue                          # 冷卻期內，同一波訊號不重複採計（僅影響單訊號統計）
                 last_fire[k] = i
-                fired.append(k)
-            if fired:
-                events.append({"date": di, "sid": sid, "ret": ret, "fired": fired})
+                eligible_fired.append(k)
+            if raw_fired:
+                events.append({"date": di, "sid": sid, "i": i, "ret": ret,
+                               "fired": eligible_fired, "raw_fired": raw_fired})
     return events, by_date
 
 
@@ -225,42 +230,60 @@ COMBO_MAX_SIZE = 3      # 最多幾個訊號同時成立（兩兩＋三個一組
 COMBO_TOP = 120         # 依平均超額取前 N（控制檔案大小）
 
 
-def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX_SIZE, top=COMBO_TOP):
-    """算「多個訊號同時成立」的組合戰績。每筆 event 已帶 fired=[當天同時成立的訊號]，
-    對每筆事件把它 fired 的所有 2~max_size 子集各記一次，最後套同日超額基準算統計。
-    回依平均超額排序的前 top 個（樣本 ≥ min_sample）。純函式、好單測。"""
+def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX_SIZE,
+                top=COMBO_TOP, cooldown=FORWARD):
+    """算「多個訊號同時成立」的組合戰績。用 raw_fired（當天原始同時成立、不受單訊號冷卻影響，
+    才是真正的「A+B 當天同時出現」），並對每個 (個股, 組合) 自己做冷卻期（用交易日 index i，
+    避免同一波 A+B 連續多天被當獨立樣本灌水）。另算 excess_lb＝平均超額的樣本數感知下界
+    （mean − 1 個標準誤），小樣本/高波動會被壓低，幫使用者分辨「又高又穩」與「小樣本巧合」。
+
+    回 (combos, pairs)：combos＝pairs+triples 依平均超額排序取前 top（排行榜用）；
+    pairs＝所有合格兩兩組合（給熱力圖完整矩陣，不會因被高排名 triple 擠掉而出現假空格）。"""
     bench = {d: (sum(v) / len(v)) for d, v in by_date.items() if v}
     acc = {}
+    last_fire = {}   # (sid, combo) → 最後採計的 i，做組合級冷卻
     for e in events:
-        fired = tuple(sorted(set(e["fired"])))
-        if len(fired) < 2:
+        raw = sorted(set(e.get("raw_fired") or e.get("fired") or []))
+        if len(raw) < 2:
             continue
+        sid, i = e["sid"], e.get("i", 0)
         exc = e["ret"] - bench.get(e["date"], 0.0)
         win, exc_win = e["ret"] > 0, exc > 0
-        for size in range(2, min(max_size, len(fired)) + 1):
-            for combo in combinations(fired, size):
-                st = acc.setdefault(combo, {"count": 0, "exc_sum": 0.0, "exc_wins": 0, "wins": 0, "ret_sum": 0.0})
+        for size in range(2, min(max_size, len(raw)) + 1):
+            for combo in combinations(raw, size):
+                key = (sid, combo)
+                if key in last_fire and i - last_fire[key] < cooldown:
+                    continue                          # 同一波組合冷卻期內不重複採計
+                last_fire[key] = i
+                st = acc.setdefault(combo, {"count": 0, "exc_sum": 0.0, "exc_sq": 0.0,
+                                            "exc_wins": 0, "wins": 0, "ret_sum": 0.0})
                 st["count"] += 1
                 st["exc_sum"] += exc
+                st["exc_sq"] += exc * exc
                 st["ret_sum"] += e["ret"]
                 st["exc_wins"] += exc_win
                 st["wins"] += win
-    out = []
-    for combo, st in acc.items():
+
+    def to_row(combo, st):
         c = st["count"]
-        if c < min_sample:
-            continue
-        out.append({
+        mean = st["exc_sum"] / c
+        var = max(0.0, st["exc_sq"] / c - mean * mean)
+        se = (var ** 0.5) / (c ** 0.5)              # 標準誤
+        return {
             "sigs": list(combo),
             "labels": [SIGNAL_LABELS.get(s, s) for s in combo],
-            "avg_excess": round(st["exc_sum"] / c * 100, 2),
+            "avg_excess": round(mean * 100, 2),
+            "excess_lb": round((mean - se) * 100, 2),   # 穩健度：~1SE 下界，樣本越少/越波動壓越低
             "excess_win_rate": round(st["exc_wins"] / c, 4),
             "win_rate": round(st["wins"] / c, 4),
             "avg_ret": round(st["ret_sum"] / c * 100, 2),
             "samples": c,
-        })
-    out.sort(key=lambda x: -x["avg_excess"])
-    return out[:top]
+        }
+
+    rows = [to_row(combo, st) for combo, st in acc.items() if st["count"] >= min_sample]
+    combos = sorted(rows, key=lambda x: -x["avg_excess"])[:top]
+    pairs = sorted([r for r in rows if len(r["sigs"]) == 2], key=lambda x: -x["avg_excess"])
+    return combos, pairs
 
 
 def _latest_date(price_hist):
@@ -378,20 +401,22 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         with open(WINDOWS_PATH, "w", encoding="utf-8") as f:
             json.dump(windows_out, f, ensure_ascii=False, separators=(",", ":"))
 
-    # 組合戰績（A＋B、A＋B＋C 同時成立）——給網頁「組合排行榜」用
-    combos = combo_stats(events, by_date)
+    # 組合戰績（A＋B、A＋B＋C 同時成立）——給網頁「組合排行榜」＋熱力圖用
+    combos, pairs = combo_stats(events, by_date)
     combos_out = {
         "date": today.isoformat(),
         "computed": out["computed"],
         "forward_days": FORWARD,
         "min_sample": COMBO_MIN_SAMPLE,
-        "combos": combos,
+        "combos": combos,   # pairs+triples 依平均超額排序（排行榜）
+        "pairs": pairs,     # 所有合格兩兩配對（熱力圖完整矩陣）
     }
     with open(COMBOS_PATH, "w", encoding="utf-8") as f:
         json.dump(combos_out, f, ensure_ascii=False, separators=(",", ":"))
     if combos:
-        print(f"   組合戰績：{len(combos)} 組（最強 {'＋'.join(combos[0]['labels'])} "
-              f"超額 {combos[0]['avg_excess']}pp、樣本 {combos[0]['samples']}）")
+        print(f"   組合戰績：{len(combos)} 組排行 + {len(pairs)} 個兩兩配對（最強 "
+              f"{'＋'.join(combos[0]['labels'])} 超額 {combos[0]['avg_excess']}pp、"
+              f"下界 {combos[0]['excess_lb']}pp、樣本 {combos[0]['samples']}）")
 
     strong = max(weights.items(), key=lambda kv: (kv[1]["weight"], kv[1]["samples"]))
     print(f"   權重已更新，最強訊號：{strong[1]['label']}（權重 {strong[1]['weight']}、樣本 {strong[1]['samples']}）")

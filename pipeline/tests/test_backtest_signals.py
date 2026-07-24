@@ -150,30 +150,61 @@ def test_windowed_stats_無as_of回空():
 
 
 # ── 組合戰績（combo_stats）────────────────────────────────────────────
-def test_combo_stats_兩兩組合超額與樣本():
-    # A、B 常一起出現且贏；C 單獨出現。基準均值 0（[x,-x]）→ 超額＝報酬。
+def _cev(date, sid, i, ret, sigs):
+    return {"date": date, "sid": sid, "i": i, "ret": ret, "raw_fired": sigs, "fired": sigs}
+
+
+def test_combo_stats_兩兩組合超額樣本與回傳結構():
+    # A、B 常一起出現且贏；C 單獨出現。基準均值 0（[x,-x]）→ 超額＝報酬。不同 sid 不觸發組合冷卻。
     events = [
-        {"date": "d1", "sid": "1", "ret": 0.05, "fired": ["signal_ma", "signal_breakout"]},
-        {"date": "d2", "sid": "2", "ret": 0.03, "fired": ["signal_ma", "signal_breakout"]},
-        {"date": "d3", "sid": "3", "ret": -0.01, "fired": ["signal_ma", "signal_breakout"]},
-        {"date": "d4", "sid": "4", "ret": 0.02, "fired": ["sn_squeeze_breakout"]},  # 單一，不成組合
+        _cev("d1", "1", 0, 0.05, ["signal_ma", "signal_breakout"]),
+        _cev("d2", "2", 0, 0.03, ["signal_ma", "signal_breakout"]),
+        _cev("d3", "3", 0, -0.01, ["signal_ma", "signal_breakout"]),
+        _cev("d4", "4", 0, 0.02, ["sn_squeeze_breakout"]),  # 單一，不成組合
     ]
     by_date = {"d1": [0.05, -0.05], "d2": [0.03, -0.03], "d3": [-0.01, 0.01], "d4": [0.02, -0.02]}
-    out = bt.combo_stats(events, by_date, min_sample=1)
-    ma_bo = [c for c in out if set(c["sigs"]) == {"signal_ma", "signal_breakout"}]
+    combos, pairs = bt.combo_stats(events, by_date, min_sample=1)
+    ma_bo = [c for c in combos if set(c["sigs"]) == {"signal_ma", "signal_breakout"}]
     assert len(ma_bo) == 1
     c = ma_bo[0]
-    assert c["samples"] == 3                       # 三筆同時成立
+    assert c["samples"] == 3
     assert c["avg_excess"] == round((0.05 + 0.03 - 0.01) / 3 * 100, 2)  # 2.33pp
-    assert c["excess_win_rate"] == round(2 / 3, 4) # 兩筆超額為正
+    assert c["excess_win_rate"] == round(2 / 3, 4)
     assert "糾結轉強" in c["labels"] and "爆量突破" in c["labels"]
-    # 單一訊號 sn_squeeze_breakout 不會自成組合
-    assert not any(len(c["sigs"]) < 2 for c in out)
+    assert not any(len(x["sigs"]) < 2 for x in combos)
+    # pairs 應含這個兩兩配對（給熱力圖）
+    assert any(set(p["sigs"]) == {"signal_ma", "signal_breakout"} for p in pairs)
 
 
-def test_combo_stats_樣本門檻與排序():
-    events = [{"date": "d1", "sid": "1", "ret": 0.10, "fired": ["signal_ma", "signal_breakout"]}]
+def test_combo_stats_樣本門檻():
+    events = [_cev("d1", "1", 0, 0.10, ["signal_ma", "signal_breakout"])]
     by_date = {"d1": [0.0]}
-    assert bt.combo_stats(events, by_date, min_sample=5) == []   # 1 筆 <5 被濾掉
-    got = bt.combo_stats(events, by_date, min_sample=1)
-    assert got and got[0]["samples"] == 1
+    combos, pairs = bt.combo_stats(events, by_date, min_sample=5)
+    assert combos == [] and pairs == []            # 1 筆 <5 被濾掉
+    combos2, _ = bt.combo_stats(events, by_date, min_sample=1)
+    assert combos2 and combos2[0]["samples"] == 1
+
+
+def test_combo_stats_組合級冷卻去重():
+    # 同一檔、同一組合，冷卻期(預設20)內連續成立 → 只算一筆，不灌水
+    events = [
+        _cev("d1", "1", 0, 0.05, ["signal_ma", "signal_breakout"]),
+        _cev("d2", "1", 3, 0.05, ["signal_ma", "signal_breakout"]),   # i 差 3 < 20 → 不採計
+        _cev("d3", "1", 25, 0.05, ["signal_ma", "signal_breakout"]),  # i 差 25 ≥ 20 → 再採計
+    ]
+    by_date = {"d1": [0.0], "d2": [0.0], "d3": [0.0]}
+    combos, _ = bt.combo_stats(events, by_date, min_sample=1, cooldown=20)
+    assert combos[0]["samples"] == 2               # 中間那筆被冷卻濾掉
+
+
+def test_combo_stats_穩健度下界壓低小樣本波動():
+    # 高波動小樣本：平均超額不低，但 excess_lb（下界）應明顯低於平均
+    events = [
+        _cev("d1", "1", 0, 0.20, ["signal_ma", "signal_breakout"]),
+        _cev("d2", "2", 0, -0.10, ["signal_ma", "signal_breakout"]),
+    ]
+    by_date = {"d1": [0.0], "d2": [0.0]}
+    combos, _ = bt.combo_stats(events, by_date, min_sample=1)
+    c = combos[0]
+    assert c["avg_excess"] == 5.0                   # (20-10)/2 = 5pp
+    assert c["excess_lb"] < c["avg_excess"]         # 波動大 → 下界被壓低
