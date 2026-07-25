@@ -420,6 +420,8 @@ def test_exit_analysis_持有期比較與結構():
     assert rows["h20"]["avg_net_excess"] < 0
     # 一路上漲不會回落 10% → 停利策略持有到 40 日上限
     assert rows["trail10"]["avg_holding_days"] == 40.0
+    # 停利持有天數變動，沒有乾淨的同持有期基準 → 淨超額留 None（不硬用 20 日基準）
+    assert rows["trail10"]["avg_net_excess"] is None
 
 
 def test_exit_analysis_路徑不足略過():

@@ -725,27 +725,28 @@ def build_regime_series(price_hist, div_hist):
         ev = hs.to_div_events(div_hist.get(sid))
         ac = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
         ds = [r["date"] for r in pr]
-        run = 0.0                                  # ma20 滾動和
         for i in range(len(ac)):
             c = ac[i]
-            run += c or 0.0
-            if i >= 20:
-                run -= ac[i - 20] or 0.0
-            if i >= 19 and c:                       # 有 20 根才算 ma20
-                ma20 = run / 20
-                a = above.setdefault(ds[i], [0, 0])
-                a[1] += 1
-                if c > ma20:
-                    a[0] += 1
-            if i >= 20 and ac[i - 20] and c:
+            if not (c and c > 0):
+                continue
+            if i >= 19:                             # 需 20 根完整有效窗才算 ma20（缺價不塞 0 壓低均線）
+                window = ac[i - 19:i + 1]
+                if all(v and v > 0 for v in window):
+                    a = above.setdefault(ds[i], [0, 0])
+                    a[1] += 1
+                    if c > sum(window) / 20:
+                        a[0] += 1
+            if i >= 20 and ac[i - 20] and ac[i - 20] > 0:
                 rets.setdefault(ds[i], []).append(c / ac[i - 20] - 1)
     series = {}
     for d, (n_ab, n_tot) in above.items():
-        if n_tot < REGIME_MIN_UNIVERSE:
+        rr = sorted(rets.get(d, []))
+        # 廣度與 20 日報酬兩個母體都要夠才判市況——早期日（能算 ma20 但還沒 20 日報酬）標 unknown，
+        # 不能讓空的報酬母體被當成「中位 0」而誤判成綠燈（Codex 2026-07-25 指出、已重現）。
+        if n_tot < REGIME_MIN_UNIVERSE or len(rr) < REGIME_MIN_UNIVERSE:
             series[d] = "unknown"
             continue
-        rr = sorted(rets.get(d, []))
-        med = rr[len(rr) // 2] if len(rr) % 2 else (rr[len(rr) // 2 - 1] + rr[len(rr) // 2]) / 2 if rr else 0.0
+        med = rr[len(rr) // 2] if len(rr) % 2 else (rr[len(rr) // 2 - 1] + rr[len(rr) // 2]) / 2
         series[d] = _breadth_status(n_ab / n_tot, med)
     return series
 
@@ -900,6 +901,9 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
         entry = ac[entry_i]
         if not entry or entry <= 0:
             continue
+        # 各固定持有期的出場價都要是有效正數，否則跳過（缺價會讓 _net_return 爆或算錯）
+        if any(not (ac[entry_i + h] and ac[entry_i + h] > 0) for h in holdings):
+            continue
         entry_date = ds[entry_i]
         n_events += 1
         entry_dates.add(entry_date)
@@ -930,17 +934,16 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
                 exit_i = entry_i + d
                 break
         hold = exit_i - entry_i
-        net = _net_return(entry, ac[exit_i])
-        # trail 的基準用最接近的固定持有期（就近取 20 日毛報酬平均，僅供粗略對照）
-        b = bench_mean.get(20, {}).get(entry_date)
-        path = [ac[entry_i + d] for d in range(0, hold + 1) if ac[entry_i + d]]
-        mae = min(p / entry - 1 for p in path) if path else 0.0
-        t = acc["trail10"]
-        t["net"].append(net)
-        if b is not None:
-            t["exc"].append(net - b)
-        t["hold"].append(hold)
-        t["mae"].append(mae)
+        ex = ac[exit_i]
+        if ex and ex > 0:                            # 出場價有效才計（缺價跳過這筆的 trail）
+            path = [ac[entry_i + d] for d in range(0, hold + 1) if ac[entry_i + d]]
+            mae = min(p / entry - 1 for p in path) if path else 0.0
+            t = acc["trail10"]
+            t["net"].append(_net_return(entry, ex))
+            # 停利持有天數是變動的（非固定 5/10/20/40），沒有乾淨的「同持有期市場基準」，
+            # 故不硬用 20 日基準算超額（會錯，Codex 2026-07-25 指出）→ 淨超額留 None、只報淨報酬。
+            t["hold"].append(hold)
+            t["mae"].append(mae)
 
     labels = {**{f"h{h}": f"持有{h}日" for h in holdings}, "trail10": "回落10%停利"}
     strategies = [_exit_row(k, labels[k], acc[k]) for k in strat_keys]

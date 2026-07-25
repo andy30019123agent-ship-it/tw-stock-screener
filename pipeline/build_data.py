@@ -115,15 +115,14 @@ def runaway_flags(closes, bias20_frac):
            "rv20_pct": None, "ret5_pct": None}
     if len(closes) < 21:
         return out
-    logret = [log(closes[i] / closes[i - 1]) for i in range(1, len(closes))
-              if closes[i] and closes[i - 1] and closes[i] > 0 and closes[i - 1] > 0]
-    if len(logret) < 20:
+    tail = closes[-21:]                                   # 最近 21 根收盤（→20 個報酬）
+    if any(not (v and v > 0) for v in tail):              # 缺價/非正就不硬算（避免假跌幅、跨日錯配）
         return out
-    r = logret[-20:]
-    mean = sum(r) / len(r)
-    var = sum((x - mean) ** 2 for x in r) / (len(r) - 1)
+    logret = [log(tail[i] / tail[i - 1]) for i in range(1, 21)]
+    mean = sum(logret) / 20
+    var = sum((x - mean) ** 2 for x in logret) / 19
     rv20 = (var ** 0.5) * sqrt(252)                       # 年化已實現波動度
-    ret5 = closes[-1] / closes[-6] - 1 if len(closes) >= 6 and closes[-6] else 0.0
+    ret5 = tail[-1] / tail[-6] - 1                        # tail 全有效 → 分子分母都安全
     jump10 = sum(1 for x in logret[-10:] if abs(x) >= log(1.08))   # 近10日「大幅跳動」日數
     b = bias20_frac if bias20_frac is not None else 0.0
     out["rv20_pct"] = round(rv20 * 100, 1)

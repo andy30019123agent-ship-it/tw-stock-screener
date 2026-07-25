@@ -16,7 +16,14 @@ public/data/charts/
 public/data/opportunities.json
 public/data/signal_weights.json
 public/data/scoreboard.json
+public/data/signal_windows.json
+public/data/signal_regime.json
+public/data/signal_combos.json
+public/data/signal_exits.json
 # 註：pipeline/history/price.json、chip.json 是持久化資料，要 commit（不在此忽略）
+
+# 版面驗證截圖（CDP 產在 repo 根目錄，是拋棄式證據，不進版控）
+/*.png
 
 # 工具與測試快取（不應進版控、會造成 commit 雜訊）
 .impeccable/
