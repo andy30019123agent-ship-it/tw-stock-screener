@@ -4,7 +4,10 @@
 由 GitHub Actions 在 build_data.py 之後呼叫：
 - 只在「出現新的交易日資料」時推一次（用 notify_state.json 記錄上次推播的資料日期）。
   → 週末/假日沒有新資料 = 不推；排程跨午夜延遲也只推一次、不誤殺。
-- 依分數挑 3-5 檔值得注意的電子股，把中了哪些訊號 / 價位 / 風險寫成訊息。
+- 名單**直接讀 opportunities.json**（網站「今日機會股」那份，檔數 = opportunities.TOP_N），
+  把中了哪些訊號 / 價位 / 風險寫成人看得懂的訊息。這支檔案不做任何排名判斷——
+  快報與網站必須說同一套話（2026-07-25 移除了自有的退路排序）。
+  名單產不出來就照實說「沒產出」，不可講成「今天沒機會」。
 - token 由環境變數 TG_BOT_TOKEN 帶入（GitHub Secret），群組 id 預設叔叔名牌TG。
 
 本機測試：
@@ -19,15 +22,12 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(__file__))
-import backtest_signals as bt  # noqa: E402  # ENGINE_SIGNALS/signal_flags：跟網站 Top5 同一套判準
 import opportunities as opp  # noqa: E402  # TOP_N：快報檔數必須與網站一致
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
 # 網站首頁「今日機會股 Top5」的產出，由 build_data → opportunities.run() 寫出。
 OPP_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "data", "opportunities.json")
-# 回測權重表（跟 opportunities.py 用同一份），score() 的退路排序改吃這份，不再手寫分數。
-WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "signal_weights.json")
 
 
 def load_opportunity_picks(dd):
@@ -37,18 +37,24 @@ def load_opportunity_picks(dd):
     同一天兩邊可能推薦完全不同的股票——使用者看到的是兩套互相矛盾的建議。以網站那份為準，
     快報就只負責「把同一份結論寫成人看得懂的訊息」。
 
-    日期對不上或檔案讀不到就回 None，讓呼叫端退回自有排序——寧可推一份略舊邏輯的清單，
-    也不要因為缺一個檔案就整天不推。
+    回 (ids, reason)：
+      (["2395", ...], "ok")   正常
+      ([], "empty")           檔案正常但今天零檔 → **這是真實結論**，照實說「今天沒有通過門檻的」
+      (None, "missing")       檔案讀不到／日期對不上 → **這是管線故障**，不可講成市場結論
+
+    ⚠️ 2026-07-25 改（Andy 裁示「候選不足就不用硬要呈現」）：原本回不到就退回自有排序湊數，
+    結果是①快報與網站說不同的話②score>=4 在權重改版後幾乎不可能達到，於是實際行為變成
+    發出「今日沒有明顯符合標的，先觀望」——**把管線故障講成了市場結論**。
+    當天網站也是空的（引擎掛了），而快報卻讓人以為「今天大盤沒機會」，這比不推更糟。
     """
     try:
         with open(OPP_PATH, encoding="utf-8") as f:
             opp = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
+        return None, "missing"
     if dd and opp.get("date") and opp["date"] != dd:
-        return None
-    ids = [p["id"] for p in (opp.get("picks") or [])]
-    return ids or None
+        return None, "missing"
+    return [p["id"] for p in (opp.get("picks") or [])], "ok"
 
 
 def data_date(stocks):
@@ -57,51 +63,26 @@ def data_date(stocks):
     return max(dates) if dates else None
 
 
-def load_weights():
-    """讀回測權重表（跟 opportunities.py 用同一份 pipeline/signal_weights.json）。
-
-    讀不到／格式壞掉就回空 dict——score() 會讓所有訊號落回 0 分，退化成只剩乖離扣分
-    （保守但安全，不會因為缺一個檔案就整條退路排序掛掉）。"""
-    try:
-        with open(WEIGHTS_PATH, encoding="utf-8") as f:
-            return (json.load(f) or {}).get("signals", {})
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-
-
-def score(s, weights):
-    """opp_ids 讀不到時的退路排序分數。
-
-    改成讀回測權重（跟網站 Top5 同一份 signal_weights.json、同一套 bt.ENGINE_SIGNALS 判準），
-    不再手寫 +2/+3 這種分數——手寫分數曾經跟回測結論相反（例：「破底翻」回測平均超額
-    −0.91pp、weight=0，手寫卻給 +2；「外資/投信連買」回測 samples=0 沒有證據，手寫也給 +2）。
-    weight 為 0 或 signal_weights.json 缺這個 key，一律不加分（呼應 opportunities.py 的規則）。
-    """
-    flags = bt.signal_flags(s)
-    sc = sum(
-        int((weights.get(k) or {}).get("weight", 0) or 0)
-        for k in bt.ENGINE_SIGNALS if flags.get(k)
-    )
-    # 🔴 2026-07-25：原本「抑制追高」的乖離扣分**方向是反的，已移除**。
-    #
-    # 原本的假設是「已經漲一大段再追進去風險高」，所以乖離 ≥12/15/20 各扣 1/2/3 分。
-    # 用兩年 375,659 筆樣本複驗（verify_bias_penalty.py）後推翻：
-    #
-    #   乖離%      成本後超額   中位數   贏大盤   每單位風險
-    #   <0          −1.59pp    −3.67    33.5%    −0.119
-    #   6~12        −0.53pp    −2.54    38.5%    −0.039
-    #   15~20       +0.85pp    −1.84    43.5%    +0.050
-    #   ≥25         +2.36pp    −1.98    45.0%    +0.100
-    #
-    # 成本後超額**隨乖離單調遞增**，而且①風險調整後（每單位風險）也遞增，不是靠多承擔波動換來的
-    # ②紅黃綠三種市況都不逆轉（空頭時 ≥25 組仍有 +2.21pp）。也就是說：我原本扣分的那一組是最好的，
-    # 而被相對獎勵的低乖離組（<0：−1.59pp、只有 33.5% 贏大盤）才是明確有害的。
-    #
-    # 為什麼不「反過來給高乖離加分」：①中位數**每一組都是負的**（高乖離只是比較不負），
-    # 加分等於用中位數為負的東西去主導排名 ②≥25 組標準差 23.5 是全場最高、中位數還略微反轉
-    # （−1.39 → −1.98），尾部風險真實存在。**移除錯誤的扣分**是有證據支持的；**加分**沒有。
-    # 追高的風險改用 runaway_flags 在網站上做「提示」而非在排名裡動手腳。
-    return sc
+# ── 排名相關的實測結論（2026-07-25，勿再在這支檔案裡手寫分數）─────────────────────────
+# 快報的排名**完全來自 opportunities.json**（網站 Top N 那份）。這裡曾經有一套自己的
+# score() 退路排序，已刪除，原因有三：
+#   ① 手寫分數曾與回測結論相反——「破底翻」回測平均超額 −0.91pp、weight=0，手寫卻給 +2；
+#      「外資/投信連買」回測 samples=0（沒有證據），手寫也給 +2。
+#   ② 改吃回測權重後，成本後權重讓唯一正權重的引擎訊號只值 1 分，score>=4 幾乎不可能達到，
+#      這條退路實際上是死的——而它「死掉的方式」是發出「今日沒有明顯符合標的，先觀望」，
+#      把管線故障講成市場結論（2026-07-25 真的發生了）。
+#   ③ Andy 裁示：候選不足就不用硬要呈現。名單產不出來就說產不出來。
+#
+# 順帶記下另一個被推翻的設計（verify_bias_penalty.py，375,659 筆）：原本對乖離（離月線幅度）
+# 大的股票扣分以「抑制追高」，方向是**反的**——
+#   乖離%   成本後超額   中位數   贏大盤   每單位風險
+#   <0       −1.59pp    −3.67    33.5%    −0.119
+#   6~12     −0.53pp    −2.54    38.5%    −0.039
+#   15~20    +0.85pp    −1.84    43.5%    +0.050
+#   ≥25      +2.36pp    −1.98    45.0%    +0.100
+# 成本後超額隨乖離單調遞增，且①風險調整後也遞增②紅黃綠三市況都不逆轉。扣分已移除。
+# **但沒有反過來加分**：中位數每組都是負的、≥25 組標準差 23.5 全場最高，加分沒有證據。
+# 追高風險改用 runaway_flags 在網站上「提示」，不在排名裡動手腳。
 
 
 def reasons(s):
@@ -178,31 +159,40 @@ def build_message(d):
     mmdd = "/".join(dd.split("-")[1:]) if dd else "—"
     # 排名一律以網站的「今日機會股 Top5」為準（同一套回測權重），讓網站與 TG 說同一套話。
     by_id = {s["id"]: s for s in stocks}
-    opp_ids = load_opportunity_picks(dd)
-    ranked = [by_id[i] for i in opp_ids if i in by_id] if opp_ids else []
-    if not ranked:
-        # 退路：機會股檔案缺席/日期對不上時，用回測權重分數排序，至少還推得出東西。
-        weights = load_weights()
-        # 檔數跟 opportunities.TOP_N 走，不可寫死——2026-07-25 改成 10 之後若這裡還是 5，
-        # 快報與網站就會不一致（正常路徑讀 opportunities.json 是 10 檔、退路卻只有 5 檔）。
-        ranked = sorted(
-            [s for s in stocks if score(s, weights) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
-            key=lambda s: (-score(s, weights), -s.get("foreign_streak", 0)),
-        )[:opp.TOP_N]
+    opp_ids, opp_reason = load_opportunity_picks(dd)
+    # 🔴 2026-07-25（Andy 裁示「候選不足就不用硬要呈現」）：這裡原本有一條「湊數退路」，
+    # 檔案缺席時改用自有排序硬選 10 檔。已移除——快報與網站必須說同一套話，
+    # 名單產不出來就照實說「產不出來」，不要生一份來源不同的清單假裝正常。
+    ranked = [by_id[i] for i in (opp_ids or []) if i in by_id]
+    # 檔案有、但裡面的代號在 screener 裡都找不到 → 也是資料異常，不是零檔
+    if opp_ids and not ranked:
+        opp_reason = "missing"
 
     cnt = d.get("count", len(stocks))
     sep = "━━━━━━━━━━"  # 卡片分隔線
 
     if not ranked:
-        lines = [
-            f"📊 台股電子選股快報 {mmdd}",
-            f"掃描 {cnt} 檔有量電子股",
-            sep,
-            "今日沒有明顯符合『均線多頭＋法人連買』的標的，先觀望。",
-        ]
+        # 分清楚兩件完全不同的事——講錯會讓人做錯決定：
+        #   管線故障 → 「今天沒資料」，不可暗示「市場沒機會」（那是憑空的市場判斷）
+        #   真的零檔 → 「今天沒有通過門檻的」，這是有效結論，可以放心觀望
+        if opp_reason == "missing":
+            lines = [
+                f"📊 台股選股快報 {mmdd}",
+                sep,
+                "⚠️ 今天的精華名單沒有產出（資料管線問題，不是「今天沒機會」）。",
+                "網站上的名單可能也是空的。這不是市場結論，請不要當成看空訊號。",
+                "隔天自動更新後會恢復；若連兩天這樣請找我看。",
+            ]
+        else:
+            lines = [
+                f"📊 台股選股快報 {mmdd}",
+                f"掃描 {cnt} 檔有量個股",
+                sep,
+                "今天沒有個股通過門檻（名單正常產出、就是零檔）——這是有效結論，可以觀望。",
+            ]
     else:
         lines = [
-            f"📊 台股電子選股快報 {mmdd}",
+            f"📊 台股選股快報 {mmdd}",
             f"精選 {len(ranked)} 檔（掃描 {cnt} 檔）",
         ]
         # 🔴 2026-07-25：這裡原本是寫死的 5 個圈號 ["①".."⑤"]，TOP_N 從 5 改成 10 之後

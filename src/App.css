@@ -1176,3 +1176,15 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   background: var(--surface-tint);
   word-break: break-all;
 }
+
+/* 「已還原權息」提示（2026-07-25）：圖上畫的是還原價，跟券商原始線圖不同，要說出來。
+   用中性的 --ink-muted，不佔紅漲綠跌語意。 */
+.lg-adj {
+  font-size: 12px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  color: var(--ink-muted);
+  background: var(--surface-tint);
+  white-space: nowrap;
+}

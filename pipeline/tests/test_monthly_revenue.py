@@ -121,3 +121,70 @@ def test_expected_ym_follows_publish_rule():
     assert mr._expected_ym(dt.date(2026, 7, 5)) == "11505"    # 7/5 尚未公布 6 月
     assert mr._expected_ym(dt.date(2026, 1, 25)) == "11412"   # 跨年：期待去年 12 月
     assert mr._expected_ym(dt.date(2026, 1, 5)) == "11411"
+
+
+# ── 逐月快照（record_snapshot）──────────────────────────────────────────────
+# 這些測試守的是「無法重建的資料」：官方 OpenAPI 只回最新一期，寫壞了就永遠補不回來。
+
+def test_snapshot_records_month_with_market_counts(tmp_path):
+    p = tmp_path / "revenue_history.json"
+    data = {"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"},
+            "6488": {"yoy": -3.0, "ym": "11506", "mkt": "otc"}}
+    added, n = mr.record_snapshot(data, dt.date(2026, 7, 25), str(p))
+    assert (added, n) == ("11506", 1)
+    m = json.load(open(p, encoding="utf-8"))["months"]["11506"]
+    assert m["first_seen"] == "2026-07-25"
+    assert m["mkt_n"] == {"listed": 1, "otc": 1}, "逐市場筆數要記，否則看不出某月缺半個市場"
+    assert m["yoy"] == {"1101": 5.0, "6488": -3.0}
+
+
+def test_snapshot_never_overwrites_first_observation(tmp_path):
+    """官方事後修正數字不可覆蓋——回測要問「當時看到什麼」，用修正值＝偷看未來。"""
+    p = tmp_path / "revenue_history.json"
+    mr.record_snapshot({"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"}},
+                       dt.date(2026, 7, 25), str(p))
+    mr.record_snapshot({"1101": {"yoy": 9.9, "ym": "11506", "mkt": "listed"}},
+                       dt.date(2026, 8, 3), str(p))
+    m = json.load(open(p, encoding="utf-8"))["months"]["11506"]
+    assert m["yoy"]["1101"] == 5.0, "第一次看到的值必須留著"
+    assert m["revisions"] == 1 and m["revised_at"] == "2026-08-03"
+    assert m["first_seen"] == "2026-07-25"
+
+
+def test_snapshot_backfills_missing_market_without_touching_existing(tmp_path):
+    """上櫃當月抓失敗、隔天補到 → 補進同一個月，但已存在的公司值不動。"""
+    p = tmp_path / "revenue_history.json"
+    mr.record_snapshot({"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"}},
+                       dt.date(2026, 7, 25), str(p))
+    mr.record_snapshot({"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"},
+                        "6488": {"yoy": -3.0, "ym": "11506", "mkt": "otc"}},
+                       dt.date(2026, 7, 26), str(p))
+    m = json.load(open(p, encoding="utf-8"))["months"]["11506"]
+    assert m["yoy"] == {"1101": 5.0, "6488": -3.0}
+    assert m["mkt_n"] == {"listed": 1, "otc": 1}
+    assert m["backfilled_at"] == "2026-07-26"
+    assert "revisions" not in m, "補齊不是修正，不該算成修正"
+
+
+def test_snapshot_refuses_to_write_over_unreadable_history(tmp_path, capsys):
+    """檔案壞掉時寧可不寫，也不能覆蓋——這份資料無法重建。"""
+    p = tmp_path / "revenue_history.json"
+    p.write_text("{壞掉的 json", encoding="utf-8")
+    added, n = mr.record_snapshot({"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"}},
+                                  dt.date(2026, 7, 25), str(p))
+    assert (added, n) == (None, 0)
+    assert p.read_text(encoding="utf-8") == "{壞掉的 json", "壞檔要原封不動留著，等人來看"
+
+
+def test_snapshot_is_written_even_on_cache_hit(tmp_path, monkeypatch):
+    """命中快取也要記快照——否則「當期」這個月永遠不會被存下來（第一次上線就是這情況）。"""
+    cache = tmp_path / "revenue_cache.json"
+    hist = tmp_path / "revenue_history.json"
+    _write_cache(cache, {"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"},
+                         "6488": {"yoy": 2.0, "ym": "11506", "mkt": "otc"}})
+    monkeypatch.setattr(mr, "CACHE_PATH", str(cache))
+    monkeypatch.setattr(mr, "HISTORY_PATH", str(hist))
+    monkeypatch.setattr(mr, "fetch_revenue_yoy",
+                        lambda status=None: (_ for _ in ()).throw(AssertionError("不該抓取")))
+    mr.load_or_fetch(dt.date(2026, 7, 25))
+    assert "11506" in json.load(open(hist, encoding="utf-8"))["months"]

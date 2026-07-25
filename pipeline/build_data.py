@@ -131,7 +131,7 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
     """從原始資料算出該股的指標字典；資料不足回 None。
     events：該股除權息事件（見 back_adjust_rows）。均線/糾結/黃金交叉/多頭排列/布林小詩/爆量突破
     的「價格部分」一律用還原權息後的序列計算，避免除權息日被誤判成跌破/翻空；但現價/漲跌/走勢圖
-    （raw_closes 系列）仍用原始成交價，維持顯示給使用者的真實股價。
+    現價、漲跌幅、填息判斷仍用原始成交價（那是使用者在券商看到的數字）。
     index_series：加權指數日線序列 [(date_iso, close), ...]（見 history_store.to_index_series），
     給相對強弱 rs20 用。個股與指數序列各自轉成 {date: close} 後取「日期交集」對齊，避免其中一邊
     缺資料（抓取失敗/停牌）時用「位置對齊」（各取最後 21 筆相除）把不同天的價格錯配在一起算錯；
@@ -156,8 +156,6 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
     avg_money_e = round(sum(moneys) / len(moneys) / 1e8, 2) if moneys else 0
 
     # ── 除權息還原：以下所有技術指標一律改用還原後價格（closes 被重新指向還原序列）。
-    # raw_closes 保留原始收盤序列，只給走勢圖（spark）用，現價/漲跌已在上面算完不受影響。
-    raw_closes = closes
     adj_rows = back_adjust_rows(price_rows, events)
     closes = [r["close"] for r in adj_rows if r.get("close")]
 
@@ -176,8 +174,13 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
     else:
         rs20 = None
 
-    # ── 出場參考：近 20 日高點（用原始成交價，跟現價/走勢圖同一把尺；MA20 支撐/壓力沿用下面算好的 ma20）──
-    recent_highs = [r["max"] for r in price_rows[-20:] if r.get("max") is not None]
+    # ── 出場參考：近 20 日高點 ──
+    # 🔴 2026-07-25 改用**還原價**（原本用原始價）：ma20 是還原價、K 線圖也已統一成還原價，
+    # 只有這個高點還是原始價 → 除息在 20 天內的股票，「前高」是**除息前**的價位，
+    # 今天的價位基準根本回不去，目標價與「賺賠空間」會整個虛胖。
+    # 實測 1,091 檔有 200 檔會變，最大的青雲 550.00 → 365.21（−33.6%）、兆聯 1070 → 834。
+    # 最新一根的還原係數必為 1，所以「今天的價位」不受影響，只有歷史高點被拉回同一把尺。
+    recent_highs = [r["max"] for r in adj_rows[-20:] if r.get("max") is not None]
     recent_high20 = round(max(recent_highs), 2) if recent_highs else None
 
     ma5s = sma_series(closes, 5)
@@ -436,7 +439,9 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
         "foreign_streak": foreign_streak,
         "trust_streak": trust_streak,
         # 給前端畫迷你走勢圖用（最後 60 個收盤，用原始成交價，不還原權息）
-        "spark": [round(c, 2) for c in raw_closes[-60:]],
+        # 走勢圖用**還原價**（2026-07-25 改）：小圖看的是「形狀」，原始價在除息日會出現
+        # 一個看起來像大跌的缺口，但那不是虧損（配息已落袋）→ 形狀會騙人。現價/漲跌仍是原始價。
+        "spark": [round(c, 2) for c in closes[-60:]],
         # 給彈窗畫 K 線用（用完整可用歷史 ~110 根，讓「半年」範圍盡量給滿：日期,開,高,低,收,量張）
         # 🔑 `a` = **還原權息後**的收盤價，專門給前端算均線用（2026-07-25 加）。
         # 為什麼需要兩種價：K 棒必須顯示**原始成交價**（那才是當天真的成交在哪），但均線若用原始價

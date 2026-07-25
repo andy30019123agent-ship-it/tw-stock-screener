@@ -54,6 +54,7 @@ export default function StockChartModal({ stock, onClose }) {
   const [range, setRange] = useState(DEFAULT_RANGE)
   const [readout, setReadout] = useState(null)     // 十字準星讀數 {date,o,h,l,c,up}
   const [levels, setLevels] = useState(null)       // 支撐/壓力 {support, resistance}
+  const [adjusted, setAdjusted] = useState(false)  // 這檔的圖是否經過權息還原（要提示，否則對不上券商看盤）
 
   // 拆圖的唯一入口：以 chartRef.current 為真相，拆完立刻設 null → 重複呼叫是安全的。
   // 有兩條路徑會拆圖（關窗、開下一檔時建圖 effect 的 cleanup），各自直接 remove 會造成
@@ -68,7 +69,7 @@ export default function StockChartModal({ stock, onClose }) {
   // K 線按需載入（charts/<id>.json）；把「載入中／無資料／載入失敗」分成三態
   const load = useCallback(() => {
     if (!stock) return
-    setStatus('loading'); setOhlc(null); setReadout(null); setLevels(null)  // 清掉上一檔的支撐壓力，別讓載入時閃現舊值
+    setStatus('loading'); setOhlc(null); setReadout(null); setLevels(null); setAdjusted(false)  // 清掉上一檔的支撐壓力，別讓載入時閃現舊值
     let alive = true
     fetch(`${import.meta.env.BASE_URL}data/charts/${stock.id}.json`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('http'))))
@@ -118,16 +119,28 @@ export default function StockChartModal({ stock, onClose }) {
       upColor: up, downColor: down, borderUpColor: up, borderDownColor: down,
       wickUpColor: up, wickDownColor: down,
     })
-    candle.setData(ohlc.map(d => ({ time: d.t, open: d.o, high: d.h, low: d.l, close: d.c })))
+    // ── 整張圖統一用「還原權息」價（2026-07-25 修，Codex 指出）──
+    // 之前 K 棒用原始價、均線用還原價，**兩者共用同一個 Y 軸** → 除息前的 K 棒被畫在錯的高度，
+    // 「站上／跌破均線」在圖上是假的。實測 925 檔裡有 234 檔（25%）近 20 根就有 >1% 偏離，
+    // 最大的青雲 33.6%、兆聯 24.3%。共用軸的圖表，重點就是**相對位置**，所以統一基準優先。
+    // 做法：chart JSON 只帶還原收盤 `a`，但 back_adjust 是把整列 OHLC 乘同一個係數，
+    // 所以用 `f = a / c` 就能還原出當天的 open/high/low，不必改資料格式、舊檔也能用。
+    // 「當天真的成交多少」沒有消失——十字準星讀數仍顯示原始價（見下方 rawByTime）。
+    const bars = ohlc.map(d => {
+      const f = (d.a != null && d.c) ? d.a / d.c : 1
+      return { time: d.t, open: d.o * f, high: d.h * f, low: d.l * f, close: d.c * f, f }
+    })
+    const rawByTime = new Map(ohlc.map(d => [d.t, { o: d.o, h: d.h, l: d.l, c: d.c }]))
+    setAdjusted(bars.some(b => Math.abs(b.f - 1) > 0.002))   // 有還原才提示，沒除息的股不必囉嗦
+    candle.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })))
 
     const vol = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' } })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
+    // 成交量顏色用原始 c/o 判紅綠：整列同乘一個係數，漲跌方向不會變，用哪個都一樣
     vol.setData(ohlc.map(d => ({ time: d.t, value: d.v, color: d.c >= d.o ? hexToRgba(up, 0.4) : hexToRgba(down, 0.4) })))
 
-    // 均線一律用**還原權息**收盤（後端提供的 `a`），不可用 K 棒的原始收盤 `c`：
-    // 用原始價算均線，遇到除權息會出現假的跌破/糾結，而且會跟後端（用還原價）算的 ma20
-    // 對不上——實測 6944 差 28.7%（前端 974 vs 後端 756.52），同一個彈窗同時顯示兩者＝互相矛盾。
-    // K 棒本身維持原始成交價（那才是當天真的成交價位）。舊資料沒有 `a` 時退回 `c`，不讓均線消失。
+    // 均線用後端提供的還原收盤 `a`（與 K 棒現在同一把尺、也與後端 ma20 一致）。
+    // 舊資料沒有 `a` 時整檔退回 `c`——那種情況 K 棒的 f 也是 1，兩者仍然同基準。
     const closes = ohlc.map(d => (d.a != null ? d.a : d.c))
     const times = ohlc.map(d => d.t)
     for (const [n, color] of [[5, ma5Color], [20, ma20Color], [60, ma60Color]]) {
@@ -137,9 +150,10 @@ export default function StockChartModal({ stock, onClose }) {
     }
 
     // 支撐／壓力：近 60 個交易日的低/高，畫成水平參考線並標數值（粉色虛線＝參考位，非漲跌語意）
-    const recent = ohlc.slice(-60)
-    const resistance = Math.round(Math.max(...recent.map(d => d.h)) * 100) / 100
-    const support = Math.round(Math.min(...recent.map(d => d.l)) * 100) / 100
+    // 用還原後的 bars（不是原始 ohlc）：除息前的高點若不還原，壓力線會畫在偏高的位置
+    const recent = bars.slice(-60)
+    const resistance = Math.round(Math.max(...recent.map(d => d.high)) * 100) / 100
+    const support = Math.round(Math.min(...recent.map(d => d.low)) * 100) / 100
     setLevels({ support, resistance })
     candle.createPriceLine({ price: resistance, color: primary, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '壓力' })
     candle.createPriceLine({ price: support, color: primary, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '支撐' })
@@ -148,7 +162,11 @@ export default function StockChartModal({ stock, onClose }) {
     chart.subscribeCrosshairMove(param => {
       const d = param.time ? param.seriesData.get(candle) : null
       if (!d) { setReadout(null); return }
-      setReadout({ date: fmtDate(param.time), o: d.open, h: d.high, l: d.low, c: d.close, up: d.close >= d.open })
+      // 圖上畫的是還原價，但使用者想知道「那天實際成交多少」→ 讀數優先顯示原始價
+      const r = rawByTime.get(param.time)
+      setReadout(r
+        ? { date: fmtDate(param.time), o: r.o, h: r.h, l: r.l, c: r.c, up: r.c >= r.o }
+        : { date: fmtDate(param.time), o: d.open, h: d.high, l: d.low, c: d.close, up: d.close >= d.open })
     })
 
     chartRef.current = { chart, candle }
@@ -240,6 +258,12 @@ export default function StockChartModal({ stock, onClose }) {
             <span className="lg-ma5">MA5</span>
             <span className="lg-ma20">MA20</span>
             <span className="lg-ma60">MA60</span>
+            {/* 有還原才顯示：圖上價位會跟券商的原始線圖不同，不說清楚會被當成資料錯誤 */}
+            {adjusted && (
+              <span className="lg-adj" title="這檔近期有除權息。圖上價位已還原權息，才能跟均線放在同一個 Y 軸比較；點圖上任一天可看當天的原始成交價。">
+                已還原權息
+              </span>
+            )}
           </div>
           <div className="range-seg" role="group" aria-label="時間範圍">
             {RANGES.map(([k, label]) => (

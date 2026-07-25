@@ -17,6 +17,9 @@ import market_sources as ms  # noqa: E402
 
 HERE = os.path.dirname(__file__)
 CACHE_PATH = os.path.join(HERE, "revenue_cache.json")
+# 逐月快照（2026-07-25 起累積）：見 record_snapshot 的說明——這是唯一能讓「營收年減剔除」
+# 將來可被回測驗證的東西，因為官方 OpenAPI 只回**最新一期**，過去的月份無法補抓。
+HISTORY_PATH = os.path.join(HERE, "revenue_history.json")
 
 TWSE_REVENUE = "https://openapi.twse.com.tw/v1/opendata/t187ap05_L"
 TPEX_REVENUE = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap05_O"
@@ -50,6 +53,81 @@ def fetch_revenue_yoy(status=None):
         except Exception as e:
             print(f"  ⚠️ {name}月營收抓取失敗（該市場本次不過濾營收）：{e}")
     return out
+
+
+def record_snapshot(data, today=None, path=None):
+    """把「這個月看到的營收 YoY」存成一份逐月快照，回傳 (新增的月份, 總月份數)。
+
+    **為什麼一定要存**：官方 OpenAPI 只回最新一期，過去月份抓不回來。2026-07-25 回測整套
+    選股程序時，「營收年減剔除」這條濾網**完全無法驗證**——因為 revenue_cache.json 只有當期
+    快照。也就是說這條濾網一直開著、但沒人知道它有效還是有害。不從現在開始存，這個洞永遠補不上。
+
+    設計上的兩個關鍵：
+    1. **同一個月份只記第一次看到的值**（保留 first_seen 日期）。之後官方修正數字也不覆蓋，
+       因為回測要問的是「當時能拿到什麼」——用後來修正過的數字回測＝偷看未來。
+       修正次數記在 revisions 供追溯。
+    2. **逐市場筆數**也記下來（mkt_n）：某個月上櫃抓失敗只有半個市場，回測時必須看得出來，
+       否則會把「資料缺一半」誤當成「這些股票沒有營收年減」。
+    """
+    today = today or dt.date.today()
+    path = path or HISTORY_PATH
+    hist = {}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                hist = json.load(f) or {}
+        except Exception as e:
+            # 讀不到就停手，不要覆蓋——這是無法重建的資料，寧可這次不記也不能弄壞既有的
+            print(f"   ⚠️ 營收快照檔讀取失敗，本次不寫入（避免覆蓋無法重建的歷史）：{e}")
+            return None, 0
+    months = hist.setdefault("months", {})
+
+    by_ym = {}
+    for sid, v in (data or {}).items():
+        if not isinstance(v, dict) or not v.get("ym") or v.get("yoy") is None:
+            continue
+        by_ym.setdefault(v["ym"], {})[sid] = (v["yoy"], v.get("mkt"))
+
+    added = []
+    for ym, rows in by_ym.items():
+        if ym in months:
+            # 已記錄過 → 只算修正次數，不動原值（見上面第 1 點）
+            old = months[ym].get("yoy") or {}
+            rev = sum(1 for sid, (yoy, _) in rows.items() if sid in old and old[sid] != yoy)
+            if rev:
+                months[ym]["revisions"] = months[ym].get("revisions", 0) + rev
+                months[ym]["revised_at"] = today.isoformat()
+            # 新增的公司（例如某市場上次抓失敗、這次補到）可以補進去，那不是「修正」而是「補齊」
+            new_sids = {sid: yoy for sid, (yoy, _) in rows.items() if sid not in old}
+            if new_sids:
+                old.update(new_sids)
+                months[ym]["yoy"] = old
+                months[ym]["backfilled_at"] = today.isoformat()
+                mkt_n = months[ym].setdefault("mkt_n", {})
+                for sid, (_, mkt) in rows.items():
+                    if sid in new_sids and mkt:
+                        mkt_n[mkt] = mkt_n.get(mkt, 0) + 1
+            continue
+        mkt_n = {}
+        for _, (_, mkt) in rows.items():
+            if mkt:
+                mkt_n[mkt] = mkt_n.get(mkt, 0) + 1
+        months[ym] = {
+            "first_seen": today.isoformat(),
+            "n": len(rows),
+            "mkt_n": mkt_n,
+            "yoy": {sid: yoy for sid, (yoy, _) in rows.items()},
+        }
+        added.append(ym)
+
+    if added or any(m.get("revised_at") == today.isoformat() or m.get("backfilled_at") == today.isoformat()
+                    for m in months.values()):
+        hist["updated"] = today.isoformat()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(hist, f, ensure_ascii=False, separators=(",", ":"))
+    if added:
+        print(f"   📸 月營收快照新增 {'、'.join(sorted(added))}（累積 {len(months)} 個月）")
+    return (added[0] if added else None), len(months)
 
 
 def _latest_ym_by_market(data):
@@ -122,6 +200,7 @@ def load_or_fetch(today=None):
     # 逐來源檢查：兩個市場都達到 want 才算命中（市場別取自抓取時寫入的 mkt 欄位）。
     per = _latest_ym_by_market(cached)
     if cached and all(per.get(k) and per[k] >= want for k in ("listed", "otc")):
+        record_snapshot(cached, today)   # 命中快取也要記：不然「當期」這個月永遠不會被存下來
         return cached
     if cached:
         lag = [f"{k}={per.get(k) or '無'}" for k in ("listed", "otc") if not (per.get(k) and per[k] >= want)]
@@ -130,6 +209,7 @@ def load_or_fetch(today=None):
     status = {}
     fresh = fetch_revenue_yoy(status)
     if not fresh:
+        record_snapshot(cached, today)
         return cached          # 兩邊都失敗 → 沿用舊快取，不要整批標成「營收資料缺」
 
     # 單邊失敗時保留另一市場的舊資料（fresh 只含成功市場的代號）
@@ -145,6 +225,7 @@ def load_or_fetch(today=None):
     if not (status.get("listed") and status.get("otc")):
         miss = [k for k in ("listed", "otc") if not status.get(k)]
         print(f"   ⚠️ 月營收有市場抓取失敗（{'、'.join(miss)}），已保留該市場舊資料")
+    record_snapshot(merged, today)
     return merged
 
 
