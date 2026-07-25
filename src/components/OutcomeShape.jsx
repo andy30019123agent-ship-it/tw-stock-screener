@@ -12,18 +12,21 @@ import { ChevronDown, ChevronRight, Dices } from 'lucide-react'
 // 不從 JSON 讀是刻意的：假裝它會自動更新，比寫死更危險。
 const MEASURED = {
   asOf: '2026-07-25',
-  window: '2025-02 ~ 2026-06（479 個交易日的可評估區間）',
-  // 每日 Top5 等權組合，持有 20 交易日，成本後超額（減同日全市場平均）
+  window: '2025-02-05 ~ 2026-06-25（339 個交易日）',
+  // ⚠️ 2026-07-25 深夜重算：這些數字現在對應**線上真正在跑的設定**（Top10＋rs_pct_60 排序）。
+  // 舊版是 rs20 排序時代的量測，換排序後每一格都變了——連「買越多檔中位數越好」都不再成立
+  // （見下方 note）。教訓：寫死的量測值一旦設定改了就是錯的，改設定時要一起回來重算。
+  // 每日等權組合，持有 20 交易日，成本後超額（減同日全市場平均）
   batches: [
-    { n: 5, mean: 2.47, median: 0.97, winRate: 0.534, sd: 11.8, t: 1.78, maxDD: 27.3 },
-    { n: 10, mean: 2.72, median: 1.06, winRate: 0.554, sd: 9.0, t: 2.38, maxDD: 18.8 },
-    { n: 20, mean: 2.64, median: 2.12, winRate: 0.640, sd: 6.35, t: 3.00, maxDD: 10.8 },
+    { n: 5, mean: 3.56, median: 2.82, winRate: 0.581, sd: 11.79, t: 2.17, maxDD: 19.4 },
+    { n: 10, mean: 3.69, median: 1.93, winRate: 0.628, sd: 9.50, t: 2.80, maxDD: 14.3 },
+    { n: 20, mean: 3.38, median: 2.46, winRate: 0.634, sd: 6.80, t: 3.52, maxDD: 9.7 },
   ],
-  single: { median: -2.14, winRate: 0.464, n: 1695 },   // 單檔推薦的分佈
-  topContrib: { stocks: 8, share: 0.836 },              // 8 檔股票貢獻 83.6% 的全部超額
-  benchmark0050: { mean: 1.56, median: 1.68, winRate: 0.640 },
-  // ⚠️ 這個配對檢定只在 5 檔那組做過（n 記錄檔數）——換檔數就不能直接套用，UI 會據此改文案
-  vsBenchmark: { n: 5, diff: 1.43, t: 0.69 },
+  single: { median: -1.13, winRate: 0.478, n: 3390 },   // 單檔推薦的分佈
+  topContrib: { stocks: 8, share: 0.488 },              // 前 8 檔貢獻 48.8% 的全部超額
+  benchmark0050: { mean: 1.85, median: 1.68, winRate: 0.640 },
+  // 配對檢定（同一天才比）。這組是現行 10 檔設定，換檔數就不能直接套用，UI 會據此改文案
+  vsBenchmark: { n: 10, diff: 2.03, t: 1.16 },
 }
 
 const pct = v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`
@@ -104,12 +107,19 @@ export default function OutcomeShape({ pickCount = 5 }) {
         </div>
 
         <p className="os-note">
-          <b>買越多檔，平均幾乎不變，但「典型結果」明顯變好、折磨程度明顯下降。</b>
-          從 5 檔換成 20 檔：平均 {pct(MEASURED.batches[0].mean)} → {pct(MEASURED.batches[2].mean)}（幾乎沒差），
-          但中位數 {pct(MEASURED.batches[0].median)} → {pct(MEASURED.batches[2].median)}、
-          贏大盤機率 {Math.round(MEASURED.batches[0].winRate * 100)}% → {Math.round(MEASURED.batches[2].winRate * 100)}%、
-          最大回撤 −{MEASURED.batches[0].maxDD} → −{MEASURED.batches[2].maxDD}pp。
-          這是因為「少數幾檔撐起整體」的形狀下，買太少就是在賭自己剛好抽到那幾檔。
+          <b>買越多檔，「平均」幾乎不變，但波動、回撤、統計可信度都明顯變好。</b>
+          從 5 檔換到 20 檔：平均 {pct(MEASURED.batches[0].mean)} → {pct(MEASURED.batches[2].mean)}（幾乎沒差），
+          但贏大盤機率 {Math.round(MEASURED.batches[0].winRate * 100)}% → {Math.round(MEASURED.batches[2].winRate * 100)}%、
+          波動 {MEASURED.batches[0].sd} → {MEASURED.batches[2].sd}pp、
+          最大回撤 −{MEASURED.batches[0].maxDD} → −{MEASURED.batches[2].maxDD}pp、
+          t 值 {MEASURED.batches[0].t} → {MEASURED.batches[2].t}。
+          <br />
+          {/* 不可再宣稱「中位數也單調變好」：2026-07-25 換成 rs_pct_60 排序後，5 檔的中位數
+              反而比 10 檔高。方向不一致的地方要照實講，不能只挑支持結論的那幾格。 */}
+          <b>唯一不隨檔數變好的是「中位數」</b>——5 檔 {pct(MEASURED.batches[0].median)}、
+          10 檔 {pct(MEASURED.batches[1].median)}、20 檔 {pct(MEASURED.batches[2].median)}，並不單調。
+          少檔數偶爾會抽到很好的組合，代價是波動與回撤大得多（sd {MEASURED.batches[0].sd} vs {MEASURED.batches[2].sd}）。
+          所以「多買幾檔」買到的不是更高報酬，是<b>更穩定、更不折磨、也更可信的同一份報酬</b>。
         </p>
 
         <p className="os-note os-honest">

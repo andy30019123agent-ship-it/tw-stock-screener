@@ -255,14 +255,23 @@ def score_of(mask, wvec):
 
 
 def run_arm(days, wvec, *, gate=True, vol_min=LIVE_MIN_VOL, top_n=TOP_N,
-            sort_key="ret20", use_score=True, rng=None, engine_required=True):
-    """重播一組設定，回 (daily list, meta)。"""
+            sort_key="ret20", use_score=True, rng=None, engine_required=True,
+            exclude=None, collect_picks=False):
+    """重播一組設定，回 (daily list, meta)。
+
+    exclude：買不到／不想買的代號集合，在候選階段就剔除。用途是回答「扣掉我實際買不到的
+      股票之後，這套程序還剩多少」——回測預設每檔都買得到，那是紙上假設（2026-07-25 Andy 要求）。
+    collect_picks：額外收集每天選到的 (date, sid, 成本後超額)，供個股貢獻度分析用。
+    """
     daily = []
     gate_off_days = []
+    picks_log = [] if collect_picks else None
     for D in days:
         cands = []
         for (sid, vol, raw, cool, rs60, ret20, fwd) in D.recs:
             if vol < vol_min:
+                continue
+            if exclude and sid in exclude:
                 continue
             emask = raw & ((1 << len(ENGINE)) - 1)
             if engine_required and emask == 0:
@@ -298,8 +307,10 @@ def run_arm(days, wvec, *, gate=True, vol_min=LIVE_MIN_VOL, top_n=TOP_N,
                 raise ValueError(sort_key)
             sel = sorted(pool, key=key)[:top_n]
         ex = [net_excess_pp(c[5], D.bench) for c in sel]
+        if picks_log is not None:
+            picks_log.extend((D.date, c[0], e) for c, e in zip(sel, ex))
         daily.append((D.date, mean(ex), len(sel), D.regime))
-    return daily, {"gate_off_days": gate_off_days}
+    return daily, {"gate_off_days": gate_off_days, "picks": picks_log}
 
 
 def by_regime(daily):
@@ -433,6 +444,65 @@ def bench_arms(days, payload):
     return out
 
 
+
+# ── 買得到嗎：創新板辨識與「扣掉買不到的股票」分析（2026-07-25 Andy 選 3️⃣ 保守版）──
+# 回測預設每檔都買得到，但創新板（名稱加註「-創」）多數券商要先簽風險預告書、部分要求資格條件，
+# 一般帳戶不一定買得到。若買不到而回測把它算進去，成績就是紙上的。
+# 判斷規則：名稱最後一段是「創」或「KY創」。**不可只用 name.endswith("-創")**——會漏掉 4 檔
+# 「-KY創」；也不可用「名稱含創」——緯創／創見／群創／榮創／大統新創都會被誤判（實測 50 檔含「創」、
+# 真正創新板只有 28 檔）。
+def is_innovation_board(name):
+    return name.rsplit("-", 1)[-1] in ("創", "KY創") if "-" in (name or "") else False
+
+
+def innovation_ids():
+    with open(os.path.join(PIPE, "universe.json"), encoding="utf-8") as f:
+        uni = json.load(f)["stocks"]
+    return {s["id"] for s in uni if is_innovation_board(s.get("name", ""))}, \
+           {s["id"]: s["name"] for s in uni}
+
+
+def paired_diff(a, b, label):
+    """兩組每日報酬的配對差（同一天才比），回含 Newey-West t 值的摘要。
+
+    為什麼要配對而不是比兩個平均：同一天的市況是共同因子，配對後才會消掉，
+    否則兩組的差被市況波動蓋住（SE 會大到什麼都測不出來）。
+    """
+    bm = dict((x[0], x[1]) for x in b)
+    d = [(x[0], x[1] - bm[x[0]], 1, x[3]) for x in a if x[0] in bm]
+    out = summarize(d, label)
+    out["n_paired"] = len(d)
+    return out
+
+
+def contribution(picks, id2name, top=10):
+    """個股貢獻度：哪幾檔撐起全部超額。
+
+    這是這套系統最重要的體質數字——2026-07-25 首次量測發現 8 檔貢獻 83.6%，
+    也就是說「買不到某一檔」的殺傷力可能遠大於直覺。
+    """
+    tot = {}
+    cnt = {}
+    for _, sid, ex in picks or []:
+        tot[sid] = tot.get(sid, 0.0) + ex
+        cnt[sid] = cnt.get(sid, 0) + 1
+    total_pos = sum(v for v in tot.values())
+    rank = sorted(tot.items(), key=lambda kv: -kv[1])
+    rows = [{"id": sid, "name": id2name.get(sid, sid), "sum_pp": round(v, 1),
+             "times": cnt[sid], "share": (round(v / total_pos, 4) if total_pos else None),
+             "innovation": is_innovation_board(id2name.get(sid, ""))}
+            for sid, v in rank[:top]]
+    innov_sum = sum(v for sid, v in tot.items() if is_innovation_board(id2name.get(sid, "")))
+    return {
+        "total_pp": round(total_pos, 1),
+        "n_distinct_stocks": len(tot),
+        "top_rows": rows,
+        "top8_share": (round(sum(v for _, v in rank[:8]) / total_pos, 4) if total_pos else None),
+        "innovation_sum_pp": round(innov_sum, 1),
+        "innovation_share": (round(innov_sum / total_pos, 4) if total_pos else None),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", default="all", choices=["collect", "analyze", "all"])
@@ -513,7 +583,7 @@ def main():
     R["quintiles_score0"] = quintiles(days, wvec, within_score=0)
 
     # 候選池結構：score 分佈、score=1 是否足 5 檔
-    struct = {"days": 0, "score1_ge5": 0, "pool_sizes": [], "score1_sizes": []}
+    struct = {"days": 0, "score1_ge_top_n": 0, "pool_sizes": [], "score1_sizes": []}
     for D in days:
         cands = [r for r in D.recs if r[1] >= LIVE_MIN_VOL
                  and (r[2] & ((1 << len(ENGINE)) - 1)) and ((r[2] >> GATE_BIT) & 1)]
@@ -524,17 +594,45 @@ def main():
         n1 = sum(1 for c in cands if score_of(c[2] & ((1 << len(ENGINE)) - 1), wvec) >= 1)
         struct["score1_sizes"].append(n1)
         if n1 >= TOP_N:
-            struct["score1_ge5"] += 1
+            struct["score1_ge_top_n"] += 1
     R["pool_structure"] = {
         "days_with_gated_pool": struct["days"],
         "median_pool": median(struct["pool_sizes"]),
         "median_score1": median(struct["score1_sizes"]),
-        "days_score1_ge_5": struct["score1_ge5"],
-        "pct_days_score1_ge_5": round(struct["score1_ge5"] / struct["days"], 4) if struct["days"] else None,
+        # 欄位名不寫死檔數：TOP_N 從 5 改成 10 後「_ge_5」會直接誤導讀數的人
+        "top_n": TOP_N,
+        "days_score1_ge_top_n": struct["score1_ge_top_n"],
+        "pct_days_score1_ge_top_n": (round(struct["score1_ge_top_n"] / struct["days"], 4)
+                                     if struct["days"] else None),
+    }
+
+    # ── 現行線上設定 ＋「扣掉買不到的股票」（2026-07-25 Andy 選 3️⃣）──────────────
+    # ⚠️ 上面的 baseline 是**歷史設定**（Top5、rs20 排序）。線上現在是 Top10＋rs_pct_60，
+    # 所以「買不到創新板的代價」必須在**現行設定**上量，否則答案套不到你實際在用的東西。
+    innov, id2name = innovation_ids()
+    live_kw = dict(sort_key="rs_pct_60", top_n=opp.TOP_N)
+    cur, cur_meta = run_arm(days, wvec, collect_picks=True, **live_kw)
+    nob, nob_meta = run_arm(days, wvec, collect_picks=True, exclude=innov, **live_kw)
+    R["live_config"] = {
+        "settings": {"top_n": opp.TOP_N, "sort_key": "rs_pct_60",
+                     "gate": True, "vol_min": LIVE_MIN_VOL},
+        "all_stocks": summarize(cur, f"現行設定（Top{opp.TOP_N}＋rs_pct_60，全部股票）"),
+        "excl_innovation": summarize(nob, f"現行設定（排除創新板 {len(innov)} 檔）"),
+        # 配對差：負值＝買不到創新板讓成績變差多少
+        "paired_diff": paired_diff(nob, cur, "排除創新板 − 全部股票（配對）"),
+        "innovation_n": len(innov),
+        "contribution_all": contribution(cur_meta["picks"], id2name),
+        "contribution_excl": contribution(nob_meta["picks"], id2name),
+        "by_regime_excl": by_regime(nob),
     }
 
     # Q5 基準
     R["benchmarks"] = {k: v[1] for k, v in bench_arms(days, payload).items()}
+    # 現行設定 vs 0050 的配對檢定（原本只在歷史 Top5 那組做過，換檔數就套不上）
+    b = bench_arms(days, payload)
+    for key, lab in (("etf0050", "0050"), ("market_ew", "全市場等權")):
+        R["live_config"][f"vs_{key}"] = paired_diff(cur, b[key][0], f"現行設定 − {lab}（配對）")
+        R["live_config"][f"vs_{key}_excl"] = paired_diff(nob, b[key][0], f"排除創新板 − {lab}（配對）")
 
     # 走前權重（無前視）版本
     wmap = walkforward_weights(days)
