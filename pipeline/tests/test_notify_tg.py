@@ -77,3 +77,24 @@ def test_non_engine_signal_ignored_even_with_weight():
 def test_load_weights_missing_file_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(nt, "WEIGHTS_PATH", str(tmp_path / "no_such_file.json"))
     assert nt.load_weights() == {}
+
+
+def test_編號不因檔數變動而爆掉():
+    """迴歸測試：2026-07-25 TOP_N 從 5 改成 10 時，寫死的 5 個圈號 nums[i] 直接 IndexError
+    → 推播步驟失敗 → **連帶擋掉後面的存檔回 main 與部署**（workflow 循序，前一步 fail 後面全 skip）。
+    這裡守住「編號函式對任何索引都要能回傳字串」。"""
+    assert nt._num(0) == "①" and nt._num(9) == "⑩" and nt._num(19) == "⑳"
+    # 超出圈號範圍要退回純數字，不可拋錯
+    assert nt._num(20) == "21." and nt._num(99) == "100."
+    for i in range(200):
+        assert isinstance(nt._num(i), str) and nt._num(i)
+
+
+def test_訊息能產出_TOP_N_檔而不炸():
+    """用 TOP_N 檔的假資料實際建訊息，確認不會因編號或其他寫死長度而爆。"""
+    import opportunities as opp
+    stocks = [_stock(signal_ma=True, id=str(9000 + i), name=f"測試{i}") for i in range(opp.TOP_N)]
+    d = {"data_date": "2026-07-24", "count": 925, "stocks": stocks}
+    text, dd = nt.build_message(d)
+    assert dd == "2026-07-24"
+    assert isinstance(text, str) and len(text) > 0

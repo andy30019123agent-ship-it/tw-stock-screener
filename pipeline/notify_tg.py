@@ -163,6 +163,14 @@ def risk_warning(s, n_reasons):
     return ""
 
 
+# 圈號 ①~⑳（Unicode 有到 ⑳）；超出就退回「N.」純數字，不讓檔數變動炸掉整個推播。
+CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+
+
+def _num(i):
+    return CIRCLED[i] if 0 <= i < len(CIRCLED) else f"{i + 1}."
+
+
 def build_message(d):
     stocks = d["stocks"]
     # 交易日優先讀頂層 data_date；舊資料沒有才退回掃 ohlc（全市場版 ohlc 已拆出，掃不到）
@@ -197,12 +205,15 @@ def build_message(d):
             f"📊 台股電子選股快報 {mmdd}",
             f"精選 {len(ranked)} 檔（掃描 {cnt} 檔）",
         ]
-        nums = ["①", "②", "③", "④", "⑤"]
+        # 🔴 2026-07-25：這裡原本是寫死的 5 個圈號 ["①".."⑤"]，TOP_N 從 5 改成 10 之後
+        # `nums[i]` 直接 IndexError → **整個推播步驟失敗，連帶擋掉後面的存檔回 main 與部署**
+        # （workflow 是循序的，前一步 fail 後面全 skip）。
+        # 改用 CIRCLED[i] 並在超出範圍時退回純數字，讓檔數再變也不會炸。
         for i, s in enumerate(ranked):
             chg = s.get("change_pct", 0)
             sign = "+" if chg >= 0 else ""
             lines.append(sep)
-            lines.append(f"{nums[i]} {s['name']} {s['id']}　{sign}{chg:g}%")
+            lines.append(f"{_num(i)} {s['name']} {s['id']}　{sign}{chg:g}%")
             lines.append(" · ".join(reasons(s)))
             pn = price_note(s)
             if pn:
