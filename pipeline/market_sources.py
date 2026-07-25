@@ -160,18 +160,8 @@ def fetch_taiex_close(date_iso):
     return None
 
 
-def fetch_listed_ohlc_month(sid, yyyymm):
-    """單一上市股某月各日 OHLCV（STOCK_DAY，吃 date；回填上市歷史用）。回 list[row]。"""
-    url = f"{TWSE_AT}/STOCK_DAY?stockNo={sid}&date={yyyymm}01&response=json"
-    d = get_json(url)
-    # fields：日期,成交股數,成交金額,開盤價,最高價,最低價,收盤價,漲跌價差,成交筆數
-    out = []
-    for r in d.get("data", []) or []:
-        iso = roc_to_iso(r[0])
-        row = _ohlc(iso, r[3], r[4], r[5], r[6], r[1], r[2])
-        if row:
-            out.append(row)
-    return out
+# 註：舊的「逐月抓單一上市股 OHLCV」（STOCK_DAY，fetch_listed_ohlc_month）已於 2026-07-25 移除
+# ——回填改走逐日全市場的 fetch_listed_ohlc(day)（backfill.py:50），逐檔 STOCK_DAY 還會被 TWSE 限流。
 
 
 # ── 上櫃 OHLCV ────────────────────────────────────────────────────────

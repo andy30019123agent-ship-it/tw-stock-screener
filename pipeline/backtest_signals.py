@@ -489,7 +489,15 @@ def events_to_stats(events, by_date):
 
 def run_backtest(price_hist, chip_hist, div_hist, universe,
                  forward=FORWARD, min_bars=MIN_BARS):
-    """對全市場回測訊號，回傳 stats_to_weights 的輸出。"""
+    """對全市場回測訊號，回傳 stats_to_weights 的輸出。
+
+    ⚠️ **生產路徑不走這裡**（2026-07-25 清查時確認全專案零呼叫）。實際跑的是 `ensure_weights()`，
+    它多做了：長歷史合併、價格斷點偵測與排除、橫斷面 PIT cache、除權息覆蓋率警告、OOS／自適應
+    權重、組合戰績、市況分層、出場分析。
+    刻意保留這支是因為它是「最小可跑的回測管線」——想單獨驗證 collect_events → events_to_stats
+    → stats_to_weights 這條鏈時很好用，不必扛 ensure_weights 的全部副作用（它會寫五個 json 檔）。
+    **改動 collect_events/events_to_stats/stats_to_weights 的簽名時記得同步這裡。**
+    """
     events, by_date = collect_events(price_hist, chip_hist, div_hist, universe, forward, min_bars)
     return stats_to_weights(events_to_stats(events, by_date))
 

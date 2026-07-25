@@ -26,12 +26,6 @@ HERE = os.path.dirname(__file__)
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "data")
 
 
-def sma(vals, n):
-    if len(vals) < n:
-        return None
-    return sum(vals[-n:]) / n
-
-
 def sma_series(closes, n):
     out = []
     for i in range(len(closes)):
@@ -444,11 +438,17 @@ def compute_indicators(price_rows, chip_rows, events=None, index_series=None):
         # 給前端畫迷你走勢圖用（最後 60 個收盤，用原始成交價，不還原權息）
         "spark": [round(c, 2) for c in raw_closes[-60:]],
         # 給彈窗畫 K 線用（用完整可用歷史 ~110 根，讓「半年」範圍盡量給滿：日期,開,高,低,收,量張）
+        # 🔑 `a` = **還原權息後**的收盤價，專門給前端算均線用（2026-07-25 加）。
+        # 為什麼需要兩種價：K 棒必須顯示**原始成交價**（那才是當天真的成交在哪），但均線若用原始價
+        # 算，遇到除權息就會出現假的跌破/糾結。原本前端拿 `c`（原始價）自己算 MA，與後端用還原價
+        # 算的 ma20 相差可達 28.7%（實測 6944：前端 974 vs 後端 756.52），而同一個彈窗會同時顯示
+        # 這兩個數字＝互相矛盾。現在前端改用 `a` 算均線，兩邊同一把尺。
         "ohlc": [
             {
                 "t": r["date"],
                 "o": round(r["open"], 2), "h": round(r["max"], 2),
                 "l": round(r["min"], 2), "c": round(r["close"], 2),
+                "a": (round(stock_by_date[r["date"]], 2) if stock_by_date.get(r["date"]) else None),
                 "v": round((r.get("Trading_Volume", 0) or 0) / 1000),
             }
             for r in price_rows[-140:]

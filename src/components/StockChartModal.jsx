@@ -124,7 +124,11 @@ export default function StockChartModal({ stock, onClose }) {
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
     vol.setData(ohlc.map(d => ({ time: d.t, value: d.v, color: d.c >= d.o ? hexToRgba(up, 0.4) : hexToRgba(down, 0.4) })))
 
-    const closes = ohlc.map(d => d.c)
+    // 均線一律用**還原權息**收盤（後端提供的 `a`），不可用 K 棒的原始收盤 `c`：
+    // 用原始價算均線，遇到除權息會出現假的跌破/糾結，而且會跟後端（用還原價）算的 ma20
+    // 對不上——實測 6944 差 28.7%（前端 974 vs 後端 756.52），同一個彈窗同時顯示兩者＝互相矛盾。
+    // K 棒本身維持原始成交價（那才是當天真的成交價位）。舊資料沒有 `a` 時退回 `c`，不讓均線消失。
+    const closes = ohlc.map(d => (d.a != null ? d.a : d.c))
     const times = ohlc.map(d => d.t)
     for (const [n, color] of [[5, ma5Color], [20, ma20Color], [60, ma60Color]]) {
       const s = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })

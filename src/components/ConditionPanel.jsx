@@ -20,6 +20,13 @@ const BLANK = {
   // 橫斷面 RS 也要列進 BLANK，否則切換快速套用時舊的勾選會殘留（清單被上一個 preset 的
   // 條件偷偷限縮，使用者看不出原因）
   rsStrong60: false, rsConfirmed: false, industryHot: false,
+  // ⚠️ 2026-07-25 補齊（Codex 指出漏了 7 個）：BLANK 少任何一個欄位，套用快速套用時該條件就會
+  // **從舊狀態殘留下來**，於是按鈕標示的策略與實際篩選條件不符（例如先選了「上櫃＋半導體」，
+  // 再點「爆量突破」，清單其實還被市場與產業限縮著，但按鈕上的戰績是全市場的）。
+  // 這裡必須涵蓋 DEFAULT_CONDITIONS 的每一個鍵（keyword 例外，見 applyPreset 刻意保留搜尋字）。
+  breakoutMult: 1.8, breakoutLookback: 3,
+  market: 'all', industry: 'all', chipLogic: 'and',
+  minMoney: 0, excludeRunaway: false,
 }
 const PRESETS = [
   // 強勢雙確認擺第一位不是寫死順序——下面 orderedPresets 會依平均超額重排；但它目前確實是
@@ -75,8 +82,12 @@ function presetScore(key, weights) {
 }
 // OOS 穩健度徽章的判準已抽到 ../lib/oos（組合戰績排行榜共用同一套，避免兩張表對同一訊號不一致）。
 
-// Phase B 橫斷面新訊號（相對強弱＋產業輪動）——只做回測展示、不進 Top5 選股、不做即時篩選
-// （即時篩選需橫斷面全市場排名，網頁端沒有；戰績來自後端回測）
+// 橫斷面訊號（相對強弱＋產業輪動）。⚠️ 2026-07-25 起狀態已改變，別照舊註解理解：
+//   ① **可以即時篩選**——後端 build_data 用 live_xsect 每天算好全市場百分位寫進 screener.json，
+//      三個都在 filters.js 有對應條件（rsStrong60 / rsConfirmed / industryHot）。
+//   ② **`rs_confirmed_60_120` 已是 Top5 的入場門檻**（opportunities.GATE_SIGNAL）——先篩它、
+//      再用技術訊號排名。但它**不參與加權計分**（21% 的股票符合，當加分項會淹掉窄訊號）。
+// 本常數這裡只是「戰績展示表要列哪幾個」的清單，與上面兩件事無關。
 const XSECT_SIGNALS = [
   { key: 'rs_strong_60', label: '強勢股（60日）', hint: '近 60 日漲幅排全市場前 20%' },
   { key: 'rs_confirmed_60_120', label: '強勢雙確認', hint: '60 日強、120 日也不弱' },
@@ -223,7 +234,9 @@ export default function ConditionPanel({
           )}
           <ComboBoard combos={combos} weights={weights} />
 
-          {/* Phase B：相對強弱＋產業輪動新訊號的樣本外驗證（研究展示，不進 Top5、不做即時篩選） */}
+          {/* 相對強弱＋產業輪動的樣本外驗證戰績表。注意：這三個訊號現在**可以即時篩選**、
+              且 rs_confirmed_60_120 已是 Top5 入場門檻（見 XSECT_SIGNALS 上方註解）；
+              這張表只是它們的回測戰績展示。 */}
           {weights?.signals && XSECT_SIGNALS.some(s => (weights.signals[s.key]?.samples || 0) > 0) && (
             <details className="strategy-board">
               <summary>新訊號研究：相對強弱＋產業輪動（樣本外驗證中）</summary>

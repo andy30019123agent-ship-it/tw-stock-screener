@@ -53,7 +53,9 @@ export default function MarketAdvice({ breadth, regime, onApply }) {
       <ol className="ma-list">
         {ranked.map(x => (
           <li key={x.k}>
-            <span className="ma-name">{x.label}
+            {/* 訊號名要用 span 包住才能單獨 nowrap——原本是裸文字節點，375 寬被套用鈕擠壓時
+                會斷成「縮口帶量突／破」（中文可在任何字元間斷行，2026-07-25 實測發現）。 */}
+            <span className="ma-name"><span className="ma-label">{x.label}</span>
               {x.allWeather && <span className="ma-tag" title="紅黃綠三種市況都有正超額，空頭也站得住">全天候</span>}</span>
             <span className="ma-exc good">+{x.cur.avg_excess}pp</span>
             {APPLY[x.k]

@@ -4,7 +4,9 @@
 
 # tw-stock-screener
 
-台股電子股選股網頁，給 Andy 自己看盤用：React 前端 + Python 資料管線，每天自動更新選股清單並推播「選股快報」到 Telegram。
+台股**全市場**選股網頁（上市＋上櫃，universe 約 1,966 檔、有量輸出約 925 檔；**不再是「電子股 111 檔」那版**），
+給 Andy 自己看盤用：React 前端 + Python 資料管線，每天自動更新選股清單並推播「選股快報」到 Telegram。
+資料源＝TWSE／TPEX 免費官方端點（**已移除 FinMind**，僅留 `finmind_fill.py` 當補洞备援）。
 
 **技術棧**：Vite + React（lightweight-charts、lucide-react）
 **指令**：`npm run dev` / `npm run build` / `npm run preview`

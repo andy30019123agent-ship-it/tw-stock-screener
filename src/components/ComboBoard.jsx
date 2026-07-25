@@ -12,8 +12,8 @@ export default function ComboBoard({ combos, weights = null }) {
   const [open, setOpen] = useState(false)
   const [sel, setSel] = useState([])   // 選中的訊號 → 只看「同時包含這些」的組合
   // 預設**關**：Andy 明確要「保留全部、自己判斷」。開了才只看通過多重比較校正的，
-  // 那批才是「不太可能只是從數百組裡挑到運氣好的」——實測 120 組裡 31 組過關，
-  // 過關的樣本中位數 3024 筆／沒過的只有 330 筆。
+  // 那批才是「不太可能只是從數百組裡挑到運氣好的」——**改用成本後超額檢定後實測 120 組裡 18 組
+  // 過關**（毛值時是 31 組；成本後更嚴格是對的）。過關組樣本中位數約 3000 筆／沒過的約 330 筆。
   const [onlyMc, setOnlyMc] = useState(false)
 
   const list = combos?.combos || []

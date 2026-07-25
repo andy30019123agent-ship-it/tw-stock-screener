@@ -33,7 +33,11 @@ TOP_N = 5
 MIN_VOL_LOTS = 500        # 20 日均量門檻（張）
 BIAS_FLAG_PCT = 15        # 20 日乖離 > 此值加「乖離大」風險旗標
 FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一致）
-HISTORY_MAX = 90          # picks 留檔最多天數
+# picks 留檔天數。⚠️ 2026-07-25 從 90 改成 3650（約 10 年）：這份 picks_history.json 是
+# **系統實際推薦紀錄的唯一來源**，也是未來唯一能回答「這套選股真的有用嗎」的真實績效證據
+# （回測是模擬、這個是實績）。90 天上限會讓超過三個月的紀錄被永久刪掉、**之後補不回來**。
+# 一天一筆、每筆 5 檔，10 年也只有約 2500 筆，檔案大小不是問題。
+HISTORY_MAX = 3650
 
 
 GATE_SIGNAL = "rs_confirmed_60_120"   # 入場門檻訊號（強勢雙確認）
@@ -163,10 +167,18 @@ def update_picks_history(opp):
             hist = {}
     entries = [e for e in hist.get("entries", []) if e.get("date") != opp["date"]]
     if opp["date"]:
+        # 留下「當時的完整脈絡」而不只有代號與收盤價：事後檢討時要能回答「那天為什麼推它、
+        # 當時大盤如何、門檻有沒有套上」。這些欄位當天不存，日後永遠補不回來
+        # （2026-07-25 加：原本只存 id/name/close/score）。
         entries.append({
             "date": opp["date"],
+            "gate": opp.get("gate"),                       # 門檻是否套用、候選池多大
             "picks": [{"id": p["id"], "name": p["name"],
-                       "close": p["close"], "score": p["score"]} for p in opp["picks"]],
+                       "close": p["close"], "score": p["score"],
+                       "reasons": p.get("reasons"),        # 當時的加權訊號（權重會隨重算改變）
+                       "rs20": p.get("rs20"),
+                       "risk_flags": p.get("risk_flags"),
+                       "revenue_yoy": p.get("revenue_yoy")} for p in opp["picks"]],
         })
     entries.sort(key=lambda e: e["date"])
     entries = entries[-HISTORY_MAX:]

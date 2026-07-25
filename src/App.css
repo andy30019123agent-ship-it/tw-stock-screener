@@ -353,7 +353,12 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-scroll { overflow-x: auto; }
 .strategy-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .strategy-table th, .strategy-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.strategy-table th:first-child, .strategy-table td:first-child { text-align: left; font-weight: 600; }
+/* 首欄 sticky：手機上這些表都要橫捲（內容 ~628px、容器 ~301px），捲右邊時策略名會整欄消失，
+   剩下一排無標籤的數字。照抄 .wq-sig 已驗證過的做法（2026-07-25 實測發現）。 */
+.strategy-table th:first-child, .strategy-table td:first-child {
+  text-align: left; font-weight: 600;
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+}
 .strategy-table th { font-size: .8125rem; font-weight: 700; color: var(--ink-muted); }
 .strategy-table td { font-size: .875rem; color: var(--ink-body); }
 .strategy-table td.good { color: var(--up); font-weight: 700; }
@@ -389,8 +394,12 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .ma-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .ma-list li { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px;
   background: color-mix(in srgb, var(--primary) 5%, transparent); }
-.ma-name { font-weight: 600; display: flex; align-items: center; gap: 6px; color: var(--ink); }
-.ma-tag { font-size: .7rem; font-weight: 700; color: var(--primary);
+/* 訊號名與徽章禁止逐字斷行：375 寬時被 .ma-apply 的 min-width 擠壓會斷成「縮口帶量突／破」
+   「全天／候」（中文可在任何字元間斷行，2026-07-25 實測）。名稱允許整體換行、但不准斷字。 */
+.ma-name { font-weight: 600; display: flex; align-items: center; gap: 6px; color: var(--ink);
+  flex-wrap: wrap; min-width: 0; }
+.ma-label { white-space: nowrap; }
+.ma-tag { font-size: .7rem; font-weight: 700; color: var(--primary); white-space: nowrap; flex: none;
   background: color-mix(in srgb, var(--primary) 14%, transparent); padding: 1px 7px; border-radius: 999px; }
 .ma-exc { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ma-exc.good { color: var(--up); }
@@ -429,7 +438,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 /* 組合名稱欄：允許在「＋」之間折行（white-space: normal），但每個訊號名自己不准斷
    （.combo-sig nowrap）。min-width 是必要的——加了「過驗證」欄後其他欄都是 nowrap，
    表格會把這欄壓到最小寬度，中文就變成一個字一行的直條（2026-07-25 實測踩到）。 */
-.combo-table .combo-name { text-align: left; font-weight: 600; white-space: normal; min-width: 8.5em; }
+.combo-table .combo-name {
+  text-align: left; font-weight: 600; white-space: normal; min-width: 8.5em;
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+}
 .combo-sig { white-space: nowrap; }
 .combo-table th:first-child { text-align: left; }
 .combo-table td.good { color: var(--up); font-weight: 700; }
@@ -705,19 +717,12 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 }
 .sort-opt.on { background: var(--primary-tint); border-color: var(--primary); color: var(--primary-strong); }
 
-/* ── 手機卡片列表 & 排序列（桌機隱藏）──────── */
-.sort-bar, .card-list { display: none; }
-
-.sort-bar { align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
-.sort-bar-label { font-size: .875rem; color: var(--ink-muted); margin-right: 2px; font-weight: 600; }
-.sort-chip {
-  background: var(--surface); border: 1px solid var(--border);
-  color: var(--ink-muted); border-radius: var(--r-pill);
-  padding: 10px 16px; font-size: .875rem; font-weight: 700; min-height: 44px;
-}
-.sort-chip.on { background: var(--primary-tint); border-color: var(--primary); color: var(--primary-strong); }
-
-.card-list { flex-direction: column; gap: 16px; margin-top: 24px; }
+/* ── 手機卡片列表（桌機隱藏）──────── */
+/* 2026-07-25 刪除 .sort-bar / .sort-bar-label / .sort-chip / .sort-chip.on：
+   那是 07-24 之前「清單前一排參差的 10 顆排序 pill」的樣式，已被工具列「排序▾」＋
+   底部 sheet（.sort-sheet / .sort-opt）取代，JSX 全文零引用。
+   ⚠️ .card-list 不可刪——ResultTable.jsx:105 的手機卡片容器還在用。 */
+.card-list { display: none; flex-direction: column; gap: 16px; margin-top: 24px; }
 .stock-card {
   display: flex; flex-direction: column; gap: 12px;
   width: 100%; text-align: left;
