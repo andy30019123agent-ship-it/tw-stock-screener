@@ -77,26 +77,45 @@ def main():
         print(f"   既有涵蓋範圍：{prev_start} ~ {prev_end}")
 
     total_events, total_sids = 0, set()
+    # 🔑 涵蓋範圍只能推進到「連續成功」的最後一段。抓取失敗或回 0 筆就停止推進——
+    # 否則會標成「這段查過了」但其實是空的，正是本檔開頭警告的「看起來成功但有空洞」。
+    # 台股 2 個月區間幾乎不可能真的一筆除權息都沒有（7~8 月更是除息旺季），回 0 筆要當異常看。
+    covered_until = None      # 連續成功推進到哪
+    holes = []                # 有疑問的區間，最後一次列出來
     for i, (cs, ce) in enumerate(chunks, 1):
+        ok = True
         try:
             events = ms.fetch_ex_dividend_events(cs, ce)
         except Exception as e:
             print(f"  ⚠️ {cs}~{ce} 抓取失敗：{e}")
-            events = {}
+            events, ok = {}, False
         n = sum(len(v) for v in events.values())
+        if ok and n == 0:
+            print(f"  ⚠️ {cs}~{ce} 回 0 筆——2 個月完全沒有除權息不合常理，很可能是被限流回空")
+            ok = False
         total_events += n
         total_sids |= set(events.keys())
-        hs.append_dividends(div_hist, events)
+        hs.append_dividends(div_hist, events)   # 有抓到多少就存多少（只加不覆蓋既有）
         print(f"   [{i}/{len(chunks)}] {cs}~{ce}：{n} 筆事件、{len(events)} 檔")
-        # 涵蓋範圍隨進度往前推，就算中途中斷也知道「已經查到哪」
-        new_start = min(prev_start, start_iso) if prev_start else start_iso
-        hs.set_div_coverage(div_hist, new_start, ce)
+        if not ok:
+            holes.append(f"{cs}~{ce}")
+        elif not holes:
+            covered_until = ce   # 只在「從頭到這裡都成功」時推進；出現過洞就不再往後標
         hs.save(DIV_PATH, div_hist)
         if i < len(chunks):
             time.sleep(args.sleep)
 
-    print(f"\n✅ 回填完成：{total_events} 筆除權息事件、{len(total_sids)} 檔（本次查詢涵蓋的區間）")
-    print(f"   dividends.json coverage：{hs.get_div_coverage(div_hist)}")
+    # 起日：跟既有涵蓋取聯集的較早者（既有若是 2026-01，補完 2024-08 後應該記成 2024-08）
+    if covered_until:
+        new_start = min(prev_start, start_iso) if prev_start else start_iso
+        hs.set_div_coverage(div_hist, new_start, covered_until)
+        hs.save(DIV_PATH, div_hist)
+
+    print(f"\n{'⚠️ 部分區間有問題' if holes else '✅'} 回填：{total_events} 筆除權息事件、{len(total_sids)} 檔")
+    print(f"   已標記涵蓋：{hs.get_div_coverage(div_hist)}")
+    if holes:
+        print(f"   🚨 這些區間沒抓到東西，涵蓋範圍不會推進過去，請重跑：{', '.join(holes)}")
+        raise SystemExit(1)   # 讓 workflow 紅燈，不要以為補完了
 
 
 if __name__ == "__main__":
