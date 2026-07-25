@@ -1,9 +1,14 @@
 import { useState, useMemo } from 'react'
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react'
+import { comboReliability, sigTier, TIER_MARK, OOS_BADGE } from '../lib/oos'
 
 // 組合戰績排行榜：把「多個訊號同時成立」的回測戰績（signal_combos.json）依平均超額排名，
 // 讓使用者一眼找到最高勝率的組合；可點策略 chip 篩選只看含該策略的組合；桌機另給熱力圖。
-export default function ComboBoard({ combos }) {
+//
+// 可靠度標記（Andy 2026-07-25 選「保留全部＋標記不可靠」）：排行榜頂端天生會被「小樣本 ×
+// 樣本外撐不住的訊號」佔據（勝率 83% / 樣本 6 筆那種），但**不過濾也不重排**——只把每個成分
+// 訊號的樣本外驗證結果標在名稱旁，讓他自己判斷。判準與策略戰績表共用 ../lib/oos。
+export default function ComboBoard({ combos, weights = null }) {
   const [open, setOpen] = useState(false)
   const [sel, setSel] = useState([])   // 選中的訊號 → 只看「同時包含這些」的組合
 
@@ -52,12 +57,26 @@ export default function ComboBoard({ combos }) {
           <b>「穩健下界」欄</b>是樣本數感知的保守估計（樣本少/波動大會被壓低）——<b>平均超額高、但穩健下界也高</b>的才是「又高又穩」；
           若平均超額很高但穩健下界很低甚至負的，多半是小樣本巧合。樣本 &lt;30 標「參考」不隱藏，自行斟酌。
         </p>
+        <p className="combo-intro combo-legend">
+          <b>成分訊號後面的記號＝該訊號的樣本外驗證結果</b>（滑過/長按看說明）：無記號＝通過驗證；
+          <span className="sig-weak">⚠</span> ＝樣本外撐不住（過擬合或大幅縮水）；
+          <span className="sig-unknown">?</span> ＝樣本太少還無法判斷。
+          「過驗證」欄顯示這個組合有幾個成分通過。<b>排行榜頂端常常是「小樣本 × 帶記號的訊號」堆出來的高勝率</b>，
+          不代表未來會重現——這裡不過濾也不重排，資訊都給你，自己斟酌。
+        </p>
 
         <div className="combo-filter">
-          {allSigs.map(s => (
-            <button key={s} className={`combo-chip ${sel.includes(s) ? 'on' : ''}`}
-              onClick={() => toggle(s)} aria-pressed={sel.includes(s)}>{sigLabel[s]}</button>
-          ))}
+          {allSigs.map(s => {
+            const tm = TIER_MARK[sigTier(weights?.signals?.[s])]
+            const st = weights?.signals?.[s]?.oos?.status
+            return (
+              <button key={s} className={`combo-chip ${sel.includes(s) ? 'on' : ''}`}
+                onClick={() => toggle(s)} aria-pressed={sel.includes(s)}
+                title={st ? `樣本外驗證：${OOS_BADGE[st]?.[0]}——${OOS_BADGE[st]?.[2]}` : undefined}>
+                {sigLabel[s]}{tm && <sup className={tm.cls}>{tm.mark}</sup>}
+              </button>
+            )
+          })}
           {sel.length > 0 && <button className="combo-clear" onClick={() => setSel([])}>清除</button>}
         </div>
 
@@ -67,23 +86,41 @@ export default function ComboBoard({ combos }) {
               <th>組合</th><th>平均超額</th>
               <th title="樣本數感知的保守下界（平均超額 − 1 標準誤）。樣本越少/越波動壓越低，用來分辨「又高又穩」與「小樣本巧合」">穩健下界</th>
               <th>跑贏率</th><th>樣本</th>
+              <th title="這個組合有幾個成分訊號通過樣本外驗證（在沒訓練過的時期也站得住）。分母＝成分數">過驗證</th>
             </tr></thead>
             <tbody>
               {filtered.map(c => {
                 const weak = c.samples < 30
+                const rel = comboReliability(c.sigs, weights)
                 return (
-                  <tr key={c.sigs.join('+')}>
-                    <td className="combo-name">{c.labels.join('＋')}</td>
+                  <tr key={c.sigs.join('+')} className={rel.overall === 'weak' ? 'combo-unreliable' : ''}>
+                    <td className="combo-name">
+                      {rel.parts.map((p, i) => {
+                        const tm = TIER_MARK[p.tier]
+                        return (
+                          <span key={p.sig}>
+                            {i > 0 && '＋'}
+                            {/* combo-sig 必須 nowrap：欄寬被擠窄時中文會逐字斷行，整欄變成一個字寬的直條 */}
+                            <span className="combo-sig" title={p.label ? `樣本外驗證：${p.label}——${p.title}` : undefined}>
+                              {c.labels[i]}{tm && <sup className={tm.cls}>{tm.mark}</sup>}
+                            </span>
+                          </span>
+                        )
+                      })}
+                    </td>
                     <td className={c.avg_excess > 0 ? 'good' : c.avg_excess < 0 ? 'bad' : ''}>
                       {c.avg_excess >= 0 ? '+' : ''}{c.avg_excess}pp</td>
                     <td className={`combo-lb ${c.excess_lb > 0 ? 'good' : c.excess_lb < 0 ? 'bad' : ''}`}>
                       {c.excess_lb != null ? `${c.excess_lb >= 0 ? '+' : ''}${c.excess_lb}pp` : '—'}</td>
                     <td>{Math.round(c.excess_win_rate * 100)}%</td>
                     <td className={weak ? 'combo-weak' : ''}>{c.samples}{weak && <small> 參考</small>}</td>
+                    <td className={`combo-rel combo-rel-${rel.overall}`}
+                      title={rel.parts.map((p, i) => `${c.labels[i]}：${p.label || '無資料'}`).join('\n')}>
+                      {rel.pass}/{rel.total}</td>
                   </tr>
                 )
               })}
-              {!filtered.length && <tr><td colSpan={5} className="combo-empty">這個組合沒有足夠樣本（&lt;{minS} 筆）</td></tr>}
+              {!filtered.length && <tr><td colSpan={6} className="combo-empty">這個組合沒有足夠樣本（&lt;{minS} 筆）</td></tr>}
             </tbody>
           </table>
         </div>

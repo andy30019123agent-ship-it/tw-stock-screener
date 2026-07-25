@@ -31,6 +31,12 @@
   --down-bg:#E7F4EE;
   --flat:#8A7A85;
 
+  /* 品質/可靠度警示（非行情語意）：MASTER 鐵則規定紅綠只給漲跌，所以「策略可不可靠」這種
+     品質判斷一律走琥珀系，避免同一列裡出現「紅=漲=好」與「綠=穩健=好」的互相矛盾。 */
+  --warn:#7A5200;
+  --warn-bg:#FBF0D8;
+  --warn-border:#E8CE94;
+
   /* ===== 裝飾色塊（僅限 hero／空狀態，資料區不可用）===== */
   --deco-pink:#FFB1CC;
   --deco-lavender:#E7C6F5;
@@ -351,12 +357,14 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-table td.good { color: var(--up); font-weight: 700; }
 .strategy-table td.bad { color: var(--down); font-weight: 700; }
 .strategy-note { margin-top: 8px; font-size: .8125rem; line-height: 1.6; color: var(--ink-muted); }
-/* 樣本外(OOS)穩健度徽章：穩健=綠、警示=琥珀、過擬合=紅、資料不足=灰 */
+/* 樣本外(OOS)穩健度徽章。⚠️ 原本穩健=綠、過擬合=紅，與同一列「紅漲綠跌」的 .good/.bad
+   直接打架（同列出現紅色的「+2.13pp 好消息」旁邊掛綠色的「穩健 好消息」）。依 MASTER
+   鐵則「紅綠只承擔行情語意」改為：穩健=粉（UI 認證）、警示/過擬合=琥珀、資料不足=灰。 */
 .oos-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem;
   font-weight: 700; line-height: 1.5; white-space: nowrap; cursor: help; }
-.oos-badge.oos-robust { color: var(--down); background: var(--down-bg); }
-.oos-badge.oos-warn { color: #9A6A00; background: #FBF0D8; }
-.oos-badge.oos-bad { color: var(--up); background: var(--up-bg); }
+.oos-badge.oos-robust { color: var(--primary-strong); background: var(--surface-tint); }
+.oos-badge.oos-warn { color: var(--warn); background: var(--warn-bg); }
+.oos-badge.oos-bad { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-border); }
 .oos-badge.oos-muted { color: var(--ink-muted); background: var(--surface-2, rgba(0,0,0,.05)); }
 .strategy-table tr.exit-control { background: color-mix(in srgb, var(--primary) 7%, transparent); }
 .strategy-table tr.exit-control td:first-child { font-weight: 700; }
@@ -413,7 +421,11 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .combo-table th, .combo-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .combo-table th { position: sticky; top: 0; background: var(--surface); font-size: .8125rem; font-weight: 700; color: var(--ink-muted); }
 .combo-table td { font-size: .875rem; color: var(--ink-body); }
-.combo-table .combo-name { text-align: left; font-weight: 600; white-space: normal; }
+/* 組合名稱欄：允許在「＋」之間折行（white-space: normal），但每個訊號名自己不准斷
+   （.combo-sig nowrap）。min-width 是必要的——加了「過驗證」欄後其他欄都是 nowrap，
+   表格會把這欄壓到最小寬度，中文就變成一個字一行的直條（2026-07-25 實測踩到）。 */
+.combo-table .combo-name { text-align: left; font-weight: 600; white-space: normal; min-width: 8.5em; }
+.combo-sig { white-space: nowrap; }
 .combo-table th:first-child { text-align: left; }
 .combo-table td.good { color: var(--up); font-weight: 700; }
 .combo-table td.bad { color: var(--down); font-weight: 700; }
@@ -421,6 +433,18 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .combo-weak { color: var(--ink-muted); }
 .combo-weak small { font-size: .6875rem; }
 .combo-empty { text-align: center; color: var(--ink-muted); padding: 16px; }
+/* 成分訊號可靠度標記（琥珀系＝品質警示，不用紅綠避免與漲跌語意打架）。
+   不過濾也不重排任何組合，只標出「這一項的樣本外驗證沒過／樣本不足」。 */
+.combo-legend { border-left: 2px solid var(--warn-border); padding-left: 8px; }
+.sig-weak, .sig-unknown { font-size: .75rem; font-weight: 800; margin-left: 1px; cursor: help; }
+.sig-weak { color: var(--warn); }
+.sig-unknown { color: var(--ink-muted); }
+.combo-table td.combo-rel { font-weight: 700; font-size: .8125rem; cursor: help; }
+.combo-rel-pass { color: var(--primary-strong); }
+.combo-rel-weak { color: var(--warn); }
+.combo-rel-unknown { color: var(--ink-muted); }
+/* 有成分「樣本外撐不住」的整列淡琥珀底：掃排行榜時一眼看出哪幾列要打折看 */
+.combo-table tr.combo-unreliable { background: color-mix(in srgb, var(--warn-bg) 55%, transparent); }
 
 /* 熱力圖：桌機才顯示（手機用排行榜就好，矩陣太擠）*/
 .combo-heat-wrap { display: none; }

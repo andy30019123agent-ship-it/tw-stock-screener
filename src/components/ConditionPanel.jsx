@@ -4,6 +4,7 @@ import {
   Rocket, BookOpen, Gem, Sparkles, Landmark, TrendingUp,
 } from 'lucide-react'
 import ComboBoard from './ComboBoard'
+import { oosBadge, sigTier, TIER_MARK } from '../lib/oos'
 
 const isMobile = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
@@ -50,24 +51,7 @@ function presetScore(key, weights) {
   const s = presetStat(key, weights)
   return s ? s.avg_excess : -Infinity
 }
-// 樣本外(OOS)穩健度徽章：把回測狀態翻成白話。robust＝訓練期看好、沒看過的日子也站得住；
-// overfit＝訓練期看好但樣本外變負（等於背答案）；其餘為縮水/挑市況/樣本不足。
-const OOS_BADGE = {
-  robust: ['穩健', 'oos-robust', '樣本外仍為正、效力保留過半、跨多個市況、樣本足'],
-  regime_specific: ['挑市況', 'oos-warn', '樣本外為正，但只有少數市況合格，換市況可能失靈'],
-  fragile: ['脆弱', 'oos-warn', '樣本外效力縮水一半以上，不太穩'],
-  severe_shrinkage: ['大幅縮水', 'oos-bad', '樣本外只剩不到四分之一，多半是過擬合'],
-  overfit: ['過擬合', 'oos-bad', '訓練期看好、樣本外卻變負 → 等於背答案，不是真本事'],
-  insufficient_oos: ['資料不足', 'oos-muted', '樣本外事件太少或集中在少數日期，還無法判斷'],
-  insufficient_history: ['資料不足', 'oos-muted', '全歷史樣本 <30，無法做樣本外驗證'],
-  never_qualified: ['未達標', 'oos-muted', '沒有任何一段訓練期看好過這個策略'],
-  no_selected_oos_events: ['資料不足', 'oos-muted', '合格期間內樣本外剛好沒有事件'],
-  no_events: ['—', 'oos-muted', '此策略沒有回測事件'],
-}
-function oosBadge(stat) {
-  const b = OOS_BADGE[stat?.oos?.status]
-  return b ? { text: b[0], cls: b[1], title: b[2] } : null
-}
+// OOS 穩健度徽章的判準已抽到 ../lib/oos（組合戰績排行榜共用同一套，避免兩張表對同一訊號不一致）。
 
 // Phase B 橫斷面新訊號（相對強弱＋產業輪動）——只做回測展示、不進 Top5 選股、不做即時篩選
 // （即時篩選需橫斷面全市場排名，網頁端沒有；戰績來自後端回測）
@@ -120,12 +104,24 @@ export default function ConditionPanel({
           <div className="preset-row">
             {orderedPresets.map((p, i) => {
               const st = presetStat(p.key, weights)
+              // 排序純看歷史平均超額，所以「樣本外沒過」的策略也可能排第一、字最大（例：填息快
+              // IS +3.27pp 但 6 個時段只有 1 個合格）。不重排也不隱藏（Andy 要保留全部自行判斷），
+              // 但一定要在按鈕上標記，否則「排最前＋數字最大」等於在推薦一個撐不住的策略。
+              const tm = TIER_MARK[sigTier(st)]
+              // st 為 null＝這個策略連回測事件都沒有（例：籌碼類，回測歷史只有 20 天籌碼資料），
+              // 此時 oosBadge 也是 null，不可直接內插否則提示會變成「undefined——undefined」。
+              const ob = oosBadge(st)
+              const mark = !tm ? undefined
+                : ob ? `⚠ 這個戰績的樣本外驗證沒過：${ob.text}——${ob.title}`
+                  : '這個策略還沒有回測資料，無法判斷可靠度'
               return (
                 <button key={p.key} className={`preset-chip ${activePreset === p.key ? 'on' : ''}`} style={{ '--i': i }}
-                  onClick={() => applyPreset(p.key, p.patch)}>
+                  onClick={() => applyPreset(p.key, p.patch)}
+                  title={mark}>
                   <p.icon size={14} strokeWidth={1.75} />{p.label}
                   {st && <span className={`preset-score ${st.avg_excess > 0 ? 'good' : st.avg_excess < 0 ? 'bad' : ''}`}>
                     {st.avg_excess >= 0 ? '+' : ''}{st.avg_excess}<small>pp</small></span>}
+                  {tm && <sup className={tm.cls}>{tm.mark}</sup>}
                 </button>
               )
             })}
@@ -171,7 +167,7 @@ export default function ConditionPanel({
               </p>
             </details>
           )}
-          <ComboBoard combos={combos} />
+          <ComboBoard combos={combos} weights={weights} />
 
           {/* Phase B：相對強弱＋產業輪動新訊號的樣本外驗證（研究展示，不進 Top5、不做即時篩選） */}
           {weights?.signals && XSECT_SIGNALS.some(s => (weights.signals[s.key]?.samples || 0) > 0) && (
