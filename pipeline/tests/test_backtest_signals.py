@@ -219,7 +219,12 @@ def test_combo_stats_兩兩組合超額樣本與回傳結構():
     assert len(ma_bo) == 1
     c = ma_bo[0]
     assert c["samples"] == 3
-    assert c["avg_excess"] == round((0.05 + 0.03 - 0.01) / 3 * 100, 2)  # 2.33pp
+    # gross_excess＝毛超額（手算對照）；avg_excess 自 2026-07-25 起是**成本後**超額，
+    # 與單訊號權重同一把尺（同一頁不能兩套尺，否則會拿組合的毛值去比單訊號的淨值）。
+    assert c["gross_excess"] == round((0.05 + 0.03 - 0.01) / 3 * 100, 2)  # 2.33pp
+    net_hand = sum(bt._apply_cost(r) for r in (0.05, 0.03, -0.01)) / 3 * 100
+    assert c["avg_excess"] == round(net_hand, 2)
+    assert c["avg_excess"] < c["gross_excess"]
     assert c["excess_win_rate"] == round(2 / 3, 4)
     assert "糾結轉強" in c["labels"] and "爆量突破" in c["labels"]
     assert not any(len(x["sigs"]) < 2 for x in combos)
@@ -257,8 +262,52 @@ def test_combo_stats_穩健度下界壓低小樣本波動():
     by_date = {"d1": [0.0], "d2": [0.0]}
     combos, _ = bt.combo_stats(events, by_date, min_sample=1)
     c = combos[0]
-    assert c["avg_excess"] == 5.0                   # (20-10)/2 = 5pp
+    assert c["gross_excess"] == 5.0                 # 毛：(20-10)/2 = 5pp
+    assert c["avg_excess"] < c["gross_excess"]      # 成本後一定更低
     assert c["excess_lb"] < c["avg_excess"]         # 波動大 → 下界被壓低
+
+
+def test_combo_stats_日期群聚校正標準誤():
+    """同一天成立的事件高度相關（同一個大盤環境、同一波行情）。當成獨立樣本會低估標準誤、
+    高估顯著性。改成先取每日平均、再對日平均算 SE（cluster-robust）。
+
+    構造：兩天，每天 3 筆完全相同的超額 → 天內變異為 0、跨日變異才是真的不確定性。
+    若把 6 筆當獨立樣本，SE 會被 sqrt(6) 除而虛小；群聚校正只被 sqrt(2 天) 除。"""
+    ev = []
+    for sid, r in (("1", 0.10), ("2", 0.10), ("3", 0.10)):
+        ev.append(_cev("d1", sid, 0, r, ["signal_ma", "signal_breakout"]))
+    for sid, r in (("4", -0.02), ("5", -0.02), ("6", -0.02)):
+        ev.append(_cev("d2", sid, 0, r, ["signal_ma", "signal_breakout"]))
+    by_date = {"d1": [0.0], "d2": [0.0]}
+    c = bt.combo_stats(ev, by_date, min_sample=1)[0][0]
+    assert c["samples"] == 6 and c["n_days"] == 2
+    assert c["se_kind"] == "clustered"
+    # 日平均 = +10pp 與 −2pp → 毛均值 4pp；跨日 SE = std([10,-2])/sqrt(2)
+    assert c["gross_excess"] == 4.0
+    assert c["avg_excess"] < 4.0            # 成本後（來回 0.785%）必然更低
+    # 天內無變異 → 若當成獨立樣本 SE 會接近 0、下界幾乎等於平均；群聚校正後要明顯被壓低
+    assert c["excess_lb"] < c["avg_excess"] - 1.0, "群聚校正後下界要被顯著壓低"
+    assert abs(c["t_stat"]) < 2.0, f"只有 2 天的樣本 t 值不該很大，實際 {c['t_stat']}"
+
+
+def test_combo_stats_單日樣本退回未校正並標記():
+    """全部事件都在同一天 → 算不出跨日變異，退回 naive SE 並標記，不能假裝有校正。"""
+    ev = [_cev("d1", str(i), 0, 0.05 + i * 0.01, ["signal_ma", "signal_breakout"]) for i in range(4)]
+    c = bt.combo_stats(ev, {"d1": [0.0]}, min_sample=1)[0][0]
+    assert c["n_days"] == 1 and c["se_kind"] == "naive"
+
+
+def test_combo_stats_多重比較門檻隨組合數變嚴():
+    """從 N 組裡挑最高，本來就會挑到運氣好的。Bonferroni 門檻要隨檢定數變嚴。"""
+    assert round(bt._z_for_bonferroni(1), 2) == 1.96      # 單一檢定＝教科書值
+    z36, z680 = bt._z_for_bonferroni(36), bt._z_for_bonferroni(680)
+    assert 3.1 < z36 < 3.3 and 3.9 < z680 < 4.1
+    assert z680 > z36 > bt._z_for_bonferroni(1)
+    # 小樣本高波動的組合不該過門檻
+    ev = [_cev("d1", "1", 0, 0.20, ["signal_ma", "signal_breakout"]),
+          _cev("d2", "2", 0, -0.10, ["signal_ma", "signal_breakout"])]
+    c = bt.combo_stats(ev, {"d1": [0.0], "d2": [0.0]}, min_sample=1)[0][0]
+    assert c["survives_mc"] is False
 
 
 # ── Phase A：walk-forward 樣本外驗證（walk_forward_oos）────────────────────

@@ -19,7 +19,7 @@ import sys
 import json
 import bisect
 import datetime as dt
-from math import log, exp, floor, sqrt
+from math import log, exp, floor, sqrt, erf
 from collections import Counter
 from itertools import combinations
 
@@ -56,7 +56,10 @@ ENGINE_SIGNALS = [
 ]
 # 回測＋勝率榜「展示」涵蓋的訊號＝引擎訊號 ＋ 只做戰績展示、不進引擎的（多頭排列/填息快）。
 # 多頭排列太常見，若進引擎會亂洗 Top5；填息快是狀態型訊號。兩者只給使用者看戰績，不改選股。
-DISPLAY_ONLY_SIGNALS = ["bull_aligned", "fill_fast"]
+# signal_shishi＝「5 招任一成立」的母體。加它是為了讓前端「小詩選股」按鈕能顯示**整批**的
+# 戰績，而不是「5 招裡最好的那一招」（那個數字系統性偏高，見 presetStat 的 _isBest 標記）。
+# 只做展示、不進引擎——引擎已經個別計分 5 招，再加母體會重複計算同一批事件。
+DISPLAY_ONLY_SIGNALS = ["bull_aligned", "fill_fast", "signal_shishi"]
 # Phase B 的橫斷面訊號（相對強弱 RS ＋ 產業輪動）：也只先做展示＋OOS 驗證，不進引擎。
 # 這些是「跨股票比較」出來的（個股 N 日報酬在全市場的百分位），不能在單股 pr[:i+1] 內算，
 # 要先建 PIT 橫斷面 cache（build_xsect_cache）再由 collect_events 查詢，見下方 XSECT_SIGNALS。
@@ -71,7 +74,7 @@ SIGNAL_LABELS = {
     "sn_volume_support": "大量撐",
     "foreign_buy": "外資連買", "trust_buy": "投信連買",
     "holder_rising": "千張大戶↑", "undervalued": "同業低估",
-    "bull_aligned": "多頭排列", "fill_fast": "填息快",
+    "bull_aligned": "多頭排列", "fill_fast": "填息快", "signal_shishi": "小詩選股（任一招）",
     "rs_strong_60": "強勢股60日", "rs_confirmed_60_120": "強勢雙確認", "industry_hot": "熱門產業",
 }
 
@@ -105,6 +108,9 @@ def signal_flags(ind):
         # 展示型（不進引擎）：多頭排列＝MA5>10>20>60；填息快＝已填息且天數 ≤10
         "bull_aligned": bool(ind.get("bull_aligned")),
         "fill_fast": _fill_fast(ind.get("div_fill")),
+        # 小詩 5 招母體（任一成立）。build_data 直接給 signal_shishi；回測時 compute_indicators
+        # 的輸出也有這個鍵，兩條路徑一致。
+        "signal_shishi": bool(ind.get("signal_shishi")),
         # 橫斷面訊號：回測時算不出來（要跨股票比較），由 collect_events 用 _xsect_flags 覆寫；
         # 每日選股時 build_data 已把旗標寫進 results，所以這裡直接讀得到。兩條路徑都對得上。
         "rs_strong_60": bool(ind.get("rs_strong_60")),
@@ -508,6 +514,24 @@ COMBO_MAX_SIZE = 3      # 最多幾個訊號同時成立（兩兩＋三個一組
 COMBO_TOP = 120         # 依平均超額取前 N（控制檔案大小）
 
 
+def _z_for_bonferroni(n_tests, alpha=0.05):
+    """雙尾 Bonferroni 校正後所需的 z 門檻（用 math.erf ＋二分逼近，不依賴 scipy）。
+
+    為什麼需要：組合排行榜同時檢定數百個組合，用單一檢定的門檻（z≈1.96）會讓一堆純屬巧合的
+    組合看起來「顯著」。N=680 時所需 z 約 3.9——門檻高很多，這正是「從一堆組合裡挑最高」
+    應付的代價。不過濾任何組合（Andy 明確要保留），只標記有沒有過這道門檻。
+    """
+    target = 1 - alpha / (2 * max(1, n_tests))
+    lo, hi = 0.0, 10.0
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if 0.5 * (1 + erf(mid / sqrt(2))) < target:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
 def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX_SIZE,
                 top=COMBO_TOP, cooldown=FORWARD):
     """算「多個訊號同時成立」的組合戰績。用 raw_fired（當天原始同時成立、不受單訊號冷卻影響，
@@ -525,7 +549,11 @@ def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX
         if len(raw) < 2:
             continue
         sid, i = e["sid"], e.get("i", 0)
-        exc = e["ret"] - bench.get(e["date"], 0.0)
+        b = bench.get(e["date"], 0.0)
+        exc = e["ret"] - b
+        # 成本後超額：同一頁不能兩套尺——單訊號的權重與戰績都已改看成本後（2026-07-25），
+        # 組合榜若還顯示毛超額，使用者會拿 +4.61pp 的組合去跟 +0.04pp 的單訊號比較。
+        net_exc = _apply_cost(e["ret"]) - b
         win, exc_win = e["ret"] > 0, exc > 0
         for size in range(2, min(max_size, len(raw)) + 1):
             for combo in combinations(raw, size):
@@ -534,28 +562,58 @@ def combo_stats(events, by_date, min_sample=COMBO_MIN_SAMPLE, max_size=COMBO_MAX
                     continue                          # 同一波組合冷卻期內不重複採計
                 last_fire[key] = i
                 st = acc.setdefault(combo, {"count": 0, "exc_sum": 0.0, "exc_sq": 0.0,
-                                            "exc_wins": 0, "wins": 0, "ret_sum": 0.0})
+                                            "exc_wins": 0, "wins": 0, "ret_sum": 0.0,
+                                            "net_exc_sum": 0.0, "by_date": {}})
                 st["count"] += 1
                 st["exc_sum"] += exc
                 st["exc_sq"] += exc * exc
+                st["net_exc_sum"] += net_exc
                 st["ret_sum"] += e["ret"]
                 st["exc_wins"] += exc_win
                 st["wins"] += win
+                # 日期群聚：同一天成立的事件高度相關（同一個大盤環境、同一波行情），
+                # 當成獨立樣本會低估標準誤、高估顯著性。留每日資料以算群聚校正後的 SE。
+                # 統計檢定（下界/t 值）一律用成本後超額——那才是實際能拿到的邊際。
+                d = st["by_date"].setdefault(e["date"], [0, 0.0])
+                d[0] += 1
+                d[1] += net_exc
+
+    # 多重比較門檻：從 N 組裡挑最高，本來就會挑到運氣好的。Bonferroni 雙尾 α=0.05 所需的 z。
+    z_need = _z_for_bonferroni(max(1, len(acc)))
 
     def to_row(combo, st):
         c = st["count"]
-        mean = st["exc_sum"] / c
-        var = max(0.0, st["exc_sq"] / c - mean * mean)
-        se = (var ** 0.5) / (c ** 0.5)              # 標準誤
+        mean = st["exc_sum"] / c                      # 毛超額（僅供對照）
+        net_mean = st["net_exc_sum"] / c              # 成本後超額＝排序與檢定依據
+        # 群聚校正 SE：先取每日平均，再對「日平均」算標準誤（cluster-robust 的標準做法）。
+        # 只有 1 天的組合算不出跨日變異 → 退回未校正 SE 並標記。
+        day_means = [s / n for n, s in st["by_date"].values()]
+        nd = len(day_means)
+        if nd >= 2:
+            dm = sum(day_means) / nd
+            dvar = sum((x - dm) ** 2 for x in day_means) / (nd - 1)
+            se = (dvar ** 0.5) / (nd ** 0.5)
+            se_kind = "clustered"
+        else:
+            var = max(0.0, st["exc_sq"] / c - mean * mean)
+            se = (var ** 0.5) / (c ** 0.5)
+            se_kind = "naive"
+        t = (net_mean / se) if se > 0 else 0.0
         return {
             "sigs": list(combo),
             "labels": [SIGNAL_LABELS.get(s, s) for s in combo],
-            "avg_excess": round(mean * 100, 2),
-            "excess_lb": round((mean - se) * 100, 2),   # 穩健度：~1SE 下界，樣本越少/越波動壓越低
+            "avg_excess": round(net_mean * 100, 2),      # ← 主要顯示值改成成本後超額
+            "gross_excess": round(mean * 100, 2),        # 毛超額留著供對照
+            "excess_lb": round((net_mean - se) * 100, 2),   # 穩健度：~1SE 下界（成本後、群聚校正）
             "excess_win_rate": round(st["exc_wins"] / c, 4),
             "win_rate": round(st["wins"] / c, 4),
             "avg_ret": round(st["ret_sum"] / c * 100, 2),
             "samples": c,
+            "n_days": nd,                 # 樣本分佈在幾個交易日（1 天 = 全部來自同一波行情）
+            "se_kind": se_kind,
+            "t_stat": round(t, 2),
+            # 過了多重比較校正＝這個組合的優勢不太可能只是「從 N 組裡挑最高」挑出來的巧合
+            "survives_mc": bool(t >= z_need),
         }
 
     rows = [to_row(combo, st) for combo, st in acc.items() if st["count"] >= min_sample]
