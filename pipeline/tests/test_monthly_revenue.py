@@ -188,3 +188,20 @@ def test_snapshot_is_written_even_on_cache_hit(tmp_path, monkeypatch):
                         lambda status=None: (_ for _ in ()).throw(AssertionError("不該抓取")))
     mr.load_or_fetch(dt.date(2026, 7, 25))
     assert "11506" in json.load(open(hist, encoding="utf-8"))["months"]
+
+
+def test_snapshot_n_stays_consistent_after_backfill(tmp_path):
+    """n 是消費端判斷「這個月能不能用」的依據，補齊後必須跟實際筆數一致。
+
+    （2026-07-25 實際踩到：線上出現 n=1 但 mkt_n 加起來是 2 的紀錄。）
+    """
+    p = tmp_path / "revenue_history.json"
+    mr.record_snapshot({"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"}},
+                       dt.date(2026, 7, 25), str(p))
+    mr.record_snapshot({"1101": {"yoy": 5.0, "ym": "11506", "mkt": "listed"},
+                        "6488": {"yoy": -3.0, "ym": "11506", "mkt": "otc"},
+                        "8069": {"yoy": 1.0, "ym": "11506", "mkt": "otc"}},
+                       dt.date(2026, 7, 26), str(p))
+    m = json.load(open(p, encoding="utf-8"))["months"]["11506"]
+    assert m["n"] == len(m["yoy"]) == 3
+    assert sum(m["mkt_n"].values()) == m["n"], "逐市場筆數加總要等於 n"

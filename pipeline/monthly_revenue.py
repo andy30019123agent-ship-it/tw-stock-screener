@@ -102,6 +102,9 @@ def record_snapshot(data, today=None, path=None):
             if new_sids:
                 old.update(new_sids)
                 months[ym]["yoy"] = old
+                # n 一定要跟著補齊後的實際筆數走：消費端就是靠 n 判斷「這個月能不能用」，
+                # 補齊後不更新會出現 n=1 但 mkt_n 加起來是 2 這種自相矛盾的紀錄。
+                months[ym]["n"] = len(old)
                 months[ym]["backfilled_at"] = today.isoformat()
                 mkt_n = months[ym].setdefault("mkt_n", {})
                 for sid, (_, mkt) in rows.items():
