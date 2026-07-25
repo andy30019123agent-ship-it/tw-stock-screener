@@ -1024,3 +1024,19 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   .help-section { max-width: 76ch; }   /* 長文閱讀行寬上限，桌機不要拉到 1200px */
   .help-head, .help-toc { max-width: 76ch; }
 }
+
+/* 錯誤邊界的降級卡：壞掉的區塊顯示這個，其餘功能照常（不要用紅色——那是漲跌語意，用琥珀警示） */
+.eb-fallback {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+  border-radius: var(--r-md); padding: 14px 16px; margin: 12px 0;
+  color: var(--warn);
+}
+.eb-fallback b { display: block; font-size: 1rem; margin-bottom: 4px; }
+.eb-fallback p { font-size: .9375rem; line-height: 1.7; color: var(--ink-body); margin: 0 0 8px; word-break: break-word; }
+.eb-fallback button {
+  min-height: 44px; padding: 8px 16px; border-radius: var(--r-pill);
+  border: 1px solid var(--warn-border); background: var(--surface);
+  color: var(--warn); font-family: inherit; font-size: .9375rem; font-weight: 700; cursor: pointer;
+}
+.eb-fallback svg { flex: none; margin-top: 2px; }

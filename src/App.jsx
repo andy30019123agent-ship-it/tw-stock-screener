@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import HelpGuide from './components/HelpGuide'
+import ErrorBoundary from './components/ErrorBoundary'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
@@ -185,7 +186,11 @@ export default function App() {
         </div>
       )}
 
-      {data && <MarketAdvice breadth={data.market_breadth} regime={regime} onApply={applyAdvice} />}
+      {data && (
+        <ErrorBoundary name="advice" label="本週市況建議">
+          <MarketAdvice breadth={data.market_breadth} regime={regime} onApply={applyAdvice} />
+        </ErrorBoundary>
+      )}
 
       {!data && !error && (
         <div className="center-state">
@@ -194,7 +199,9 @@ export default function App() {
         </div>
       )}
 
-      <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount} />
+      <ErrorBoundary name="opportunities" label="今日機會股">
+        <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount} />
+      </ErrorBoundary>
 
       {data && (
         <>
@@ -269,7 +276,10 @@ export default function App() {
         </>
       )}
 
-      <StockChartModal stock={picked} onClose={closeModal} />
+      {/* 各自包 error boundary：任何一塊壞掉不該讓整站變白畫面（2026-07-25 K 線圖崩站的教訓） */}
+      <ErrorBoundary name="chart" label="K 線圖">
+        <StockChartModal stock={picked} onClose={closeModal} />
+      </ErrorBoundary>
 
       <footer className="app-footer">
         <a className="help-link" href="#help"><BookOpen size={13} strokeWidth={2} />使用說明書</a>

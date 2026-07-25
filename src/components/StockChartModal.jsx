@@ -55,6 +55,16 @@ export default function StockChartModal({ stock, onClose }) {
   const [readout, setReadout] = useState(null)     // 十字準星讀數 {date,o,h,l,c,up}
   const [levels, setLevels] = useState(null)       // 支撐/壓力 {support, resistance}
 
+  // 拆圖的唯一入口：以 chartRef.current 為真相，拆完立刻設 null → 重複呼叫是安全的。
+  // 有兩條路徑會拆圖（關窗、開下一檔時建圖 effect 的 cleanup），各自直接 remove 會造成
+  // 雙重釋放；lightweight-charts 對已釋放物件再操作會丟 `Object is disposed`。
+  const disposeChart = useCallback(() => {
+    if (chartRef.current) {
+      chartRef.current.chart.remove()
+      chartRef.current = null
+    }
+  }, [])
+
   // K 線按需載入（charts/<id>.json）；把「載入中／無資料／載入失敗」分成三態
   const load = useCallback(() => {
     if (!stock) return
@@ -77,7 +87,7 @@ export default function StockChartModal({ stock, onClose }) {
   useEffect(() => {
     if (status !== 'ready' || !ohlc?.length || !wrapRef.current) return
     const el = wrapRef.current
-    if (chartRef.current) { chartRef.current.chart.remove(); chartRef.current = null }  // 先拆舊圖再建新圖，避免殘留
+    disposeChart()          // 先拆舊圖再建新圖，避免殘留（走唯一入口，重複呼叫安全）
     el.innerHTML = ''
 
     const inkMuted = cssVar('--ink-muted')
@@ -139,7 +149,13 @@ export default function StockChartModal({ stock, onClose }) {
 
     chartRef.current = { chart, candle }
     applyRange(chart, ohlc.length, range)
-    return () => { chart.remove(); chartRef.current = null }
+    // 🔑 cleanup 必須經由 chartRef.current 拆圖，不可用 closure 捕獲的 `chart`。
+    // 原因（2026-07-25 實測的整頁白畫面 bug）：關窗時下面那個 effect 已經拆過圖並把 ref 設為
+    // null；開下一檔時本 effect 的 deps（status/ohlc）改變會執行**這個** cleanup，若它用捕獲的
+    // `chart` 就會對已釋放的物件再 remove 一次 → lightweight-charts 丟 `Object is disposed`
+    // → 沒有 error boundary，React 卸載整棵樹 → 整頁只剩底色。
+    // 改成認 chartRef.current 這個唯一真相，拆圖就變成 idempotent，兩條路徑重疊也安全。
+    return () => { disposeChart() }
     // range 不放 deps：切範圍走下面那個 effect、不重建圖
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, ohlc])
@@ -153,8 +169,8 @@ export default function StockChartModal({ stock, onClose }) {
   // 關窗（stock 變 null）時確實拆圖——元件本身不會 unmount，建圖 effect 的 cleanup 不一定觸發，
   // 不拆的話 chart/ResizeObserver 會殘留在已移除的 DOM 節點上（Codex 2026-07-24 指出）。
   useEffect(() => {
-    if (!stock && chartRef.current) { chartRef.current.chart.remove(); chartRef.current = null }
-  }, [stock])
+    if (!stock) disposeChart()
+  }, [stock, disposeChart])
 
   // 無障礙：focus 移入、Esc 關、Tab focus trap、關閉還原 focus；並鎖背景捲動
   useEffect(() => {
