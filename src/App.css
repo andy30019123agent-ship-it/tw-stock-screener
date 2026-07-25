@@ -1188,3 +1188,31 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   background: var(--surface-tint);
   white-space: nowrap;
 }
+
+/* 「我只想買幾檔？」卡（2026-07-25）：沿用 .os 的視覺語彙（同一種「量測資訊」卡）。
+   刻意不用警示色——這是取捨資訊不是錯誤，紅綠只保留給價格漲跌。 */
+.hm { margin: 12px 0 0; }
+.hm-toggle {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; min-height: 44px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600;
+  cursor: pointer; text-align: left;
+}
+.hm-toggle:hover { border-color: var(--border-strong); }
+.hm-lead, .hm-note {
+  margin: 10px 0 0; padding: 12px 14px; font-size: 15px; line-height: 1.75;
+  border-radius: var(--r-md); background: var(--surface-tint); color: var(--ink-body);
+}
+.hm-note small { display: block; margin-top: 6px; font-size: 13px; color: var(--ink-muted); }
+.hm-scroll { overflow-x: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
+.hm-table { width: 100%; border-collapse: collapse; font-size: 15px; white-space: nowrap; }
+.hm-table th, .hm-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; }
+.hm-table th:first-child, .hm-table td:first-child {
+  position: sticky; left: 0; z-index: 1; text-align: left;
+  background: var(--surface); font-weight: 600;
+}
+.hm-table thead th { color: var(--ink-muted); font-weight: 600; font-size: 14px; }
+.hm-table td small { display: block; font-size: 12px; color: var(--ink-muted); font-weight: 400; }
+.hm-table tr.hm-cur td { background: var(--primary-tint); }
+.hm-table tr.hm-cur td:first-child { background: var(--primary-tint); }

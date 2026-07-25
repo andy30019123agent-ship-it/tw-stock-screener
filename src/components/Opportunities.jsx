@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
+import HowManyToBuy from './HowManyToBuy'
 
 // 勝率榜一格：主數字＝平均超額（pp，權重依據），次行＝超額勝率與樣本。
 // 樣本不足（validated=false）整格轉灰＋提示，提醒「別信這個數字」；無資料顯示「—」。
@@ -207,6 +208,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
       })} />
 
       {/* 報酬分佈（2026-07-25 加）：把「典型會怎樣、最壞多壞」寫出來，防止在正常虧損期誤判成系統壞了 */}
+      <HowManyToBuy pickCount={opp.picks.length} />
       <OutcomeShape pickCount={opp.picks.length} />
 
       {board && (
