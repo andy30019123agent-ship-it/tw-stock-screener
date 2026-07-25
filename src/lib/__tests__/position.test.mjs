@@ -50,5 +50,25 @@ ok(c.effectiveBets < 5, '有效獨立注數應小於名義檔數')
 const c2 = concentration([{ industry: 'A' }, { industry: 'B' }, { industry: 'C' }])
 ok(c2.warn === false, '產業分散 → 不警示')
 
+
+// ── 目標價（2026-07-25 加）─────────────────────────────
+{
+  const { targetPrice, TARGET_PCT } = await import('../position.js')
+  // 尚未突破前高 → 前高比統計目標近，取前高當第一目標
+  const t1 = targetPrice({ close: 100, recent_high20: 105 })
+  ok(t1.stat === 113.7 && t1.high === 105 && t1.first === 105 && t1.firstIsHigh === true,
+     '前高 105 < 統計目標 113.7 → 第一目標取前高')
+  ok(Math.abs(t1.upsidePct - 5) < 1e-9, '上漲空間 5%')
+  // 已突破前高 → 沒有壓力位可用，回退統計目標
+  const t2 = targetPrice({ close: 100, recent_high20: 98 })
+  ok(t2.high === null && t2.first === 113.7 && t2.firstIsHigh === false, '已突破前高 → 用統計目標')
+  // 前高很遠 → 統計目標先到
+  const t3 = targetPrice({ close: 100, recent_high20: 200 })
+  ok(t3.first === 113.7 && t3.firstIsHigh === false, '前高太遠 → 統計目標先到')
+  ok(targetPrice({ close: 0 }) === null, '無效價格回 null')
+  ok(TARGET_PCT === 0.137, '目標幅度＝持有20日賺的時候平均 +13.7%（實測）')
+  console.log(`目標價: 追加 6 項斷言`)
+}
+
 console.log(`\nposition.js: ${pass} 通過, ${fail} 失敗`)
 process.exit(fail ? 1 : 0)

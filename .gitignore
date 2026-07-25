@@ -34,3 +34,6 @@ pipeline/history/*.bak-*
 .pytest_cache/
 __pycache__/
 *.pyc
+
+# Top5 程序回測的中間快取（一次性分析產物，重跑可再生，不進版控）
+/top5_results*.json

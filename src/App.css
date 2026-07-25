@@ -1096,3 +1096,65 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   border-radius: var(--r-md); padding: 12px 14px;
 }
 .pp-note-warn svg { color: var(--warn); }
+
+/* ===== 報酬分佈卡（這批大概會怎樣）===== */
+.os { margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 12px; }
+.os-toggle {
+  display: flex; align-items: center; gap: 6px; min-height: 44px; width: 100%;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 1rem; font-weight: 700; color: var(--ink-muted); text-align: left;
+}
+.os-toggle:hover { color: var(--primary); }
+.os-key { display: grid; gap: 10px; margin: 10px 0 12px; }
+.os-stat { background: var(--surface-tint); border-radius: var(--r-md); padding: 12px 14px; }
+.os-lab { display: block; font-size: .9375rem; color: var(--ink-muted); font-weight: 600; }
+.os-stat b { display: block; font-family: 'Manrope', sans-serif; font-size: 1.5rem; line-height: 1.2; margin: 2px 0; color: var(--ink); }
+.os-stat b.good { color: var(--up); }
+.os-stat b.bad { color: var(--down); }
+.os-stat small { display: block; font-size: .875rem; color: var(--ink-muted); line-height: 1.6; }
+
+.os-warn {
+  background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+  border-radius: var(--r-md); padding: 12px 14px; margin: 0 0 12px;
+  font-size: 1rem; line-height: 1.8; color: var(--ink-body);
+}
+.os-warn b { color: var(--warn); }
+
+.os-scroll { overflow-x: auto; }
+.os-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.os-table th, .os-table td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.os-table th { font-size: .875rem; font-weight: 700; color: var(--ink-muted); }
+.os-table td { font-size: 1rem; color: var(--ink-body); }
+.os-table th:first-child, .os-table td:first-child {
+  text-align: left; font-weight: 700; color: var(--ink);
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+}
+.os-table td.good { color: var(--up); font-weight: 700; }
+.os-table td.bad { color: var(--down); font-weight: 700; }
+.os-table tr.os-cur { background: var(--surface-tint); }
+.os-table tr.os-cur td:first-child { background: var(--surface-tint); }
+.os-table small { font-size: .8125rem; color: var(--primary); font-weight: 700; margin-left: 4px; }
+
+.os-note { font-size: 1rem; line-height: 1.8; color: var(--ink-body); margin: 12px 0 0; }
+.os-note b { color: var(--ink); }
+.os-honest {
+  background: color-mix(in srgb, var(--warn-bg) 40%, transparent);
+  border-radius: var(--r-md); padding: 12px 14px;
+}
+.os-honest b { color: var(--warn); }
+
+@media (min-width: 721px) {
+  .os-key { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* 目標價／出場價：用漲跌語意色（這裡確實是行情方向，符合 MASTER 對 --up/--down 的定義） */
+.pp-table .pp-target { color: var(--up); font-weight: 700; }
+.pp-table .pp-stop { color: var(--down); font-weight: 700; }
+.pp-table .pp-target small, .pp-table .pp-stop small { color: var(--ink-muted); font-weight: 400; }
+/* 金額配置收在 details 裡（Andy 說先不管預算） */
+.pp-money { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.pp-money > summary {
+  cursor: pointer; min-height: 44px; display: flex; align-items: center;
+  font-size: 1rem; font-weight: 700; color: var(--ink-muted);
+}
+.pp-money > summary:hover { color: var(--primary); }

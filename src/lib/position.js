@@ -72,6 +72,35 @@ export function defendPrice(p) {
 /** 建議持有到期日：回測用固定持有 20 交易日結算，所以「到期」就是那一天。 */
 export const HOLD_DAYS = 20
 
+// 目標價的統計依據（2026-07-25 實測，成本後）：
+//   訊號「賺的時候」平均賺多少——縮口帶量突破 +15.4%、強勢雙確認 +18.7%、爆量突破 +14.8%。
+//   持有 20 交易日的整體平均獲利 +13.7%（持有 40 日是 +21.8%，但 40 日設定尚未過樣本外驗證）。
+// 取 +13.7% 當基準目標，是「持有 20 日、賺的時候的平均幅度」——與回測的結算方式一致。
+export const TARGET_PCT = 0.137
+// 平均最大逆走（持有 20 日期間曾經最多虧多少）＝ −7.15%。這個數字的用途是告訴使用者
+// 「即使最後是賺的，中途也常常先虧 7% 上下」，避免看到帳面虧損就砍在最低點。
+export const TYPICAL_DRAWDOWN_PCT = 0.0715
+
+/**
+ * 目標價（獲利參考位）。給兩個互相對照的依據，不給單一「神奇數字」：
+ *  statTarget＝收盤 ×(1+13.7%)：歷史上持有 20 日、**賺的時候**的平均幅度。
+ *  techTarget＝近 20 日高點：技術上的壓力位；若已突破前高則回退用統計目標。
+ * 兩者取較低者當「先看到的第一個目標」——先碰到的那個才是實務上會遇到的。
+ */
+export function targetPrice(p) {
+  if (!(p?.close > 0)) return null
+  const stat = p.close * (1 + TARGET_PCT)
+  const high = p.recent_high20 > p.close ? p.recent_high20 : null
+  const first = high ? Math.min(stat, high) : stat
+  return {
+    stat: Math.round(stat * 100) / 100,
+    high: high ? Math.round(high * 100) / 100 : null,
+    first: Math.round(first * 100) / 100,
+    firstIsHigh: high != null && high < stat,
+    upsidePct: (first / p.close - 1) * 100,
+  }
+}
+
 export function holdUntil(dataDate, days = HOLD_DAYS) {
   if (!dataDate) return null
   // 只數交易日（跳過週末）；不處理國定假日——標示為「約」即可，不必假精確
