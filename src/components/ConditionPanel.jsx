@@ -39,7 +39,10 @@ const PRESETS = [
 const PRESET_SIGNAL = {
   rsdual: ['rs_confirmed_60_120'],
   breakout: ['signal_breakout'],
-  shishi: ['sn_squeeze_breakout', 'sn_lower_reversal', 'sn_break_low_recover', 'sn_immortal_guide', 'sn_volume_support'],
+  // 小詩選股＝勾「符合任一小詩形態」，所以戰績要用**母體**（signal_shishi，後端 2026-07-25
+  // 新增的回測訊號）。原本列 5 招個別訊號 → presetStat 取「最好的那一招」＝系統性偏高：
+  // 母體實測成本後 −0.78pp（樣本 15955），最佳那招（縮口帶量突破）+0.04pp，差距近 0.8pp。
+  shishi: ['signal_shishi'],
   value: ['undervalued'],
   signal: ['signal_ma'],
   foreign: ['foreign_buy'],
@@ -206,8 +209,9 @@ export default function ConditionPanel({
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
-                <b>⚠️</b> 代表扣成本後贏不過大盤，<b>＊</b> 代表這個數字是該策略「多個形態裡最好的那一個」
-                （小詩選股 5 招）、不是勾選後篩到的整批平均；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
+                <b>⚠️</b> 代表扣成本後贏不過大盤。<b>小詩選股顯示的是 5 招母體</b>（勾「符合任一形態」實際會篩到的
+                那一整批，成本後 −0.78pp）——不是最好的那一招（縮口帶量突破 +0.04pp）；
+                多頭排列／填息快僅供戰績參考、不進 Top5 選股。
               </p>
               <p className="strategy-note strategy-skew">
                 ⚠️ <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
