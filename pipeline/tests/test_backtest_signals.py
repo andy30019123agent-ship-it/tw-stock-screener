@@ -45,6 +45,50 @@ def test_勝率高但期望值為負_權重歸零():
     assert w["sn_break_low_recover"]["weight"] == 0
 
 
+def test_權重改看成本後超額_毛正淨負要歸零():
+    """2026-07-25 Andy 拍板「乾淨」：權重基準從毛超額改成成本後超額。
+    真實案例＝爆量突破（毛 +0.74pp、扣掉來回 0.785% 成本後 −0.06pp）——毛看起來有邊際，
+    扣完成本其實贏不過大盤，這種不該再拿權重去影響 Top5 排名。"""
+    stats = {"signal_breakout": {"count": 2765, "wins": 1255, "ret_sum": 0.0,
+                                 "exc_wins": 1100, "exc_sum": 2765 * 0.0074,
+                                 "net_exc_sum": -2765 * 0.0006, "net_exc_wins": 1000}}
+    w = bt.stats_to_weights(stats)["signal_breakout"]
+    assert w["avg_excess"] == 0.74      # 毛超額照實呈現（供對照）
+    assert w["net_excess"] == -0.06     # 成本後為負
+    assert w["weight"] == 0             # ← 關鍵：權重看淨值，歸零
+    assert w["weight_basis"] == "net_excess"
+
+
+def test_權重用淨值算級距_不是毛值():
+    # 毛 +2.0pp、淨 +1.0pp → 權重應該是 round(1.0×2)=2，不是 round(2.0×2)=4
+    stats = {"signal_ma": {"count": 100, "wins": 60, "ret_sum": 0.0,
+                           "exc_wins": 60, "exc_sum": 100 * 0.02,
+                           "net_exc_sum": 100 * 0.01, "net_exc_wins": 55}}
+    w = bt.stats_to_weights(stats)["signal_ma"]
+    assert w["avg_excess"] == 2.0 and w["net_excess"] == 1.0
+    assert w["weight"] == 2
+
+
+def test_舊資料沒有淨超額欄位時退回毛超額():
+    """歷史 stats 檔沒有 net_exc_sum，不能因此整批歸零（那會讓舊檔一讀就把 Top5 清空）。"""
+    stats = {"signal_ma": {"count": 100, "wins": 60, "ret_sum": 0.0,
+                           "exc_wins": 60, "exc_sum": 100 * 0.015}}
+    w = bt.stats_to_weights(stats)["signal_ma"]
+    assert w["net_excess"] == 1.5 and w["weight"] == 3     # 退回用毛超額
+
+
+def test_events_to_stats_算出成本後超額():
+    """淨超額必須比毛超額低約一個來回成本（0.785%），且用同一個同日基準。"""
+    events = [{"date": "d1", "sid": "A", "i": 0, "ret": 0.10, "fired": ["signal_ma"]}]
+    by_date = {"d1": [0.10, 0.0, -0.04]}          # 同日平均 +2%
+    st = bt.events_to_stats(events, by_date)["signal_ma"]
+    assert round(st["exc_sum"], 6) == round(0.10 - 0.02, 6)          # 毛超額 8pp
+    expected_net = bt._apply_cost(0.10) - 0.02
+    assert round(st["net_exc_sum"], 6) == round(expected_net, 6)
+    assert st["net_exc_sum"] < st["exc_sum"]                          # 淨一定低於毛
+    assert st["net_exc_wins"] == 1                                    # 淨超額仍為正
+
+
 def test_期望值微正也至少給1分_但上限5():
     low = bt.stats_to_weights({"signal_ma": {"count": 40, "wins": 20, "ret_sum": 0.0,
                                              "exc_wins": 20, "exc_sum": 40 * 0.001}})

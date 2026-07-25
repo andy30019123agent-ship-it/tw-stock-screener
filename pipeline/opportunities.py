@@ -88,7 +88,15 @@ def build_opportunities(results, weights, revenue, data_date):
         # 權重缺 key（舊版/部分損壞/新增訊號但快取未重算）時回退 0，不是 1——沒有回測證據
         # 就不該給分（否則未驗證訊號會偷偷加分改變 Top5）。（Codex 2026-07-24 指出）
         score = sum(int(sig.get(k, {}).get("weight", 0) or 0) for k in fired)
-        reasons = [bt.SIGNAL_LABELS[k] for k in fired if k in bt.SIGNAL_LABELS]
+        # 「推薦理由」只列**有權重**的訊號。權重改看成本後超額後（2026-07-25），破底翻／糾結轉強／
+        # 大量撐／仙人指路／爆量突破的權重都是 0（扣掉成本後贏不過大盤）——把它們列成理由會讓
+        # 使用者以為那是加分項，跟「權重依據」的語意衝突（Codex 2026-07-24 第 10 項）。
+        # 一個都沒有時給明確說明，不要留空讓人猜。
+        scored = [k for k in fired if (sig.get(k, {}).get("weight", 0) or 0) > 0]
+        reasons = [bt.SIGNAL_LABELS[k] for k in scored if k in bt.SIGNAL_LABELS]
+        if not reasons:
+            reasons = [f"僅符合門檻（{bt.SIGNAL_LABELS.get(GATE_SIGNAL, GATE_SIGNAL)}），"
+                       "無加權訊號、按相對強弱排序"]
         picks.append({
             "id": r["id"],
             "name": r["name"],

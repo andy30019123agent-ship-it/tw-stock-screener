@@ -141,19 +141,26 @@ def stats_to_weights(stats, min_sample=MIN_SAMPLE, default=DEFAULT_WEIGHT):
         # 少數事件大贏。實測「大量撐」超額勝率只有 40%，平均超額卻是 +1.28pp，用勝率會
         # 把它判成廢訊號。交易看的是期望值，不是贏的次數。
         avg_exc_pp = (st.get("exc_sum", 0.0) / c * 100) if c else 0.0
-        if not validated or avg_exc_pp <= 0:
+        # 🔑 2026-07-25 起權重改看「成本後」超額（Andy 拍板「乾淨」）：毛超額沒扣來回 0.785%
+        # 的手續費/證交稅/滑價，會讓實際上贏不過大盤的訊號拿到權重並影響 Top5 排名。
+        # 舊資料（沒有 net_exc_sum）退回毛超額，不讓歷史檔一讀就整批歸零。
+        net_exc_pp = (st["net_exc_sum"] / c * 100) if (c and "net_exc_sum" in st) else avg_exc_pp
+        if not validated or net_exc_pp <= 0:
             weight = 0
         else:
-            weight = min(5, max(1, round(avg_exc_pp * 2)))
+            weight = min(5, max(1, round(net_exc_pp * 2)))
         out[k] = {
             "label": SIGNAL_LABELS.get(k, k),
             "win_rate": round(wr, 4) if wr is not None else None,          # 絕對勝率（僅供對照）
-            "excess_win_rate": round(exc_wr, 4) if exc_wr is not None else None,  # 超額勝率（權重依據）
+            "excess_win_rate": round(exc_wr, 4) if exc_wr is not None else None,  # 超額勝率（僅供對照）
             "avg_ret": round(st.get("ret_sum", 0.0) / c * 100, 2) if c else None,   # 平均報酬（%）
-            "avg_excess": round(st.get("exc_sum", 0.0) / c * 100, 2) if c else None,  # 平均超額報酬（百分點）
+            "avg_excess": round(st.get("exc_sum", 0.0) / c * 100, 2) if c else None,  # 毛超額（僅供對照）
+            "net_excess": round(net_exc_pp, 2) if c else None,             # 成本後超額＝權重依據
+            "net_excess_win_rate": (round(st.get("net_exc_wins", 0) / c, 4) if c else None),
             "samples": c,
             "validated": validated,
             "weight": weight,
+            "weight_basis": "net_excess",   # 讓下游/前端知道權重是用哪個數字算的
         }
     return out
 
@@ -444,21 +451,33 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
 
 
 def events_to_stats(events, by_date):
-    """把事件與同日基準換算成每訊號統計。純函式，方便單測與手算對照。"""
+    """把事件與同日基準換算成每訊號統計。純函式，方便單測與手算對照。
+
+    `net_exc_sum`＝**成本後**超額的累積（成本後淨報酬 − 同日全市場毛報酬）。權重從 2026-07-25
+    起改看這個而不是毛超額：毛超額沒扣手續費/證交稅/滑價，會讓「毛利看起來不錯、扣完成本
+    其實贏不過大盤」的訊號拿到權重。實測差距是決定性的——縮口帶量突破毛 +0.84pp／淨 +0.04pp、
+    爆量突破毛 +0.74／淨 −0.06、糾結轉強毛 +0.15／淨 −0.64。基準用毛報酬（不扣成本）是刻意的
+    保守選擇：買股票要付成本、指數不用，與 exit_analysis／signal_quality 同一把尺。
+    """
     bench = {d: (sum(v) / len(v)) for d, v in by_date.items() if v}
-    stats = {k: {"wins": 0, "count": 0, "ret_sum": 0.0, "exc_wins": 0, "exc_sum": 0.0} for k in SIGNALS}
+    stats = {k: {"wins": 0, "count": 0, "ret_sum": 0.0, "exc_wins": 0, "exc_sum": 0.0,
+                 "net_exc_sum": 0.0, "net_exc_wins": 0} for k in SIGNALS}
     for e in events:
         b = bench.get(e["date"], 0.0)
         exc = e["ret"] - b
+        net_exc = _apply_cost(e["ret"]) - b
         for k in e["fired"]:
             st = stats[k]
             st["count"] += 1
             st["ret_sum"] += e["ret"]
             st["exc_sum"] += exc
+            st["net_exc_sum"] += net_exc
             if e["ret"] > 0:
                 st["wins"] += 1
             if exc > 0:
                 st["exc_wins"] += 1
+            if net_exc > 0:
+                st["net_exc_wins"] += 1
     return stats
 
 
