@@ -59,13 +59,22 @@ export function defendPrice(p) {
   if (!(p?.close > 0)) return null
   const stop = p.close * (1 - STOP_PCT)
   const ma20 = p.ma20 > 0 ? p.ma20 : null
+  // 🔴 2026-07-25 修（Codex 指出）：原本用 `Math.max(stop, ma20)`，但**月線可能高於現價**
+  // （實測全市場 925 檔有 705 檔＝76% 處於月線下！只是當天 Top10 剛好都在月線上所以沒露餡）。
+  // 那會產生「高於現價的停損價」＝邏輯上不成立（那是「已經跌破、該賣了」而不是防守位），
+  // 而且 downsidePct 會變成正數，UI 取絕對值後偽裝成下方風險。
+  // 正確條件：只有 `stop < ma20 < close` 時月線才是有效的防守位（在現價下方、又比固定停損近）。
+  const maUsable = ma20 != null && ma20 > stop && ma20 < p.close
+  const suggested = maUsable ? ma20 : stop
   return {
     stop: Math.round(stop * 100) / 100,
     ma20,
-    // 兩者取較高者當實際防守位：跌破月線通常先發生，但若月線離太遠就用固定 −15% 兜底
-    suggested: Math.round(Math.max(stop, ma20 ?? 0) * 100) / 100,
-    usedMa: ma20 != null && ma20 > stop,
-    downsidePct: ma20 != null && ma20 > stop ? (ma20 / p.close - 1) * 100 : -STOP_PCT * 100,
+    suggested: Math.round(suggested * 100) / 100,
+    usedMa: maUsable,
+    // 一律是負數（到防守價的跌幅）；月線在現價之上時退回固定 −15%
+    downsidePct: (suggested / p.close - 1) * 100,
+    // 現價已在月線下＝趨勢已轉弱，值得單獨提示（不是停損位，是「訊號品質」警訊）
+    belowMa20: ma20 != null && p.close < ma20,
   }
 }
 
@@ -103,12 +112,17 @@ export function targetPrice(p) {
 
 export function holdUntil(dataDate, days = HOLD_DAYS) {
   if (!dataDate) return null
-  // 只數交易日（跳過週末）；不處理國定假日——標示為「約」即可，不必假精確
-  const d = new Date(`${dataDate}T00:00:00`)
+  // 只數交易日（跳過週末）；不處理國定假日——標示為「約」即可，不必假精確。
+  // 🔴 2026-07-25 修時區 bug（Codex 指出）：原本用 `new Date('...T00:00:00')`（**本地**午夜）
+  // 遞增，卻用 `toISOString()`（**UTC**）輸出 → 台北 (UTC+8) 的本地午夜換成 UTC 是前一天 16:00，
+  // 日期整個倒退一天。實測 2026-07-24（週五）往後 5 個交易日：正解 07-31，台北卻算出 07-30。
+  // 全程改用 UTC（Date.UTC + getUTCDay + setUTCDate）→ 與時區無關，任何機器結果一致。
+  const [y, m, dd] = dataDate.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1, dd))
   let left = days
   while (left > 0) {
-    d.setDate(d.getDate() + 1)
-    const wd = d.getDay()
+    d.setUTCDate(d.getUTCDate() + 1)
+    const wd = d.getUTCDay()
     if (wd !== 0 && wd !== 6) left--
   }
   return d.toISOString().slice(0, 10)

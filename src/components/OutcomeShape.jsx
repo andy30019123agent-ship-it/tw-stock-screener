@@ -22,14 +22,17 @@ const MEASURED = {
   single: { median: -2.14, winRate: 0.464, n: 1695 },   // 單檔推薦的分佈
   topContrib: { stocks: 8, share: 0.836 },              // 8 檔股票貢獻 83.6% 的全部超額
   benchmark0050: { mean: 1.56, median: 1.68, winRate: 0.640 },
-  vsBenchmark: { diff: 1.43, t: 0.69 },                 // Top5 − 0050 配對檢定
+  // ⚠️ 這個配對檢定只在 5 檔那組做過（n 記錄檔數）——換檔數就不能直接套用，UI 會據此改文案
+  vsBenchmark: { n: 5, diff: 1.43, t: 0.69 },
 }
 
 const pct = v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`
 
 export default function OutcomeShape({ pickCount = 5 }) {
   const [open, setOpen] = useState(false)
-  const cur = MEASURED.batches.find(b => b.n === pickCount) || MEASURED.batches[0]
+  // 🔴 2026-07-25（Codex 指出）：原本 `|| MEASURED.batches[0]`——候選不足時可能回 7 檔，
+  // 找不到量測列就**靜默套用 5 檔的統計**，等於用錯的數字騙人。現在明確標示「沒有量測」。
+  const cur = MEASURED.batches.find(b => b.n === pickCount) || null
 
   return (
     <div className="os">
@@ -39,23 +42,32 @@ export default function OutcomeShape({ pickCount = 5 }) {
       </button>
 
       {open && (<>
-        <div className="os-key">
-          <div className="os-stat">
-            <span className="os-lab">典型結果（中位數）</span>
-            <b className={cur.median > 0 ? 'good' : 'bad'}>{pct(cur.median)}</b>
-            <small>一半的批次比這個好、一半比這個差</small>
+        {cur ? (
+          <div className="os-key">
+            <div className="os-stat">
+              <span className="os-lab">典型結果（中位數）</span>
+              <b className={cur.median > 0 ? 'good' : 'bad'}>{pct(cur.median)}</b>
+              <small>一半的批次比這個好、一半比這個差</small>
+            </div>
+            <div className="os-stat">
+              <span className="os-lab">整批贏過大盤的機率</span>
+              <b>{Math.round(cur.winRate * 100)}%</b>
+              <small>也就是說約 {Math.round((1 - cur.winRate) * 100)}% 的批次整批輸給大盤</small>
+            </div>
+            <div className="os-stat">
+              <span className="os-lab">波動（標準差）</span>
+              <b>{cur.sd.toFixed(1)}pp</b>
+              <small>批次之間的落差有這麼大</small>
+            </div>
           </div>
-          <div className="os-stat">
-            <span className="os-lab">整批贏過大盤的機率</span>
-            <b>{Math.round(cur.winRate * 100)}%</b>
-            <small>也就是說約 {Math.round((1 - cur.winRate) * 100)}% 的批次整批輸給大盤</small>
-          </div>
-          <div className="os-stat">
-            <span className="os-lab">波動（標準差）</span>
-            <b>{cur.sd.toFixed(1)}pp</b>
-            <small>批次之間的落差有這麼大</small>
-          </div>
-        </div>
+        ) : (
+          /* 檔數不在量測過的組合裡（例如候選不足只給了 7 檔）→ 明說沒有對應數字，
+             不可拿最接近的那組來套（那等於顯示錯的統計）。下面的對照表照樣有參考價值。 */
+          <p className="os-warn">
+            <b>今天是 {pickCount} 檔，這個檔數沒有單獨量測過</b>——下表只量過 5／10／20 檔。
+            不硬套最接近的那組數字（那會顯示錯的統計），請把下表當範圍參考。
+          </p>
+        )}
 
         <p className="os-warn">
           <b>⚠️ 單獨看一檔的話，典型結果是輸大盤 {Math.abs(MEASURED.single.median).toFixed(2)}pp、
@@ -102,11 +114,20 @@ export default function OutcomeShape({ pickCount = 5 }) {
 
         <p className="os-note os-honest">
           <b>必須誠實講的兩件事。</b>
-          ①目前 5 檔的 t 值只有 {cur.t}，<b>統計上還無法排除「這只是運氣」</b>（一般要 &gt;2）。
+          ①{cur ? <>目前 {pickCount} 檔的 t 值是 {cur.t}——</> : <>{pickCount} 檔沒有量測過 t 值——</>}
+          {cur && cur.t >= 2
+            ? <>剛好過了一般認定的 2 門檻，<b>但這是「勉強站得住」不是「證明有效」</b>。</>
+            : cur
+              ? <><b>統計上還無法排除「這只是運氣」</b>（一般要 &gt;2）。</>
+              : <>量測過的 5／10／20 檔分別是 1.78／2.38／3.00，可作範圍參考。</>}
           ②跟最簡單的做法（買 0050）比：0050 在同一把尺是平均 {pct(MEASURED.benchmark0050.mean)}、
-          中位 {pct(MEASURED.benchmark0050.median)}、贏大盤 {Math.round(MEASURED.benchmark0050.winRate * 100)}%；
-          Top5 減掉 0050 是 {pct(MEASURED.vsBenchmark.diff)}，但 t 只有 {MEASURED.vsBenchmark.t} →
-          <b>目前還測不出「比直接買 0050 更好」</b>。
+          中位 {pct(MEASURED.benchmark0050.median)}、贏大盤 {Math.round(MEASURED.benchmark0050.winRate * 100)}%。
+          {MEASURED.vsBenchmark.n === pickCount
+            ? <>本系統減掉 0050 是 {pct(MEASURED.vsBenchmark.diff)}，但 t 只有 {MEASURED.vsBenchmark.t}
+              → <b>測不出「比直接買 0050 更好」</b>。</>
+            : <><b>「本系統 − 0050」的配對檢定只量過 {MEASURED.vsBenchmark.n} 檔那組</b>
+              （+{MEASURED.vsBenchmark.diff}pp、t={MEASURED.vsBenchmark.t}＝測不出差異），
+              <b>{pickCount} 檔這組還沒單獨量過</b>，所以不能直接套用。</>}
           <br />
           量測時間 {MEASURED.asOf}｜區間 {MEASURED.window}｜這些是歷史統計，不是未來保證。
         </p>

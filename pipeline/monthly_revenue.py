@@ -43,11 +43,32 @@ def fetch_revenue_yoy(status=None):
                 yoy = ms._f(r.get(YOY_KEY))
                 if yoy is None:
                     continue
-                out[sid] = {"yoy": round(yoy, 2), "ym": str(r.get("資料年月", "")).strip()}
+                # 標記來源市場：判斷快取新鮮度時要能分市場（代號規則不可靠，抓取時記下才準）
+                out[sid] = {"yoy": round(yoy, 2), "ym": str(r.get("資料年月", "")).strip(), "mkt": key}
                 n += 1
             status[key] = n > 0
         except Exception as e:
             print(f"  ⚠️ {name}月營收抓取失敗（該市場本次不過濾營收）：{e}")
+    return out
+
+
+def _latest_ym_by_market(data):
+    """逐市場的最新資料年月：{"listed": "11506", "otc": "11505"}。
+
+    為什麼要分市場：兩個來源各自可能失敗，用「全市場最大 ym」判斷快取新鮮度會被成功的那一邊
+    蓋過去，失敗市場的舊資料就永遠不再重試（2026-07-25 Codex 指出）。
+    市場來源取自抓取時寫入的 `mkt` 欄位（不用代號規則猜——代號規則不可靠）。
+    舊快取沒有 `mkt` 就會判定「未達預期月份」而整批重抓一次，之後就有了。保守但正確。
+    """
+    out = {}
+    for v in (data or {}).values():
+        if not isinstance(v, dict) or not v.get("ym"):
+            continue
+        key = v.get("mkt")
+        if key not in ("listed", "otc"):
+            continue          # 舊快取沒有 mkt 欄位 → 不計入，下面會判定未達 want 而重抓（保守）
+        if not out.get(key) or v["ym"] > out[key]:
+            out[key] = v["ym"]
     return out
 
 
@@ -96,9 +117,15 @@ def load_or_fetch(today=None):
     cache = _load_cache()
     cached = cache.get("data") or {}
     want = _expected_ym(today)
-    have = _latest_ym(cached)
-    if cached and have and have >= want:
+    # 🔴 2026-07-25 修（Codex 指出）：原本用「全市場最大 ym」判斷命中 → 上市成功、上櫃失敗後，
+    # 只要上市已有新月份就整體命中快取，**上櫃的舊資料再也不會被重試**。
+    # 逐來源檢查：兩個市場都達到 want 才算命中。ms.market_of() 用代號區分上市/上櫃。
+    per = _latest_ym_by_market(cached)
+    if cached and all(per.get(k) and per[k] >= want for k in ("listed", "otc")):
         return cached
+    if cached:
+        lag = [f"{k}={per.get(k) or '無'}" for k in ("listed", "otc") if not (per.get(k) and per[k] >= want)]
+        print(f"   月營收有市場未達 {want}（{'、'.join(lag)}）→ 重抓")
 
     if cached:
         print(f"   月營收快取只到 {have}、應已公布到 {want} → 重抓")
