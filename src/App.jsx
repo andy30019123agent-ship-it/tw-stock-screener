@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown } from 'lucide-react'
+import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
+import HelpGuide from './components/HelpGuide'
 import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
@@ -8,6 +9,19 @@ import MarketAdvice from './components/MarketAdvice'
 import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions } from './lib/filters'
 
 export default function App() {
+  // 使用說明書用 hash 路由（#help）：零新依賴、可加書籤、GitHub Pages 不必改設定。
+  // 監聽 hashchange 才能讓上一頁/下一頁與直接貼連結都正常。
+  const [route, setRoute] = useState(() =>
+    (typeof window !== 'undefined' && window.location.hash.startsWith('#help')) ? 'help' : 'main')
+  useEffect(() => {
+    const onHash = () => setRoute(window.location.hash.startsWith('#help') ? 'help' : 'main')
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  useEffect(() => {           // 切到說明書時捲回頂端，否則會停在選股頁的捲動位置
+    if (route === 'help') window.scrollTo(0, 0)
+  }, [route])
+
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [conditions, setConditions] = useState(DEFAULT_CONDITIONS)
@@ -86,6 +100,14 @@ export default function App() {
     return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])
   }, [data])
 
+  if (route === 'help') {
+    return (
+      <div className="app">
+        <HelpGuide onBack={() => { window.location.hash = '' }} />
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <section className="hero" data-region="Hero / 標題與大數字統計">
@@ -96,7 +118,14 @@ export default function App() {
           <div className="hero-titles">
             <span className="badge-pill"><Filter size={14} strokeWidth={1.75} />全市場選股 · Screener</span>
             <h1 style={{ marginTop: 14 }}>台股全市場選股</h1>
-            <p className="subtitle">糾結轉強 × 法人連買 · 上市＋上櫃</p>
+            <p className="subtitle">
+              糾結轉強 × 法人連買 · 上市＋上櫃
+              {/* 說明書入口放這裡（不是只放 footer）：手機第一眼就要看得到，
+                  否則等於沒做——站上概念不少，看不懂時人不會捲到頁尾找說明。 */}
+              <a className="help-link" href="#help">
+                <BookOpen size={13} strokeWidth={2} />使用說明
+              </a>
+            </p>
           </div>
           {data && (
             <div className="hero-right">
@@ -243,6 +272,8 @@ export default function App() {
       <StockChartModal stock={picked} onClose={closeModal} />
 
       <footer className="app-footer">
+        <a className="help-link" href="#help"><BookOpen size={13} strokeWidth={2} />使用說明書</a>
+        <span className="footer-sep">·</span>
         資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議
       </footer>
     </div>

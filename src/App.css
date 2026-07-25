@@ -917,3 +917,110 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   .modal { animation: none !important; }
 }
+
+/* ===== 使用說明書（#help，Andy 2026-07-25 要求）=====
+   一律引用 MASTER.md 的 token，不用裸 hex。內文 ≥1rem、觸控目標 ≥44px（anti-slop 禁令）。
+   刻意不做「三卡並排」與漸層背景——那是 AI 生成頁最明顯的痕跡，且說明書要的是可讀性不是視覺花樣。 */
+.help { padding-top: 32px; }
+.help-head { margin-bottom: 24px; }
+.help-head h1 { font-size: clamp(1.75rem, 5vw, 2.5rem); line-height: 1.25; margin: 14px 0 6px; }
+.help-head .subtitle { color: var(--ink-muted); font-size: 1rem; line-height: 1.6; }
+
+/* 返回鈕：44px 觸控下限 */
+.help-back {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+  padding: 8px 16px 8px 12px; margin-bottom: 12px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill); font-family: inherit; font-size: .9375rem; font-weight: 700; cursor: pointer;
+}
+.help-back:hover { border-color: var(--primary); color: var(--primary-strong); }
+
+/* 頁內目錄：手機一欄、桌機自動排多欄；每項 44px 觸控 */
+.help-toc {
+  display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 12px; margin-bottom: 28px;
+}
+.help-toc a {
+  display: flex; align-items: center; min-height: 44px; padding: 0 12px;
+  color: var(--ink-body); text-decoration: none; font-size: 1rem; font-weight: 600;
+  border-radius: var(--r-sm);
+}
+.help-toc a:hover { background: var(--surface-tint); color: var(--primary-strong); }
+
+.help-section { margin-bottom: 36px; }
+.help-section h2 {
+  font-size: 1.375rem; line-height: 1.35; margin: 0 0 14px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.help-section p { font-size: 1rem; line-height: 1.85; color: var(--ink-body); margin: 0 0 12px; }
+.help-section b { color: var(--ink); }
+.help-section ul, .help-section ol { margin: 0 0 12px; padding-left: 22px; }
+.help-section li { font-size: 1rem; line-height: 1.85; color: var(--ink-body); margin-bottom: 8px; }
+
+/* 步驟清單：漏斗三層那種，數字要明顯 */
+.help-steps { counter-reset: hs; list-style: none; padding-left: 0; }
+.help-steps > li {
+  position: relative; padding-left: 40px; margin-bottom: 14px;
+}
+.help-steps > li::before {
+  counter-increment: hs; content: counter(hs);
+  position: absolute; left: 0; top: 2px;
+  width: 26px; height: 26px; border-radius: var(--r-pill);
+  background: var(--primary-tint); color: var(--ink);
+  font-size: .875rem; font-weight: 800; display: grid; place-items: center;
+}
+/* 「為什麼這樣設計」的補充：縮一階、字小一點但仍 ≥0.9375rem */
+/* 補充說明也是內文，不可低於 16px（MASTER anti-slop 禁令）。用顏色與縮排區分層級，不靠縮字級。 */
+.help-why {
+  display: block; margin-top: 6px; font-size: 1rem; line-height: 1.75;
+  color: var(--ink-muted);
+}
+
+/* 名詞卡：手機上下、桌機左右（表格在手機會橫捲，所以不用表格） */
+.help-term {
+  display: grid; gap: 4px; padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.help-term-word {
+  font-family: 'Manrope', sans-serif; font-weight: 800; color: var(--ink); font-size: 1.0625rem;
+}
+.help-term-body { font-size: 1rem; line-height: 1.8; color: var(--ink-body); }
+.help-term-body b { color: var(--ink); }
+
+/* 最重要的那段警語：整塊淡琥珀圓角（與站上其他警語同一種語言，不用左側色條） */
+.help-callout {
+  background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+  border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 12px;
+}
+.help-callout p:last-of-type { margin-bottom: 0; }
+.help-callout ul { margin-bottom: 0; }
+
+.help-note {
+  background: var(--surface-tint); border-radius: var(--r-md); padding: 12px 16px;
+  font-size: 1rem !important; line-height: 1.8 !important;
+}
+.help-marks li, .help-limits li { margin-bottom: 10px; }
+
+.help-foot {
+  margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border);
+}
+/* 免責聲明是法律性資訊，更不該縮小字級（原本 15px 違反 ≥16px 禁令） */
+.help-foot p { font-size: 1rem; color: var(--ink-muted); margin: 8px 0 0; line-height: 1.7; }
+
+/* 說明書入口連結（hero 副標與 footer） */
+/* 入口連結的觸控高度必須 ≥44px（實測原本只有 34px，是 MASTER 的不可交付項）。
+   用 min-height + inline-flex 置中，而不是加 padding 撐開——後者會把行距推歪。 */
+.help-link {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px;
+  color: var(--primary-strong); text-decoration: none; font-weight: 700;
+  margin-left: 10px; padding: 0 4px;
+}
+.help-link:hover { text-decoration: underline; }
+.app-footer .help-link { color: var(--on-deep); text-decoration: underline; margin-left: 0; }
+.footer-sep { margin: 0 8px; opacity: .5; }
+
+@media (min-width: 721px) {
+  .help-toc { grid-template-columns: repeat(2, 1fr); }
+  .help-term { grid-template-columns: 180px 1fr; gap: 16px; align-items: start; }
+  .help-section { max-width: 76ch; }   /* 長文閱讀行寬上限，桌機不要拉到 1200px */
+  .help-head, .help-toc { max-width: 76ch; }
+}
