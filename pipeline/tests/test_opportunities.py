@@ -92,15 +92,19 @@ def test_no_signal_excluded_and_sorted_by_rs_pct_60():
     assert scores == sorted(scores, reverse=True)
 
 
-def test_top_n_是_10_且會截斷():
-    """TOP_N=10：候選超過 10 檔時只留前 10。"""
-    results = [_stock(str(7000 + i), signal_ma=True, rs_pct_60=(i / 100)) for i in range(15)]
+def test_top_n_會截斷且不寫死檔數():
+    """候選超過 TOP_N 時只留前 TOP_N。
+
+    ⚠️ 這個測試刻意**不寫死檔數**：2026-07-25 一天內從 5 改成 10 再改成 8，
+    每次寫死都要改測試，而寫死的地方（例如 notify_tg 的 5 個圈號）曾直接讓部署整條掛掉。
+    """
+    n = opp.TOP_N
+    results = [_stock(str(7000 + i), signal_ma=True, rs_pct_60=(i / 100)) for i in range(n + 5)]
     rev = {s["id"]: {"yoy": 5.0} for s in results}
     o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-02")
-    assert opp.TOP_N == 10
-    assert len(o["picks"]) == 10
-    # 同分（都 3 分）→ 依 rs_pct_60 由高到低，所以第一名是 i=14
-    assert o["picks"][0]["id"] == "7014"
+    assert len(o["picks"]) == n
+    # 同分（都 3 分）→ 依 rs_pct_60 由高到低，第一名是 rs 最高的那檔
+    assert o["picks"][0]["id"] == str(7000 + n + 4)
 
 
 def test_缺rs_pct_60用最低值墊底_不可用0():
