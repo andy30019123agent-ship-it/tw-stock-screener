@@ -213,3 +213,33 @@ def test_RS_資料不可用時門檻退回全市場但要說明原因():
     assert out["gate"]["applied"] is False
     assert out["gate"]["reason"] == "rs_unavailable"
     assert len(out["picks"]) > 0, "退回全市場後仍要推得出東西"
+
+
+def test_gate_off_reason_does_not_claim_gate_passed():
+    """門檻沒套用時，理由不可寫成「僅符合門檻（強勢雙確認）」。
+
+    那等於把「沒檢查」說成「檢查過了」：門檻沒套用時（強弱資料算不出來、或過門檻的股票
+    不足 GATE_MIN_POOL 檔）這些股票根本沒被強勢雙確認篩過，卻被標成通過門檻
+    → 使用者會高估這份名單的品質。門檻是否套用會改變這句話的真假，必須分開寫。
+    """
+    # 沒有任何 rs_pct_60（強弱資料算不出來）→ gated 為空 → 門檻退回不套用
+    # 訊號用 sn_squeeze_breakout 但權重表裡沒有它 → 沒有加權理由 → 走 fallback 那句
+    results = [_stock(str(2000 + i), sn_squeeze_breakout=True, rs_pct_60=None) for i in range(3)]
+    rev = {r["id"]: {"yoy": 5.0} for r in results}
+    o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-24")
+    assert o["gate"]["applied"] is False and o["gate"]["reason"] == "rs_unavailable"
+    assert o["picks"], "門檻退回不套用時仍要有名單（保命機制）"
+    for p in o["picks"]:
+        txt = " ".join(p["reasons"])
+        assert "僅符合門檻" not in txt, f"門檻沒套用時不可宣稱符合門檻：{txt}"
+        assert "未經強勢篩選" in txt, f"要明講沒篩過：{txt}"
+
+
+def test_gate_on_reason_still_says_gate_passed():
+    """對照組：門檻真的套用時，那句「僅符合門檻」是對的，不可被上面的修法改掉。"""
+    results = [_stock(str(3000 + i), sn_squeeze_breakout=True,
+                      rs_confirmed_60_120=True, rs_pct_60=0.9) for i in range(opp.GATE_MIN_POOL)]
+    rev = {r["id"]: {"yoy": 5.0} for r in results}
+    o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-24")
+    assert o["gate"]["applied"] is True
+    assert any("僅符合門檻" in " ".join(p["reasons"]) for p in o["picks"])

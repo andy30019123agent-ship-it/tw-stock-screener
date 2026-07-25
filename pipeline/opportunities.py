@@ -118,8 +118,17 @@ def build_opportunities(results, weights, revenue, data_date):
         scored = [k for k in fired if (sig.get(k, {}).get("weight", 0) or 0) > 0]
         reasons = [bt.SIGNAL_LABELS[k] for k in scored if k in bt.SIGNAL_LABELS]
         if not reasons:
-            reasons = [f"僅符合門檻（{bt.SIGNAL_LABELS.get(GATE_SIGNAL, GATE_SIGNAL)}），"
-                       "無加權訊號、按相對強弱排序"]
+            # 🔴 2026-07-25 修：這句原本不分情況都寫「僅符合門檻（強勢雙確認）」，但門檻沒套用時
+            # （RS 資料掛掉、或過門檻的候選不足 20 檔）這檔股票**根本沒被強勢雙確認檢查過**——
+            # 等於把「沒檢查」說成「檢查過了」。門檻是否套用會改變這句話的真假，必須分開寫。
+            if gate_on:
+                reasons = [f"僅符合門檻（{bt.SIGNAL_LABELS.get(GATE_SIGNAL, GATE_SIGNAL)}），"
+                           "無加權訊號、按相對強弱排序"]
+            else:
+                why = {"rs_unavailable": "今天的強弱資料算不出來",
+                       "pool_too_small": "過門檻的股票不足 20 檔"}.get(gate_reason, gate_reason)
+                reasons = [f"⚠️ 今天沒套用強勢雙確認門檻（{why}）＝這檔未經強勢篩選，"
+                           "無加權訊號、按相對強弱排序"]
         picks.append({
             "id": r["id"],
             "name": r["name"],
