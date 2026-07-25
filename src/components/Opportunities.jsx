@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
+import PositionPlan from './PositionPlan'
 
 // 勝率榜一格：主數字＝平均超額（pp，權重依據），次行＝超額勝率與樣本。
 // 樣本不足（validated=false）整格轉灰＋提示，提醒「別信這個數字」；無資料顯示「—」。
@@ -171,6 +172,19 @@ export default function Opportunities({ stocks, onPick, onCount }) {
           )
         })}
       </div>
+
+      {/* 操作計畫（2026-07-25 加）：回答「買多少、跌到哪走、抱到什麼時候」。
+          picks 本身沒有產業/波動度/月線，從 screener.json 併回來。 */}
+      <PositionPlan dataDate={opp.date} picks={opp.picks.map(p => {
+        const full = stocks?.find(s => s.id === p.id)
+        return {
+          id: p.id, name: p.name,
+          close: p.close ?? full?.close ?? null,
+          ma20: p.support_ma20 ?? full?.ma20 ?? null,
+          rv20_pct: full?.rv20_pct ?? null,
+          industry: full?.industry ?? null,
+        }
+      })} />
 
       {board && (
         <div className="opp-board">

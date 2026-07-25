@@ -1045,3 +1045,54 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   color: var(--warn); font-family: inherit; font-size: .9375rem; font-weight: 700; cursor: pointer;
 }
 .eb-fallback svg { flex: none; margin-top: 2px; }
+
+/* ===== 操作計畫（怎麼下單）=====
+   刻意不用三卡並排、不用漸層——這區是要被讀懂的資訊，不是視覺展示。
+   金額/股數用 tabular-nums 對齊，掃視時數字才不會跳。 */
+.pp { margin-top: 20px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 16px 18px; }
+.pp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.pp-budget { display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+  font-size: 1rem; color: var(--ink-body); font-weight: 600; }
+.pp-budget input {
+  width: 7.5em; min-height: 44px; padding: 4px 10px; text-align: right;
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  font-family: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; color: var(--ink);
+  background: var(--surface);
+}
+.pp-budget input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+
+/* 集中度警示：琥珀＝品質/風險提示，不用紅綠（那是漲跌語意） */
+.pp-warn {
+  display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px;
+  background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+  border-radius: var(--r-md); padding: 12px 14px;
+  font-size: 1rem; line-height: 1.75; color: var(--ink-body);
+}
+.pp-warn svg { flex: none; margin-top: 3px; color: var(--warn); }
+.pp-warn b { color: var(--warn); }
+
+.pp-scroll { overflow-x: auto; }
+.pp-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.pp-table th, .pp-table td { text-align: right; padding: 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pp-table th { font-size: .875rem; font-weight: 700; color: var(--ink-muted); }
+.pp-table td { font-size: 1rem; color: var(--ink-body); }
+.pp-table small { display: block; font-size: .8125rem; color: var(--ink-muted); font-weight: 400; }
+/* 首欄 sticky：手機橫捲時個股名不能消失（今天實測其他表格踩過這個坑） */
+.pp-table th:first-child, .pp-table td:first-child {
+  text-align: left; font-weight: 700; color: var(--ink);
+  position: sticky; left: 0; background: var(--surface); z-index: 1;
+}
+.pp-table .pp-odd { color: var(--warn); }        /* 買不到整張 */
+.pp-table .pp-hot { color: var(--warn); }        /* 波動偏高 */
+
+.pp-note {
+  display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0;
+  font-size: 1rem; line-height: 1.75; color: var(--ink-body);
+}
+.pp-note svg { flex: none; margin-top: 4px; color: var(--ink-muted); }
+.pp-note-warn {
+  background: color-mix(in srgb, var(--warn-bg) 45%, transparent);
+  border-radius: var(--r-md); padding: 12px 14px;
+}
+.pp-note-warn svg { color: var(--warn); }

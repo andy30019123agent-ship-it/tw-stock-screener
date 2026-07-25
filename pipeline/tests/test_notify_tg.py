@@ -50,11 +50,21 @@ def test_foreign_streak_below_3_never_fires():
     assert nt.score(s, weights) == 0
 
 
-def test_bias_penalty_still_applies():
-    # 乖離扣分是既有設計，改動評分來源後要維持不變
+def test_乖離不再扣分_因為實測方向是反的():
+    """2026-07-25 規格變更：移除「抑制追高」的乖離扣分。
+
+    原本 ≥12/15/20 各扣 1/2/3 分，假設「漲一大段再追風險高」。用兩年 375,659 筆樣本複驗
+    （verify_bias_penalty.py）後推翻：成本後超額隨乖離**單調遞增**（<0 組 −1.59pp、
+    ≥25 組 +2.36pp），風險調整後與紅黃綠三種市況都同方向。原本扣分的那組其實是最好的。
+
+    這個測試現在守的是「不可以再把乖離寫回評分」——不論高低乖離都不影響分數。
+    """
     weights = {"signal_ma": {"weight": 3}}
-    s = _stock(signal_ma=True, bias20_pct=20)
-    assert nt.score(s, weights) == 3 - 3   # 乖離 >=20 扣 3 分
+    for bias in (-10, 0, 11, 12, 15, 20, 30):
+        s = _stock(signal_ma=True, bias20_pct=bias)
+        assert nt.score(s, weights) == 3, f"乖離 {bias}% 不該影響分數"
+    # 也不該反過來加分：中位數每組都是負的、最高乖離組波動最大，加分沒有證據支持
+    assert nt.score(_stock(signal_ma=True, bias20_pct=40), weights) == 3
 
 
 def test_non_engine_signal_ignored_even_with_weight():
