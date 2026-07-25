@@ -1262,6 +1262,19 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
         hs.save(BT_PRICE_PATH, bt_hist)
         print(f"   長歷史併入 {added} 個新交易日 → 共 {len(bt_hist['dates'])} 天、{len(bt_hist['stocks'])} 檔")
     long_price = hs.bt_to_price_hist(bt_hist)
+
+    # 🔑 每次重算都重建價格斷點清單（分割／現金減資造成的假漲跌）。
+    # 2026-07-25 Codex 指出：原本 price_breaks.json 是一次性快照、從沒接上每日流程 →
+    # bt_price.json 每天在長，但 2026-07-25 之後的新分割減資永遠不會被偵測、也不會被排除。
+    # 偵測是純本機運算（掃已有資料、不打網路），成本低，放在這裡與回測同一次跑完最不會漏。
+    try:
+        import price_breaks as pb
+        brk_rows = pb.detect_price_breaks(bt_hist, div_hist)
+        pb.save_breaks(brk_rows)
+        print(f"   價格斷點偵測：{len(brk_rows)} 筆（分割/減資假漲跌，回測會排除跨越它們的樣本）")
+    except Exception as e:
+        # 失敗不能擋回測——但要講清楚「這次用的是舊清單」，不可靜默沿用
+        print(f"   ⚠️ 價格斷點偵測失敗，本次沿用既有 price_breaks.json（可能漏掉新斷點）：{e}")
     if len(bt_hist.get("dates") or []) > len(next(iter(price_hist.values()), {})):
         print(f"   使用長歷史回測（{len(bt_hist['dates'])} 個交易日）")
         price_for_bt = long_price

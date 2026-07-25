@@ -66,6 +66,12 @@ def main():
     end_iso = args.end or (dates[-1] if dates else None)
     if not start_iso or not end_iso:
         raise SystemExit("❌ 沒有可用的日期區間：bt_price.json 是空的，且未指定 --start/--end")
+    # 邊界驗證（2026-07-25 Codex 指出）：chunk_months=0 會讓 month_chunks 無限迴圈；
+    # start>end 會零工作量卻印出成功訊息，看起來像補完了。
+    if args.chunk_months < 1:
+        raise SystemExit("❌ --chunk-months 必須 ≥1（0 會無限迴圈）")
+    if start_iso > end_iso:
+        raise SystemExit(f"❌ 起日晚於迄日（{start_iso} > {end_iso}），沒有任何區間可補")
 
     print(f"📅 回填除權息事件區間：{start_iso} ~ {end_iso}")
     chunks = month_chunks(start_iso, end_iso, args.chunk_months)
@@ -84,11 +90,18 @@ def main():
     holes = []                # 有疑問的區間，最後一次列出來
     for i, (cs, ce) in enumerate(chunks, 1):
         ok = True
+        src = {}
         try:
-            events = ms.fetch_ex_dividend_events(cs, ce)
+            # 🔑 2026-07-25 Codex 指出：兩個市場的例外在 fetch 內各自被吞掉，只要一邊成功外層
+            # 就看不出另一邊掛了 → 會把「缺半個市場」的區間標成完整涵蓋。要逐來源檢查。
+            events = ms.fetch_ex_dividend_events(cs, ce, sources_ok=src)
         except Exception as e:
             print(f"  ⚠️ {cs}~{ce} 抓取失敗：{e}")
             events, ok = {}, False
+        if ok and not (src.get("listed") and src.get("otc")):
+            missing = [k for k in ("listed", "otc") if not src.get(k)]
+            print(f"  ⚠️ {cs}~{ce} 有市場抓取失敗（{'、'.join(missing)}）——不可視為已涵蓋")
+            ok = False
         n = sum(len(v) for v in events.values())
         if ok and n == 0:
             print(f"  ⚠️ {cs}~{ce} 回 0 筆——2 個月完全沒有除權息不合常理，很可能是被限流回空")
@@ -105,10 +118,13 @@ def main():
         if i < len(chunks):
             time.sleep(args.sleep)
 
-    # 起日：跟既有涵蓋取聯集的較早者（既有若是 2026-01，補完 2024-08 後應該記成 2024-08）
+    # 起日：跟既有涵蓋取聯集的較早者（既有若是 2026-01，補完 2024-08 後應該記成 2024-08）。
+    # 迄日**不可縮短**（2026-07-25 Codex 指出）：重跑一段較早的區間時，covered_until 會是那段的
+    # 結尾，若直接寫入就把既有更晚的涵蓋範圍往前縮＝謊報「後面那段沒查過」。
     if covered_until:
         new_start = min(prev_start, start_iso) if prev_start else start_iso
-        hs.set_div_coverage(div_hist, new_start, covered_until)
+        new_end = max(prev_end, covered_until) if prev_end else covered_until
+        hs.set_div_coverage(div_hist, new_start, new_end)
         hs.save(DIV_PATH, div_hist)
 
     print(f"\n{'⚠️ 部分區間有問題' if holes else '✅'} 回填：{total_events} 筆除權息事件、{len(total_sids)} 檔")

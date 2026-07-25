@@ -418,6 +418,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 }
 .combo-chip.on { background: var(--primary-tint); border-color: var(--primary); color: var(--primary-strong); }
 .combo-clear { min-height: 36px; padding: 4px 12px; border: none; background: none; color: var(--primary); font-family: inherit; font-size: .8125rem; font-weight: 700; cursor: pointer; }
+/* 降級警示（門檻沒套上時要看得出來，不能靜默）：琥珀＝品質警示，不用紅綠 */
+.opp-degraded { color: var(--warn); }
 .combo-mc-bar { margin: -4px 0 10px; }
 .combo-scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; }
 .combo-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }

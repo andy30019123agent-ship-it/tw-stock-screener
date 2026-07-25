@@ -104,7 +104,11 @@ export default function Opportunities({ stocks, onPick, onCount }) {
           <p className="opp-sub">
             {opp.gate?.applied
               ? <>先篩「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻，今日 {opp.gate.pool} 檔）</>
-              : '當日有訊號者'}
+              : opp.gate?.reason === 'rs_unavailable'
+                ? <><b className="opp-degraded">⚠️ 相對強弱資料今日不可用，「{opp.gate.label}」門檻未套用</b>（改為全市場）</>
+                : opp.gate?.reason === 'pool_too_small'
+                  ? <><b className="opp-degraded">⚠️ 今日符合「{opp.gate.label}」的候選僅 {opp.gate.pool} 檔（不足 {opp.gate.min_pool}），門檻未套用</b></>
+                  : '當日有訊號者'}
             依「回測權重加總」排序 · 已過濾營收年減／低量 · 僅供參考，非投資建議
           </p>
         </div>

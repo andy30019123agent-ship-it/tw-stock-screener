@@ -145,3 +145,44 @@ def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
 
     opp.run([], {}, {}, {}, [], "2026-07-25")   # 預設不強制
     assert captured["force"] is False
+
+
+# ── 入場門檻的降級可見性（2026-07-25 Codex 複查後補）──────────────────────
+def _stock(sid, **kw):
+    base = {"id": sid, "name": f"N{sid}", "avg_vol_lots": 5000, "close": 100, "ma20": 95,
+            "sn_squeeze_breakout": True, "rs_confirmed_60_120": True, "rs_pct_60": 0.9}
+    base.update(kw)
+    return base
+
+
+def _weights():
+    return {"signals": {"sn_squeeze_breakout": {"weight": 1, "label": "縮口帶量突破"}}}
+
+
+def test_gate_min_pool_要算營收過濾之後的候選數():
+    """原本只看「有訊號＋流動性」就判 GATE_MIN_POOL，但之後還會剔除營收年減 →
+    20 檔可能被砍到不足 5 檔，保命門檻沒真的保住輸出（2026-07-25 Codex 指出）。"""
+    stocks = [_stock(str(1000 + i)) for i in range(25)]
+    # 25 檔都過門檻，但其中 20 檔營收年減 → 實際可用只有 5 檔 < GATE_MIN_POOL(20)
+    revenue = {s["id"]: {"yoy": (-1 if i < 20 else 1)} for i, s in enumerate(stocks)}
+    out = opp.build_opportunities(stocks, _weights(), revenue, "2026-07-24")
+    assert out["gate"]["pool"] == 5, "pool 應該只算營收也過關的"
+    assert out["gate"]["applied"] is False
+    assert out["gate"]["reason"] == "pool_too_small"
+
+
+def test_gate_足夠時正常套用():
+    stocks = [_stock(str(2000 + i)) for i in range(25)]
+    revenue = {s["id"]: {"yoy": 5} for s in stocks}
+    out = opp.build_opportunities(stocks, _weights(), revenue, "2026-07-24")
+    assert out["gate"]["applied"] is True and out["gate"]["reason"] == "applied"
+
+
+def test_RS_資料不可用時門檻退回全市場但要說明原因():
+    """RS 掛掉 → 旗標全 False → 門檻靜默失效卻看起來正常。必須用 reason 分辨故障與候選不足。"""
+    stocks = [_stock(str(3000 + i), rs_confirmed_60_120=False, rs_pct_60=None) for i in range(25)]
+    revenue = {s["id"]: {"yoy": 5} for s in stocks}
+    out = opp.build_opportunities(stocks, _weights(), revenue, "2026-07-24")
+    assert out["gate"]["applied"] is False
+    assert out["gate"]["reason"] == "rs_unavailable"
+    assert len(out["picks"]) > 0, "退回全市場後仍要推得出東西"

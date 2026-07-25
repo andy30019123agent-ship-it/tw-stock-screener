@@ -241,13 +241,23 @@ def fetch_valuation():
 
 
 # ── 除權息事件（技術指標還原權息用）──────────────────────────────────
-def fetch_ex_dividend_events(start_iso, end_iso):
+def fetch_ex_dividend_events(start_iso, end_iso, sources_ok=None):
     """區間內全市場（上市+上櫃）除權息事件：{sid: [{"date": iso, "ratio": float}, ...]}。
     ratio = 除權息參考價 / 除權息前收盤價（<1 代表除息/除權讓價格機械性下修，用來把
     事件日「之前」的歷史價格 back-adjust 回同一把尺，避免均線/黃金交叉誤判）。
     上市 TWSE TWT49U、上櫃 TPEX exDailyQ_result.php 皆吃日期區間、一次全市場一次全區間，
-    不像逐日 OHLCV 那樣要一天一天抓。"""
+    不像逐日 OHLCV 那樣要一天一天抓。
+
+    sources_ok（可選傳入 dict）：呼叫端想知道「上市/上櫃各自成功了嗎」時傳一個 dict 進來，
+    函式會填 {"listed": bool, "otc": bool}。⚠️ 2026-07-25 Codex 指出的洞：兩個市場各自
+    try/except 印警告後繼續，**只要有一邊成功、外層就看不出另一邊掛了**——回填腳本會把
+    「缺了半個市場」的區間標成完整涵蓋。這正是本檔想防的「靜默成功」再深一層。
+    """
     out = {}
+    if sources_ok is None:
+        sources_ok = {}
+    sources_ok.setdefault("listed", False)
+    sources_ok.setdefault("otc", False)
 
     def add(sid, date_iso, pre, ref):
         pre_f, ref_f = _f(pre), _f(ref)
@@ -266,6 +276,7 @@ def fetch_ex_dividend_events(start_iso, end_iso):
             date_iso = roc_label_to_iso(r[0])
             if date_iso:
                 add(sid, date_iso, r[3], r[4])
+        sources_ok["listed"] = True
     except Exception as e:
         print(f"  ⚠️ 上市除權息抓取失敗：{e}")
 
@@ -284,6 +295,7 @@ def fetch_ex_dividend_events(start_iso, end_iso):
                 date_iso = roc_to_iso(r[0])
                 if date_iso:
                     add(sid, date_iso, r[3], r[4])
+        sources_ok["otc"] = True
     except Exception as e:
         print(f"  ⚠️ 上櫃除權息抓取失敗：{e}")
     return out

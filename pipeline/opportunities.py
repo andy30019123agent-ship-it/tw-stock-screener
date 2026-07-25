@@ -63,9 +63,20 @@ def build_opportunities(results, weights, revenue, data_date):
         fired = [k for k, v in flags.items() if v and k in bt.ENGINE_SIGNALS]
         return fired, bool(fired) and (r.get("avg_vol_lots", 0) or 0) >= MIN_VOL_LOTS
 
-    gated = [r for r in results if r.get(GATE_SIGNAL) and eligible(r)[1]]
+    # ⚠️ GATE_MIN_POOL 必須用「通過所有硬過濾之後」的候選數來判（2026-07-25 Codex 指出）：
+    # 原本只看「有訊號＋流動性」，但下面還會剔除營收年減，20 檔可能被砍到不足 5 檔 → 保命門檻
+    # 沒真的保住輸出。這裡先把營收條件也算進去再判。
+    def passes_revenue(r):
+        rev = revenue.get(r["id"])
+        return rev is None or rev.get("yoy") is None or rev["yoy"] >= 0
+
+    gated = [r for r in results if r.get(GATE_SIGNAL) and eligible(r)[1] and passes_revenue(r)]
     gate_on = len(gated) >= GATE_MIN_POOL
     pool = gated if gate_on else results
+    # 說清楚「為什麼沒套門檻」——RS 資料掛掉時門檻會靜默失效，必須能分辨故障與候選不足
+    gate_reason = ("applied" if gate_on
+                   else "rs_unavailable" if not any(r.get("rs_pct_60") is not None for r in results)
+                   else "pool_too_small")
 
     picks = []
     for r in pool:
@@ -117,6 +128,7 @@ def build_opportunities(results, weights, revenue, data_date):
         "picks": picks[:TOP_N],
         # 前端/快報要能講清楚這批是「強勢股裡的技術面最佳」還是「全市場技術面最佳」
         "gate": {"signal": GATE_SIGNAL, "applied": gate_on, "pool": len(gated),
+                 "reason": gate_reason, "min_pool": GATE_MIN_POOL,
                  "label": bt.SIGNAL_LABELS.get(GATE_SIGNAL, GATE_SIGNAL)},
     }
 

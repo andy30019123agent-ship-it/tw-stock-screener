@@ -727,13 +727,18 @@ def main():
         if xs_date and data_dates and xs_date != max(data_dates):
             # 長歷史落後又補不上時會發生；旗標仍可用但要講清楚它是哪一天的
             print(f"   ⚠️ RS 基準日（{xs_date}）與選股資料日（{max(data_dates)}）不同")
+        rs_status = "ok" if n_rs else "empty"
     except Exception as e:
-        # 失敗安全：RS 是加值資訊，抓不到就讓旗標全 False，不能拖垮整份 screener.json
-        print(f"   ⚠️ 橫斷面計算失敗，RS 訊號本日不可用：{e}")
+        # 失敗安全：RS 是加值資訊，抓不到就讓旗標全 False，不能拖垮整份 screener.json。
+        # ⚠️ 但**不能靜默**（2026-07-25 Codex 指出）：旗標全 False → Top5 的「強勢雙確認」
+        # 入場門檻會因候選不足而自動退回全市場，於是門檻失效卻看起來一切正常。
+        # 所以要把狀態寫進輸出，讓 opportunities/前端能標示「降級中」。
+        print(f"   ⚠️ 橫斷面計算失敗，RS 訊號本日不可用（Top5 門檻會退回全市場）：{e}")
         for r in results:
             r["rs_pct_60"] = r["rs_pct_120"] = None
             r["rs_strong_60"] = r["rs_confirmed_60_120"] = r["industry_hot"] = False
         xs_date = None
+        rs_status = f"failed: {type(e).__name__}"
 
     dd = max(data_dates) if data_dates else None   # 這份資料的交易日
 
@@ -759,6 +764,7 @@ def main():
         "holder_week": holder_week,
         "market_breadth": market_breadth(results),   # Phase C：市場廣度橫幅（資訊型、不改選股）
         "rs_as_of": xs_date,   # RS/產業輪動的基準交易日（長歷史落後時可能早於 data_date）
+        "rs_status": rs_status,  # ok / empty / failed:<型別>——失敗時 Top5 門檻會退回全市場，要能看出來
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")

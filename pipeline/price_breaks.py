@@ -71,17 +71,25 @@ def is_broken(breaks_set, sid, date):
     return (sid, date) in breaks_set
 
 
-def main():
-    bt = hs.load(BT_PATH) or hs.bt_empty()
-    div_hist = hs.load(DIV_PATH) or {}
-    breaks = detect_price_breaks(bt, div_hist)
+def save_breaks(breaks, path=BREAKS_PATH):
+    """把偵測結果寫檔。抽成函式讓 `ensure_weights` 每次重算都能重建清單——原本寫檔邏輯只在
+    main() 裡，等於這份清單是一次性快照，之後新增的分割/減資永遠不會被偵測到
+    （2026-07-25 Codex 指出）。"""
     out = {
         "threshold_pct": THRESHOLD * 100,
         "count": len(breaks),
         "breaks": breaks,
     }
-    with open(BREAKS_PATH, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"), indent=None)
+    return out
+
+
+def main():
+    bt = hs.load(BT_PATH) or hs.bt_empty()
+    div_hist = hs.load(DIV_PATH) or {}
+    breaks = detect_price_breaks(bt, div_hist)
+    save_breaks(breaks)
     print(f"✅ 偵測到 {len(breaks)} 筆可疑價格斷點 → {os.path.relpath(BREAKS_PATH)}")
     for b in breaks[:10]:
         print(f"   {b['sid']} {b['date']}：{b['prev_close']} → {b['close']}（{b['pct']:+.1f}%）")
