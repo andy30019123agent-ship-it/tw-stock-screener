@@ -742,7 +742,8 @@ def main():
 
     dd = max(data_dates) if data_dates else None   # 這份資料的交易日
 
-    # ── 機會股 Top 5 引擎（回測權重 → 選股 → picks 留檔 → 成績單 → opportunities.json 契約）──
+    # ── 機會股引擎（回測權重 → 選股 → picks 留檔 → 成績單 → opportunities.json 契約）──
+    # 檔數見 opportunities.TOP_N（2026-07-25 從 5 改成 10），不要在文案/註解裡寫死數字。
     import opportunities as opp  # 延遲載入避免循環匯入
     try:
         opp.run(results, price_hist, chip_hist, div_hist, universe, dd,

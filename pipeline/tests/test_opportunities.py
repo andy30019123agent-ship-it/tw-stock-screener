@@ -5,8 +5,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import opportunities as opp
 
+# 跨 repo 契約欄位。rs_pct_60 於 2026-07-25 加入（排序依據從 rs20 換成它）。
 CONTRACT_KEYS = {"id", "name", "score", "reasons", "close", "support_ma20",
-                 "recent_high20", "rs20", "revenue_yoy", "earnings_date", "risk_flags"}
+                 "recent_high20", "rs20", "rs_pct_60", "revenue_yoy", "earnings_date", "risk_flags"}
 
 # 簡化權重表：糾結轉強 3 分、爆量突破 2 分、其餘預設 1
 WEIGHTS = {"signals": {
@@ -66,23 +67,49 @@ def test_high_bias_flagged_not_dropped():
     assert "乖離大" in o["picks"][0]["risk_flags"]
 
 
-def test_no_signal_excluded_and_top5_sorted():
+def test_no_signal_excluded_and_sorted_by_rs_pct_60():
+    """2026-07-25 規格變更：檔數 5→10（TOP_N）、同分時的排序依據 rs20 → rs_pct_60。
+    rs20 實測與隨機排序無異（t=0.28）；rs_pct_60 是全市場 60 日報酬百分位，每項指標都更好。"""
     results = [_stock("6001", signal_ma=True, signal_breakout=True),   # 5 分
               _stock("6002", signal_ma=True),                           # 3 分
-              _stock("6003"),                                           # 無訊號 → 排除
+              # ⚠️ _stock 預設就帶 sn_squeeze_breakout（見 helper），所以這檔**不是無訊號**，
+              # 只是簡化 WEIGHTS 沒給它分數 → score 0。舊測試註解寫「無訊號→排除」是錯的，
+              # 它一直都在名單裡，只是以前 TOP_N=5 剛好把它截掉，所以沒被發現。
+              _stock("6003"),                                           # 0 分（權重表沒列的訊號）
               _stock("6004", signal_breakout=True),                     # 2 分
-              _stock("6005", signal_ma=True, signal_breakout=True, rs20=9.0),  # 5 分、rs 高
+              # 5 分、rs_pct_60 高 → 同分中應排最前；rs20 故意設低，證明排序不再看它
+              _stock("6005", signal_ma=True, signal_breakout=True, rs20=-99.0, rs_pct_60=0.95),
               _stock("6006", signal_ma=True),                           # 3 分
               _stock("6007", signal_ma=True)]                           # 3 分
     rev = {s["id"]: {"yoy": 5.0} for s in results}
     o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-02")
     ids = [p["id"] for p in o["picks"]]
-    assert len(ids) == 5                       # Top 5
-    assert "6003" not in ids                   # 無訊號被排除
-    assert ids[0] == "6005"                    # 同 5 分、rs20 高者在前
+    assert len(ids) == 7                       # 7 檔都有訊號、未達 TOP_N=10 → 全數保留
+    assert ids[-1] == "6003"                   # 0 分的排最後（權重表沒列到的訊號不加分）
+    assert ids[0] == "6005"                    # 同 5 分：rs_pct_60 高者在前（即使 rs20 是 −99）
     assert ids[1] == "6001"
     scores = [p["score"] for p in o["picks"]]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_top_n_是_10_且會截斷():
+    """TOP_N=10：候選超過 10 檔時只留前 10。"""
+    results = [_stock(str(7000 + i), signal_ma=True, rs_pct_60=(i / 100)) for i in range(15)]
+    rev = {s["id"]: {"yoy": 5.0} for s in results}
+    o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-02")
+    assert opp.TOP_N == 10
+    assert len(o["picks"]) == 10
+    # 同分（都 3 分）→ 依 rs_pct_60 由高到低，所以第一名是 i=14
+    assert o["picks"][0]["id"] == "7014"
+
+
+def test_缺rs_pct_60用最低值墊底_不可用0():
+    """0 是「全市場最弱」的合法百分位，不能拿來代表缺值——否則缺資料的會排在最弱者前面。"""
+    results = [_stock("8001", signal_ma=True, rs_pct_60=None),
+               _stock("8002", signal_ma=True, rs_pct_60=0.0)]
+    rev = {s["id"]: {"yoy": 5.0} for s in results}
+    o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-02")
+    assert [p["id"] for p in o["picks"]] == ["8002", "8001"], "有資料且為 0 的要排在缺資料的前面"
 
 
 def test_compute_scoreboard_hand_calc():

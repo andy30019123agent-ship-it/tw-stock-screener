@@ -29,7 +29,8 @@ function trendOf(row) {
   return d >= 0.1 ? 'up' : d <= -0.1 ? 'down' : 'flat'
 }
 
-// 機會股 Top 5 區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights/windows.json。
+// 機會股區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights/windows.json。
+// ⚠️ 檔數不可寫死——2026-07-25 從 5 改成 10（見 opportunities.TOP_N），標題與文案一律用 picks.length。
 // 都採「抓不到就靜默省略該部分」，不讓機會股區塊拖垮既有選股頁。
 export default function Opportunities({ stocks, onPick, onCount }) {
   const [opp, setOpp] = useState(null)
@@ -38,7 +39,7 @@ export default function Opportunities({ stocks, onPick, onCount }) {
   const [windows, setWindows] = useState(null)   // 多時間窗勝率榜（signal_windows.json）
   const [sortWin, setSortWin] = useState('all')   // 目前聚焦／排序的時間窗欄
   const [showWeights, setShowWeights] = useState(false)
-  // 手機預設收合機會股 Top5（省捲動，Andy 2026-07-09 指定）；桌機不顯示收合鈕故恆展開。
+  // 手機預設收合（省捲動，Andy 2026-07-09 指定）；桌機不顯示收合鈕故恆展開。
   // 斷點用 720 對齊「手機卡片版」的斷點（641~720 也是手機版，之前用 640 會在這區間誤展開）。
   const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 720 : true))
 
@@ -97,12 +98,12 @@ export default function Opportunities({ stocks, onPick, onCount }) {
     : []
 
   return (
-    <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="機會股 Top 5">
+    <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="機會股">
       <div className="opp-head">
         <div>
-          <span className="badge-pill"><Target size={14} strokeWidth={1.75} />今日機會股 Top 5</span>
+          <span className="badge-pill"><Target size={14} strokeWidth={1.75} />今日機會股 Top {opp.picks.length}</span>
           {/* 有入場門檻時要講清楚這批的來歷——「強勢股裡的技術面最佳」與「全市場技術面最佳」
-              是兩件事，數字一樣但意義不同，不說會讓人誤讀 Top5 的範圍。 */}
+              是兩件事，數字一樣但意義不同，不說會讓人誤讀推薦名單的範圍。 */}
           <p className="opp-sub">
             {opp.gate?.applied
               ? <>先篩「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻，今日 {opp.gate.pool} 檔）</>

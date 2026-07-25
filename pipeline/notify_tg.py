@@ -20,6 +20,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(__file__))
 import backtest_signals as bt  # noqa: E402  # ENGINE_SIGNALS/signal_flags：跟網站 Top5 同一套判準
+import opportunities as opp  # noqa: E402  # TOP_N：快報檔數必須與網站一致
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
@@ -174,10 +175,12 @@ def build_message(d):
     if not ranked:
         # 退路：機會股檔案缺席/日期對不上時，用回測權重分數排序，至少還推得出東西。
         weights = load_weights()
+        # 檔數跟 opportunities.TOP_N 走，不可寫死——2026-07-25 改成 10 之後若這裡還是 5，
+        # 快報與網站就會不一致（正常路徑讀 opportunities.json 是 10 檔、退路卻只有 5 檔）。
         ranked = sorted(
             [s for s in stocks if score(s, weights) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
             key=lambda s: (-score(s, weights), -s.get("foreign_streak", 0)),
-        )[:5]
+        )[:opp.TOP_N]
 
     cnt = d.get("count", len(stocks))
     sep = "━━━━━━━━━━"  # 卡片分隔線

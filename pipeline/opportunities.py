@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""機會股 Top 5 引擎：把當日有訊號的股票依「訊號權重加總」排序，過濾後產出跨 repo 契約 JSON。
+"""機會股引擎：把當日有訊號的股票依「訊號權重加總」排序，過濾後產出跨 repo 契約 JSON。
 
 產出（皆由 run() 寫出）：
 - public/data/opportunities.json ── 跨 repo 契約（欄位固定，下游 dashboard 晚報會 fetch），走 Pages。
@@ -29,7 +29,15 @@ OUT_DIR = os.path.join(HERE, "..", "public", "data")
 PICKS_HISTORY_PATH = os.path.join(HERE, "picks_history.json")
 SCOREBOARD_PATH = os.path.join(HERE, "scoreboard.json")
 
-TOP_N = 5
+# 每天推薦幾檔。⚠️ 2026-07-25 從 5 改成 10（Andy 選 1️⃣，依 verify_top5_procedure.py 的實測）：
+#   檔數  平均   中位   日勝率  sd    最大回撤  t(NW)
+#    5   2.47  0.97  53.4% 11.80  −27.3  1.78   ← 舊設定
+#   10   2.72  1.06  55.4%  9.00  −18.8  2.38   ← 現在
+#   20   2.64  2.12  64.0%  6.35  −10.8  3.00
+# 平均幾乎不變，但中位數、勝率、回撤、統計顯著性全部改善——在「少數大贏撐起整體」的報酬分佈
+# 下，買太少等於在賭自己剛好抽中那幾檔。選 10 而非 20 是 Andy 的取捨（他要「精華」，20 檔太多）。
+# 可行性：score>0 的候選中位 26 檔、94.4% 的日子有 ≥5 檔，取 10 檔不會經常湊不滿。
+TOP_N = 10
 MIN_VOL_LOTS = 500        # 20 日均量門檻（張）
 BIAS_FLAG_PCT = 15        # 20 日乖離 > 此值加「乖離大」風險旗標
 FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一致）
@@ -121,12 +129,20 @@ def build_opportunities(results, weights, revenue, data_date):
             "support_ma20": ma20,
             "recent_high20": r.get("recent_high20"),
             "rs20": r.get("rs20"),
+            "rs_pct_60": r.get("rs_pct_60"),      # 排序依據（全市場 60 日報酬百分位）
             "revenue_yoy": yoy,
             "earnings_date": r.get("earnings_date"),
             "risk_flags": risk,
         })
 
-    picks.sort(key=lambda p: (-p["score"], -(p["rs20"] if p["rs20"] is not None else -999)))
+    # ⚠️ 2026-07-25 排序依據從 rs20 改成 rs_pct_60（Andy 選 4️⃣）。實測（verify_top5_procedure.py）：
+    #   rs20 排序：+2.47pp／中位 0.97／t 1.78——但**跟隨機排序比 t 只有 0.28、0/20 seed 顯著**，
+    #             故意選最弱 5 檔反而 t=2.29 更「顯著」→ 它沒有排序訊息，只是把 sd 從 3.7 放大到 11.8。
+    #   rs_pct_60 排序：+3.09pp／中位 1.64／sd 11.45／t 2.09——每一項都更好。
+    # 兩者的差別：rs20 是「個股 20 日報酬 − 加權指數」（受大盤短期波動影響），
+    # rs_pct_60 是「個股 60 日報酬在全市場的百分位」（跨股票比較、不依賴指數，指數只有 40 天歷史）。
+    # 缺 rs_pct_60 的用 -1 墊底（0 是「最弱」的合法百分位，不能拿來當缺值）。
+    picks.sort(key=lambda p: (-p["score"], -(p["rs_pct_60"] if p["rs_pct_60"] is not None else -1)))
     return {
         "date": data_date,
         "picks": picks[:TOP_N],
@@ -177,6 +193,7 @@ def update_picks_history(opp):
                        "close": p["close"], "score": p["score"],
                        "reasons": p.get("reasons"),        # 當時的加權訊號（權重會隨重算改變）
                        "rs20": p.get("rs20"),
+                       "rs_pct_60": p.get("rs_pct_60"),
                        "risk_flags": p.get("risk_flags"),
                        "revenue_yoy": p.get("revenue_yoy")} for p in opp["picks"]],
         })
@@ -231,7 +248,7 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     workflow_dispatch 的 force_recompute 輸入一路傳到這裡（見 daily.yml）。
     """
     today = today or dt.date.today()
-    print("🎯 機會股 Top 5 引擎…")
+    print(f"🎯 機會股引擎（取前 {TOP_N} 檔）…")
     weights = bt.ensure_weights(price_hist, chip_hist, div_hist, universe, today=today, force=force_recompute)
     revenue = mr.load_or_fetch(today)
     print(f"   月營收 YoY 覆蓋 {len(revenue)} 檔")
