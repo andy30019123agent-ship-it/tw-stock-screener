@@ -337,6 +337,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 /* 按鈕上的戰績標記（平均超額）*/
 .preset-score { font-size: .8125rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .preset-score small { font-size: .625rem; font-weight: 700; opacity: .75; margin-left: 1px; }
+/* ＊＝這個數字是「多個形態裡最好的那一個」，不是整批的平均（小詩選股 5 招） */
+.score-best { font-style: normal; font-size: .625rem; font-weight: 700; opacity: .7; margin-left: 1px; cursor: help; }
 .preset-score.good { color: var(--up); }
 .preset-score.bad { color: var(--down); }
 .preset-chip.on .preset-score, .preset-chip.on .preset-score.good, .preset-chip.on .preset-score.bad { color: var(--on-primary); }

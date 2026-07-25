@@ -46,13 +46,19 @@ const PRESET_SIGNAL = {
   fill: ['fill_fast'],
   bull: ['bull_aligned'],
 }
-// 取該策略「最具代表性訊號」（有樣本者中平均超額最高）的回測戰績；無樣本回 null。
+// 取該策略「最具代表性訊號」（有樣本者中成本後超額最高）的回測戰績；無樣本回 null。
+// ⚠️ 對應多個訊號的策略（小詩選股＝5 招）顯示的是「最好的那一招」，不是「勾了它會篩到的
+// 那一整批」的表現——後者需要後端對「任一招成立」另做回測（signal_shishi 目前只有選股用、
+// 沒進回測）。差距是真的：小詩 5 招裡最好的是縮口帶量突破，5 招母體的平均會被拉低。
+// 這裡回傳時附上 `_isBest`，讓按鈕與表格能明確標示，不能只寫在腳註（腳註會被略過）。
 function presetStat(key, weights) {
   const keys = PRESET_SIGNAL[key]
   if (!keys || !weights?.signals) return null
   const cands = keys.map(k => weights.signals[k]).filter(s => s && s.samples > 0 && s.avg_excess != null)
   if (!cands.length) return null
-  return cands.reduce((a, b) => (b.avg_excess > a.avg_excess ? b : a))
+  const netOf = s => s.quality?.net_excess_expectancy ?? s.avg_excess
+  const best = cands.reduce((a, b) => (netOf(b) > netOf(a) ? b : a))
+  return keys.length > 1 ? { ...best, _isBest: true, _ofN: keys.length } : best
 }
 // 排序依據＝「成本後超額」（扣手續費證交稅＋扣大盤），不是原始平均超額。
 // 原因：原始超額沒扣成本，會把「毛利看起來不錯、扣完成本其實贏不過大盤」的策略排到前面
@@ -137,8 +143,11 @@ export default function ConditionPanel({
                   {/* 顯示的數字要跟排序依據是同一個（成本後超額）。原本排序用淨值、卻顯示沒扣成本的
                       毛超額，等於重演「畫面數字不是決策依據」那個 bug。 */}
                   {btnScore != null && <span className={`preset-score ${btnScore > 0 ? 'good' : btnScore < 0 ? 'bad' : ''}`}
-                    title="成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的">
-                    {btnScore >= 0 ? '+' : ''}{btnScore}<small>pp</small></span>}
+                    title={st?._isBest
+                      ? `成本後超額。⚠️ 這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
+                      : '成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的'}>
+                    {btnScore >= 0 ? '+' : ''}{btnScore}<small>pp</small>
+                    {st?._isBest && <em className="score-best" title="顯示的是最佳形態的成績">＊</em>}</span>}
                   {tm && <sup className={tm.cls}>{tm.mark}</sup>}
                 </button>
               )
@@ -197,7 +206,8 @@ export default function ConditionPanel({
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
-                <b>⚠️</b> 代表扣成本後贏不過大盤。小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
+                <b>⚠️</b> 代表扣成本後贏不過大盤，<b>＊</b> 代表這個數字是該策略「多個形態裡最好的那一個」
+                （小詩選股 5 招）、不是勾選後篩到的整批平均；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
               </p>
               <p className="strategy-note strategy-skew">
                 ⚠️ <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
