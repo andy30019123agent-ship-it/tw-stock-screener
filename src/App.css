@@ -372,7 +372,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .oos-badge.oos-robust { color: var(--primary-strong); background: var(--surface-tint); }
 .oos-badge.oos-warn { color: var(--warn); background: var(--warn-bg); }
 .oos-badge.oos-bad { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-border); }
-.oos-badge.oos-muted { color: var(--ink-muted); background: var(--surface-2, rgba(0,0,0,.05)); }
+.oos-badge.oos-muted { color: var(--ink-muted); background: var(--surface-tint); }
 .strategy-table tr.exit-control { background: color-mix(in srgb, var(--primary) 7%, transparent); }
 .strategy-table tr.exit-control td:first-child { font-weight: 700; }
 .strategy-table tr.exit-control small { color: var(--primary); font-weight: 600; margin-left: 2px; }
@@ -1158,3 +1158,21 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   font-size: 1rem; font-weight: 700; color: var(--ink-muted);
 }
 .pp-money > summary:hover { color: var(--primary); }
+
+/* 機會股取不到時的明示區塊（2026-07-25）：原本靜默消失，使用者會誤判成「今天沒選到股」。
+   用 --warn 系列而非紅色——這是狀態說明，不是價格漲跌，不可佔用紅漲綠跌語意。 */
+.opp-fail {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-md);
+  background: var(--warn-bg);
+}
+.opp-fail p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--ink-body); }
+.opp-fail code {
+  font-size: 14px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-tint);
+  word-break: break-all;
+}

@@ -200,7 +200,8 @@ export default function App() {
       )}
 
       <ErrorBoundary name="opportunities" label="今日機會股">
-        <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount} />
+        <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount}
+          engineStatus={data?.engine_status} />
       </ErrorBoundary>
 
       {data && (

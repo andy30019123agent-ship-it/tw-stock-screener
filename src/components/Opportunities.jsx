@@ -32,7 +32,7 @@ function trendOf(row) {
 // 機會股區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights/windows.json。
 // ⚠️ 檔數不可寫死——2026-07-25 從 5 改成 10（見 opportunities.TOP_N），標題與文案一律用 picks.length。
 // 都採「抓不到就靜默省略該部分」，不讓機會股區塊拖垮既有選股頁。
-export default function Opportunities({ stocks, onPick, onCount }) {
+export default function Opportunities({ stocks, onPick, onCount, engineStatus }) {
   const [opp, setOpp] = useState(null)
   const [board, setBoard] = useState(null)
   const [weights, setWeights] = useState(null)
@@ -78,7 +78,24 @@ export default function Opportunities({ stocks, onPick, onCount }) {
     return () => mq.removeEventListener('change', sync)
   }, [])
 
-  if (!opp || !opp.picks || opp.picks.length === 0) return null
+  // ⚠️ 2026-07-25：原本這裡 `return null`＝抓不到就整塊消失，看起來像「今天沒選到股」。
+  // 實際上 2026-07-25 晚間就是管線的引擎掛掉、`opportunities.json` 根本沒產出，
+  // 而畫面完全沒有異狀 → 靜默省略在這裡是錯的（那是主功能，不是裝飾）。
+  // 現在分三種情況：檔案缺（管線問題）／有檔但零檔（真的沒選到）／正常。
+  if (!opp) return (
+    <section className="opp opp-fail" data-region="機會股">
+      <p>
+        <b>今日精華名單暫時取不到</b>——這通常是資料管線出問題（不是「今天沒選到股」）。
+        {engineStatus && engineStatus !== 'ok' && <><br />管線回報：<code>{engineStatus}</code></>}
+        <br />其他選股條件與戰績仍可正常使用；隔天自動更新後會恢復。
+      </p>
+    </section>
+  )
+  if (!opp.picks || opp.picks.length === 0) return (
+    <section className="opp opp-fail" data-region="機會股">
+      <p><b>今天沒有個股通過門檻</b>（名單產出正常、就是零檔）——這是正常結果，不必找原因。</p>
+    </section>
+  )
 
   // 勝率榜（多時間窗）衍生值：優先用 signal_windows.json，缺了才退回舊的單欄 signal_weights.json。
   const win = windows?.signals ? windows : null

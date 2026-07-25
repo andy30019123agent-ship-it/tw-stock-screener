@@ -119,7 +119,7 @@ def load_or_fetch(today=None):
     want = _expected_ym(today)
     # 🔴 2026-07-25 修（Codex 指出）：原本用「全市場最大 ym」判斷命中 → 上市成功、上櫃失敗後，
     # 只要上市已有新月份就整體命中快取，**上櫃的舊資料再也不會被重試**。
-    # 逐來源檢查：兩個市場都達到 want 才算命中。ms.market_of() 用代號區分上市/上櫃。
+    # 逐來源檢查：兩個市場都達到 want 才算命中（市場別取自抓取時寫入的 mkt 欄位）。
     per = _latest_ym_by_market(cached)
     if cached and all(per.get(k) and per[k] >= want for k in ("listed", "otc")):
         return cached
@@ -127,8 +127,6 @@ def load_or_fetch(today=None):
         lag = [f"{k}={per.get(k) or '無'}" for k in ("listed", "otc") if not (per.get(k) and per[k] >= want)]
         print(f"   月營收有市場未達 {want}（{'、'.join(lag)}）→ 重抓")
 
-    if cached:
-        print(f"   月營收快取只到 {have}、應已公布到 {want} → 重抓")
     status = {}
     fresh = fetch_revenue_yoy(status)
     if not fresh:

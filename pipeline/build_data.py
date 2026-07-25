@@ -745,11 +745,19 @@ def main():
     # ── 機會股引擎（回測權重 → 選股 → picks 留檔 → 成績單 → opportunities.json 契約）──
     # 檔數見 opportunities.TOP_N（2026-07-25 從 5 改成 10），不要在文案/註解裡寫死數字。
     import opportunities as opp  # 延遲載入避免循環匯入
+    engine_status = "ok"
     try:
         opp.run(results, price_hist, chip_hist, div_hist, universe, dd,
                 force_recompute=args.force_recompute)
     except Exception as e:
-        print(f"  ⚠️ 機會股引擎失敗（不影響 screener.json 產出）：{e}")
+        # 這裡刻意不 re-raise：raise 會讓後續「存回 main」整步被跳過，當天累積的歷史資料就丟了
+        # （2026-07-25 已被 notify_tg 的 IndexError 教過一次）。但**失敗必須看得見**——
+        # 當天 `opportunities.json` 不會產出，前端若靜默省略，Andy 只會以為「今天沒選到股」。
+        # 所以寫進 screener.json 讓前端明講，比照既有的 rs_status 做法。
+        engine_status = f"failed:{type(e).__name__}: {e}"
+        import traceback
+        print(f"  🔴 機會股引擎失敗（screener.json 仍會產出，但今日精華名單缺）：{e}")
+        traceback.print_exc()
 
     os.makedirs(OUT_DIR, exist_ok=True)
     holder_ready = max((r["holder_weeks"] for r in results), default=0) >= 2
@@ -766,6 +774,8 @@ def main():
         "market_breadth": market_breadth(results),   # Phase C：市場廣度橫幅（資訊型、不改選股）
         "rs_as_of": xs_date,   # RS/產業輪動的基準交易日（長歷史落後時可能早於 data_date）
         "rs_status": rs_status,  # ok / empty / failed:<型別>——失敗時 Top5 門檻會退回全市場，要能看出來
+        # ok / failed:<型別>——引擎掛掉時 opportunities.json 不會產出，前端要能說出原因
+        "engine_status": engine_status,
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")
