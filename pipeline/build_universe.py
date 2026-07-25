@@ -51,6 +51,13 @@ def _industry_name(code):
     return INDUSTRY_NAMES.get(str(code).zfill(2), "其他")
 
 
+def _is_etf_code(sid):
+    """00 開頭＝ETF/ETN（0050、0056、0052…），代號剛好也是 4 碼數字會被 is_common_stock
+    放行，但選股母體要的是個股，不該混進 ETF——分割/反分割會製造假漲跌，且 ETF 的
+    基本面/籌碼訊號跟個股邏輯不對盤。"""
+    return str(sid).strip().startswith("00")
+
+
 def main():
     print("📡 取得全市場可交易普通股清單（TWSE/TPEX，免費）…")
     date_iso, listed_ohlc = ms.fetch_listed_ohlc_latest()
@@ -70,10 +77,14 @@ def main():
 
     stocks = []
     for sid in sorted(listed_ohlc):
+        if _is_etf_code(sid):
+            continue
         name, code = listed_info.get(sid, (sid, ""))
         stocks.append({"id": sid, "name": name or sid, "market": "上市",
                        "industry": _industry_name(code)})
     for sid in sorted(otc_ohlc):
+        if _is_etf_code(sid):
+            continue
         name, code = otc_info.get(sid, (sid, ""))
         stocks.append({"id": sid, "name": name or sid, "market": "上櫃",
                        "industry": _industry_name(code)})

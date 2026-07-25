@@ -632,6 +632,9 @@ def main():
     ap.add_argument("--limit", type=int, help="只跑前 N 檔")
     ap.add_argument("--min-vol", type=int, default=500,
                     help="只輸出 20 日均量 ≥ N 張的「有量」股（預設 500）")
+    ap.add_argument("--force-recompute", action="store_true",
+                    help="強制重算回測訊號權重（略過 ensure_weights 的每週快取閘門），"
+                         "改過回測邏輯、部署後想讓線上數字馬上更新時用")
     args = ap.parse_args()
 
     print("📡 載入全市場清單與歷史（TWSE/TPEX 免費源，不用 FinMind）…")
@@ -701,12 +704,44 @@ def main():
 
     annotate_valuation(results)   # 同業比：標記 industry_pe_median / undervalued
 
+    # ── 橫斷面相對強弱＋產業輪動（2026-07-25）：從「僅看戰績」升級為可即時篩選 ──────────
+    # 為什麼值得做：全樣本去極值檢驗顯示，強勢雙確認是唯一「去掉最極端 2% 事件後平均超額仍為正」
+    # 且樣本外驗證 robust 的訊號（+2.13pp → 去頂2% +0.51 → 兩端5% +0.44、樣本 4822）；相對地
+    # 目前引擎在用的 5 個訊號去掉最高 1% 後全部轉負。最穩的訊號卻只能看不能用，是明顯的錯配。
+    # 🔑 走 backtest_signals.live_xsect + _xsect_flags：與回測同一支函式、同一組門檻，
+    #    網站上勾到的股票才會真的對應戰績表上那個數字（定義漂移是這類功能最常見的假象來源）。
+    print("📐 計算橫斷面相對強弱（RS）＋產業輪動…")
+    try:
+        import backtest_signals as bt   # 延遲載入避免循環匯入（bt 內部也 import build_data）
+        xs_date, xsect = bt.live_xsect(price_hist, div_hist, universe)
+        hit = 0
+        for r in results:
+            x = xsect.get(r["id"])
+            r["rs_pct_60"] = x.get("rs_pct_60") if x else None
+            r["rs_pct_120"] = x.get("rs_pct_120") if x else None
+            r.update(bt._xsect_flags(x))
+            if r["rs_confirmed_60_120"]:
+                hit += 1
+        n_rs = sum(1 for r in results if r.get("rs_pct_60") is not None)
+        print(f"   RS 基準日 {xs_date}：{n_rs}/{len(results)} 檔有排名、強勢雙確認 {hit} 檔")
+        if xs_date and data_dates and xs_date != max(data_dates):
+            # 長歷史落後又補不上時會發生；旗標仍可用但要講清楚它是哪一天的
+            print(f"   ⚠️ RS 基準日（{xs_date}）與選股資料日（{max(data_dates)}）不同")
+    except Exception as e:
+        # 失敗安全：RS 是加值資訊，抓不到就讓旗標全 False，不能拖垮整份 screener.json
+        print(f"   ⚠️ 橫斷面計算失敗，RS 訊號本日不可用：{e}")
+        for r in results:
+            r["rs_pct_60"] = r["rs_pct_120"] = None
+            r["rs_strong_60"] = r["rs_confirmed_60_120"] = r["industry_hot"] = False
+        xs_date = None
+
     dd = max(data_dates) if data_dates else None   # 這份資料的交易日
 
     # ── 機會股 Top 5 引擎（回測權重 → 選股 → picks 留檔 → 成績單 → opportunities.json 契約）──
     import opportunities as opp  # 延遲載入避免循環匯入
     try:
-        opp.run(results, price_hist, chip_hist, div_hist, universe, dd)
+        opp.run(results, price_hist, chip_hist, div_hist, universe, dd,
+                force_recompute=args.force_recompute)
     except Exception as e:
         print(f"  ⚠️ 機會股引擎失敗（不影響 screener.json 產出）：{e}")
 
@@ -723,6 +758,7 @@ def main():
         "holder_ready": holder_ready,
         "holder_week": holder_week,
         "market_breadth": market_breadth(results),   # Phase C：市場廣度橫幅（資訊型、不改選股）
+        "rs_as_of": xs_date,   # RS/產業輪動的基準交易日（長歷史落後時可能早於 data_date）
         "stocks": results,
     }
     path = os.path.join(OUT_DIR, "screener.json")

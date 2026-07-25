@@ -110,3 +110,38 @@ def test_scoreboard_ignores_immature_picks():
     sb = opp.compute_scoreboard(entries, cal, adj, forward=20)
     assert sb["samples"] == 0
     assert sb["win_rate"] is None
+
+
+def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
+    """daily.yml 的 workflow_dispatch.force_recompute → build_data.py --force-recompute →
+    opp.run(force_recompute=...) → bt.ensure_weights(force=...)。這裡驗證最後一段接線：
+    run() 沒有自己實作快取判斷（那是 backtest_signals.ensure_weights 的事），只負責把
+    force_recompute 原封不動傳下去。stub 掉所有 I/O，只斷言 ensure_weights 收到的 force 值。"""
+    captured = {}
+
+    def fake_ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=False):
+        captured["force"] = force
+        return {"signals": {}}
+
+    monkeypatch.setattr(opp.bt, "ensure_weights", fake_ensure_weights)
+    monkeypatch.setattr(opp.bt, "_load", lambda path: None)
+    monkeypatch.setattr(opp.mr, "load_or_fetch", lambda today: {})
+    monkeypatch.setattr(opp, "update_picks_history", lambda o: [])
+    monkeypatch.setattr(opp, "trading_calendar", lambda price_hist: [])
+    monkeypatch.setattr(
+        opp, "compute_scoreboard",
+        lambda entries, cal, adj, forward=opp.FORWARD: {
+            "updated": "x", "forward_days": forward, "samples": 0,
+            "win_rate": None, "avg_ret": None,
+        },
+    )
+    monkeypatch.setattr(opp, "_write_json", lambda path, obj: None)
+
+    opp.run([], {}, {}, {}, [], "2026-07-25", force_recompute=True)
+    assert captured["force"] is True
+
+    opp.run([], {}, {}, {}, [], "2026-07-25", force_recompute=False)
+    assert captured["force"] is False
+
+    opp.run([], {}, {}, {}, [], "2026-07-25")   # 預設不強制
+    assert captured["force"] is False

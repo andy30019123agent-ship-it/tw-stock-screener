@@ -17,6 +17,7 @@
 import os
 import sys
 import json
+import bisect
 import datetime as dt
 from math import log, exp, floor, sqrt
 from collections import Counter
@@ -104,6 +105,11 @@ def signal_flags(ind):
         # 展示型（不進引擎）：多頭排列＝MA5>10>20>60；填息快＝已填息且天數 ≤10
         "bull_aligned": bool(ind.get("bull_aligned")),
         "fill_fast": _fill_fast(ind.get("div_fill")),
+        # 橫斷面訊號：回測時算不出來（要跨股票比較），由 collect_events 用 _xsect_flags 覆寫；
+        # 每日選股時 build_data 已把旗標寫進 results，所以這裡直接讀得到。兩條路徑都對得上。
+        "rs_strong_60": bool(ind.get("rs_strong_60")),
+        "rs_confirmed_60_120": bool(ind.get("rs_confirmed_60_120")),
+        "industry_hot": bool(ind.get("industry_hot")),
     }
 
 
@@ -196,13 +202,17 @@ def _winsorize(values, p=IND_WINSOR):
     return {k: min(max(v, lo), hi) for k, v in values.items()}
 
 
-def build_xsect_cache(price_hist, div_hist, universe):
+def build_xsect_cache(price_hist, div_hist, universe, only_dates=None):
     """建立橫斷面 PIT cache：對每個交易日，算各股「近 N 日還原報酬」在全市場的百分位（RS），
     以及所屬產業當日是否「熱門」（產業輪動）。回 {date: {sid: {rs_pct_60, rs_pct_120, industry_hot}}}。
 
     刻意設計（避免前視）：交易日 t 只用 t 與 t−N 的還原收盤算報酬，母體＝當日有價的全部個股；
     母體 <300 檔則該日不評估。產業報酬先對橫斷面報酬 winsorize（壓少數飆股），產業內等權平均
-    （沒有長期市值、且成交額加權會把當日爆量混進來與爆量突破重疊，故用等權）。"""
+    （沒有長期市值、且成交額加權會把當日爆量混進來與爆量突破重疊，故用等權）。
+
+    only_dates：只算這些交易日（其餘跳過，但回看用的完整序列照樣建立）。給 build_data 算「今天」
+    的 RS 用——線上篩選必須跟回測走同一支函式、同一組門檻，否則網站上勾的條件與展示的戰績
+    就不是同一回事（2026-07-25 把強勢雙確認從「僅戰績」變成可篩選時加的）。"""
     industry = {s["id"]: s.get("industry") for s in universe}
     universe_ind_count = {}
     for s in universe:
@@ -227,8 +237,11 @@ def build_xsect_cache(price_hist, div_hist, universe):
     dates = sorted(all_dates)
     didx = {d: i for i, d in enumerate(dates)}
     cache = {}
+    want = set(only_dates) if only_dates else None
 
     for ti, t in enumerate(dates):
+        if want is not None and t not in want:
+            continue
         # 各 N 的個股報酬與百分位
         rs_pct = {N: {} for N in RS_WINDOWS}
         ret_by_N = {N: {} for N in RS_WINDOWS}
@@ -263,6 +276,36 @@ def build_xsect_cache(price_hist, div_hist, universe):
         if day:
             cache[t] = day
     return cache
+
+
+def live_xsect(price_hist, div_hist, universe):
+    """算「最新交易日」的橫斷面 RS ＋ 產業輪動，供每日選股（build_data）當可篩選條件用。
+    回 (最新交易日, {sid: {rs_pct_60, rs_pct_120, industry_hot}})；資料不足回 (None, {})。
+
+    為什麼要吃長歷史：`rs_pct_120` 需要 121 個交易日，而 price.json 只留
+    `history_store.PRICE_WINDOW`（110）天——單靠它算不出 120 日 RS。所以拿回測長歷史
+    bt_price.json（約 479 天）當底，再把 price.json 比它新的日期疊上去（bt_price 每週才
+    在 ensure_weights 併一次，平日會落後幾天）。
+
+    🔑 刻意走同一支 build_xsect_cache、同一組門檻（RS_STRONG_PCT / RS_CONFIRM_120_PCT）：
+    網站上勾的「強勢雙確認」必須跟戰績表上那個「強勢雙確認」是同一個東西，否則展示的
+    超額報酬就對不上使用者實際篩到的股票。只算最新一天，成本約是全歷史的 1/479。
+    """
+    bt_hist = hs.load(BT_PRICE_PATH) or hs.bt_empty()
+    long_view = hs.bt_to_price_hist(bt_hist) if bt_hist.get("dates") else {}
+    # 疊上 price.json 比長歷史新的日期（長歷史落後時補足到今天）
+    have = set(bt_hist.get("dates") or [])
+    merged = {sid: dict(by) for sid, by in long_view.items()}
+    for sid, by in (price_hist or {}).items():
+        tgt = merged.setdefault(sid, {})
+        for d, row in by.items():
+            if d not in have:
+                tgt[d] = row
+    if not merged:
+        return None, {}
+    latest = max(max(by) for by in merged.values() if by)
+    cache = build_xsect_cache(merged, div_hist, universe, only_dates=[latest])
+    return latest, cache.get(latest, {})
 
 
 def _hot_industries(ret20, ret60, industry, universe_ind_count):
@@ -311,7 +354,7 @@ def _xsect_flags(x):
 
 
 def collect_events(price_hist, chip_hist, div_hist, universe,
-                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None, xsect=None):
+                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None, xsect=None, breaks=None):
     """逐檔、逐歷史交易日評估訊號，回傳 (events, by_date)。
 
     events：[{date, sid, ret, fired:[訊號…]}]，只收「有訊號成立」的事件。
@@ -325,10 +368,16 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
     2. **同一檔同一訊號設冷卻期**：形態會在最近 3 日內重複成立，20 日持有期又高度重疊，
        舊版把它們當成獨立樣本，樣本數嚴重虛胖（宣稱 3,496 筆其實遠少於此）。
     3. **只用 pr[:i+1] 算指標**：這點舊版就做對了，保留。
+    4. **排除已知價格斷點**：分割／現金減資的假漲跌（breaks 參數，來自 price_breaks.json）
+       會生出 ±100% 以上的假報酬，跨過斷點的樣本連基準母體一起丟。傳 None 則自動載入。
     """
     import build_data as bd  # 延遲載入避免與 build_data 的循環匯入
+    import price_breaks as pb
     cooldown = forward if cooldown is None else cooldown
+    if breaks is None:
+        breaks = pb.load_breaks()
     events, by_date = [], {}
+    n_skipped_breaks = 0
 
     for stock in universe:
         sid = stock["id"]
@@ -343,11 +392,24 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
         adj_close = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
         last_fire = {}   # 訊號 → 最後一次採計的 i，做冷卻期
 
+        # 已知價格斷點（分割／現金減資造成的假漲跌，TWT49U/exDailyQ 涵蓋不到）在這檔的位置。
+        # 20 日報酬只要「跨過」斷點就是假的（實測有 0050 −74%、2380 +279% 這種），該筆樣本必須
+        # 整個丟掉——而且連基準母體 by_date 也要丟，否則假報酬會拉歪當日全市場平均。
+        # 註：斷點之前的均線暖身期理論上也被污染，但那只會讓訊號該不該成立有偏差，不會生出
+        # ±100% 的假報酬，量級差太多，故不擴大排除（保留樣本數）。
+        brk_idx = sorted(j for j, r in enumerate(pr) if (sid, r["date"]) in breaks) if breaks else []
+
         for i in range(min_bars - 1, len(pr) - forward):
             di = pr[i]["date"]
             base = adj_close[i]
             if not base:
                 continue
+            if brk_idx:
+                # 報酬窗 = (i, i+forward]；用 bisect 找有沒有斷點落在裡面
+                lo = bisect.bisect_right(brk_idx, i)
+                if lo < len(brk_idx) and brk_idx[lo] <= i + forward:
+                    n_skipped_breaks += 1
+                    continue
             ind = bd.compute_indicators(pr[:i + 1], [c for c in cr if c["date"] <= di], ev, None)
             if ind is None:
                 continue
@@ -376,6 +438,8 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
             if raw_fired:
                 events.append({"date": di, "sid": sid, "i": i, "ret": ret,
                                "fired": eligible_fired, "raw_fired": raw_fired})
+    if n_skipped_breaks:
+        print(f"   排除跨越價格斷點（分割/減資假漲跌）的樣本 {n_skipped_breaks} 筆")
     return events, by_date
 
 
@@ -778,16 +842,40 @@ def _apply_cost(gross):
     return (1 + gross) * (1 - EXIT_FEE - EXIT_TAX - EXIT_SLIP) / (1 + EXIT_FEE + EXIT_SLIP) - 1
 
 
-def signal_quality(events):
+def _median(sorted_vals):
+    n = len(sorted_vals)
+    if not n:
+        return None
+    m = n // 2
+    return sorted_vals[m] if n % 2 else (sorted_vals[m - 1] + sorted_vals[m]) / 2
+
+
+def signal_quality(events, by_date):
     """每訊號的「防騙指標」：成本後期望值、賺賠比、獲利因子——讓「高勝率但期望值爛」現形。
-    回 {sigkey: {...}}。用 e['fired']（過冷卻、與單訊號統計同母體）。成本後（forward=20 毛報酬扣來回成本）。"""
-    acc = {k: {"n": 0, "nw": 0, "nl": 0, "sw": 0.0, "sl": 0.0, "s": 0.0} for k in SIGNALS}
+    回 {sigkey: {...}}。用 e['fired']（過冷卻、與單訊號統計同母體）。成本後（forward=20 毛報酬扣來回成本）。
+
+    ⚠️ 2026-07-25 修：原本只算「成本後**絕對**報酬」的期望值，沒扣同日大盤 → 大盤漲的時候什麼
+    都是正的，一個贏不過大盤的爛訊號照樣顯示正數。實例：破底翻 avg_excess −0.91pp（輸大盤）
+    卻顯示 net_expectancy +0.79pp 並在前端塗成「好」色，而那一欄標題寫著「最重要的一個數字」。
+    現在改成主推 `net_excess_expectancy`（成本後超額）＝ 成本後淨報酬 − 同日全市場毛報酬平均。
+    基準用毛報酬（不扣成本）是刻意的保守選擇：你買股票要付成本，指數不用；與 exit_analysis
+    的 avg_net_excess 同一把尺，兩張表的數字才能互相對照。
+    也一併輸出中位數——訊號報酬極度右偏（少數飆股拉高平均），只看平均會高估典型結果。
+    """
+    bench = {d: (sum(v) / len(v)) for d, v in by_date.items() if v}
+    acc = {k: {"n": 0, "nw": 0, "nl": 0, "sw": 0.0, "sl": 0.0, "s": 0.0,
+               "se": 0.0, "nbeat": 0, "exc": []} for k in SIGNALS}
     for e in events:
         net = _apply_cost(e["ret"])
+        net_exc = net - bench.get(e["date"], 0.0)
         for k in e["fired"]:
             a = acc[k]
             a["n"] += 1
             a["s"] += net
+            a["se"] += net_exc
+            a["exc"].append(net_exc)
+            if net_exc > 0:
+                a["nbeat"] += 1
             if net > 0:
                 a["nw"] += 1
                 a["sw"] += net
@@ -799,23 +887,33 @@ def signal_quality(events):
         a = acc[k]
         n = a["n"]
         if n == 0:
-            out[k] = {"samples": 0, "net_expectancy": None, "payoff_ratio": None,
-                      "profit_factor": None, "net_win_rate": None, "high_win_trap": False}
+            out[k] = {"samples": 0, "net_expectancy": None, "net_excess_expectancy": None,
+                      "median_net_excess": None, "payoff_ratio": None, "profit_factor": None,
+                      "net_win_rate": None, "beat_market_rate": None,
+                      "high_win_trap": False, "loses_to_market": False}
             continue
         avg_win = a["sw"] / a["nw"] if a["nw"] else 0.0
         avg_loss = a["sl"] / a["nl"] if a["nl"] else 0.0   # 已是絕對值
         net_wr = a["nw"] / n
         expct = a["s"] / n
+        exc_expct = a["se"] / n
+        med_exc = _median(sorted(a["exc"]))
         out[k] = {
             "samples": n,
-            "net_expectancy": round(expct * 100, 2),        # 成本後期望值（百分點）＝最重要的單一指標
+            # 成本後「超額」期望值＝最重要的單一指標（扣成本又扣大盤，真正的邊際）
+            "net_excess_expectancy": round(exc_expct * 100, 2),
+            "median_net_excess": round(med_exc * 100, 2),
+            "net_expectancy": round(expct * 100, 2),       # 成本後絕對報酬（含大盤，僅供對照）
             "avg_win": round(avg_win * 100, 2),
             "avg_loss": round(avg_loss * 100, 2),
             "payoff_ratio": round(avg_win / avg_loss, 2) if avg_loss > 0 else None,
             "profit_factor": round(a["sw"] / a["sl"], 2) if a["sl"] > 0 else None,
             "net_win_rate": round(net_wr, 4),
-            # 高勝率陷阱：勝率高但成本後期望值 ≤0（樣本夠才判）
-            "high_win_trap": bool(n >= 20 and net_wr >= 0.60 and expct <= 0),
+            "beat_market_rate": round(a["nbeat"] / n, 4),  # 扣成本後仍贏過同日大盤的比例
+            # 高勝率陷阱：（絕對）勝率高但成本後超額 ≤0——「贏很多次卻贏不過大盤」
+            "high_win_trap": bool(n >= 20 and net_wr >= 0.60 and exc_expct <= 0),
+            # 比陷阱旗更常見也更實用的警示：樣本夠、但扣掉成本後根本贏不過大盤
+            "loses_to_market": bool(n >= 30 and exc_expct <= 0),
         }
     return out
 
@@ -1027,6 +1125,31 @@ def windowed_stats(events, by_date, as_of_iso):
     return signals
 
 
+def dividend_coverage_gap(dates, div_hist):
+    """回測日期範圍裡，有多少比例落在 dividends.json 的除權息涵蓋範圍之外
+    （落在範圍外＝那段時間的除息/除權可能沒被還原回測價格，戰績數字要打折扣看）。
+    回 (缺口比例, 涵蓋起, 涵蓋迄, 來源)；source='meta' 為回填腳本記錄的、'inferred' 為從
+    實際事件日期推估的。純函式，不改變任何回測統計計算。
+
+    ⚠️ 2026-07-25 修：原本沒有 `__meta__` 就直接回 1.0（「全部沒涵蓋」）。但既有 dividends.json
+    明明有 2026-01-13~07-24 的真實事件，只是還沒有人寫過涵蓋 metadata → 警告會謊報 100%，
+    把「已經還原好的那 27% 區間」也算成沒還原。沒有 metadata 時改用實際事件日期的
+    min/max 推估（這正是每日抓取所形成的視窗），並標明數字是推估的。"""
+    if not dates:
+        return 0.0, None, None, "none"
+    start, end = hs.get_div_coverage(div_hist)
+    source = "meta"
+    if not start or not end:
+        ev_dates = [d for sid, by in (div_hist or {}).items()
+                    if not str(sid).startswith("__") and isinstance(by, dict)
+                    for d in by]
+        if not ev_dates:
+            return 1.0, None, None, "none"       # 真的一筆事件都沒有
+        start, end, source = min(ev_dates), max(ev_dates), "inferred"
+    out = sum(1 for d in dates if d < start or d > end)
+    return out / len(dates), start, end, source
+
+
 def _load(path):
     if os.path.exists(path):
         try:
@@ -1068,6 +1191,17 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     else:
         print("   長歷史尚未建立，暫用 110 天滾動歷史回測（樣本偏少）")
         price_for_bt = price_hist
+
+    # 除權息回填涵蓋範圍警告（只印警告、不改任何統計計算）：dividends.json 目前只從
+    # 2026-01-13 開始有事件，bt_price.json 卻從 2024-08-01 起算，中間落差的交易日
+    # 除息會被誤當成真實下跌——執行 backfill_dividends_bt.py 補齊才會讓這個警告消失。
+    div_gap, dc_start, dc_end, dc_src = dividend_coverage_gap(bt_hist.get("dates") or [], div_hist)
+    if div_gap > 0:
+        rng = f"（涵蓋 {dc_start}~{dc_end}{'，推估' if dc_src == 'inferred' else ''}）" if dc_start else "（完全沒有除權息資料）"
+        print(f"   ⚠️ 回測區間有 {div_gap * 100:.0f}% 的交易日落在除權息涵蓋範圍外 {rng}"
+              "——該段除息未還原，會被當成真實下跌，戰績要打折扣看；"
+              "跑 backfill_dividends_bt 補齊")
+
     # Phase B：先建橫斷面 PIT cache（相對強弱 RS ＋ 產業輪動），collect_events 逐日查詢併入訊號。
     print("   建立橫斷面快取（相對強弱＋產業輪動）…")
     xsect = build_xsect_cache(price_for_bt, div_hist, universe)
@@ -1085,7 +1219,7 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     # Phase A：樣本外驗證＋自適應候選權重（並行欄位，不動現行 weight/Top5）。純切片、幾乎零成本。
     oos, total_folds = attach_phase_a(out, events, by_date)
     # Phase C：防騙指標（成本後期望值/賺賠比/獲利因子/高勝率陷阱），併進每訊號 quality 欄位。
-    quality = signal_quality(events)
+    quality = signal_quality(events, by_date)
     for k, q in quality.items():
         if k in out["signals"]:
             out["signals"][k]["quality"] = q

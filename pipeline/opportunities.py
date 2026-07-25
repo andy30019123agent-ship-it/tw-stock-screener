@@ -36,18 +36,41 @@ FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一�
 HISTORY_MAX = 90          # picks 留檔最多天數
 
 
+GATE_SIGNAL = "rs_confirmed_60_120"   # 入場門檻訊號（強勢雙確認）
+GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < 此數 → 退回不設門檻（保命）
+
+
 def build_opportunities(results, weights, revenue, data_date):
-    """純函式：從已加值的 results 產出 opportunities dict（不碰 I/O，好單測）。"""
+    """純函式：從已加值的 results 產出 opportunities dict（不碰 I/O，好單測）。
+
+    **強勢雙確認當「入場門檻」而非加分項（Andy 2026-07-25 選）**：
+    全樣本實測顯示這兩類訊號性質不同——強勢雙確認範圍廣（21% 的股票）、邊際穩（去掉最極端
+    2% 事件後平均超額仍為正、樣本外 6/6 折都合格）；縮口帶量突破那類範圍窄（4%）、有區辨力
+    但邊際弱（去掉最高 1% 就轉負）。把「廣而穩」的當篩子、「窄而準」的當排序依據，比把兩者
+    的權重硬加在一起合理：後者會讓 21% 的股票先白拿 4 分（最高權重），廣泛訊號淹掉區辨力。
+    這也維持了「多頭排列因太常見而不進引擎」的既有邏輯一致性——強勢雙確認比它更常見。
+
+    保命機制：若過門檻的候選太少（GATE_MIN_POOL），退回不設門檻並在輸出標記。橫斷面資料
+    要長歷史才算得出來，抓取失敗時旗標會全 False——不能因此讓 Top5 整個空掉。
+    """
     sig = (weights or {}).get("signals", {})
-    picks = []
-    for r in results:
+
+    def eligible(r):
+        """有引擎訊號、且流動性達標。回 (fired, ok)。"""
         flags = bt.signal_flags(r)
         # 只用「引擎訊號」計分／當理由——多頭排列、填息快只做戰績展示，不進 Top5（否則
         # 多頭排列太常見會亂洗排名）。展示型訊號的戰績在勝率榜/策略戰績表另外呈現。
         fired = [k for k, v in flags.items() if v and k in bt.ENGINE_SIGNALS]
-        if not fired:
-            continue
-        if (r.get("avg_vol_lots", 0) or 0) < MIN_VOL_LOTS:   # 流動性
+        return fired, bool(fired) and (r.get("avg_vol_lots", 0) or 0) >= MIN_VOL_LOTS
+
+    gated = [r for r in results if r.get(GATE_SIGNAL) and eligible(r)[1]]
+    gate_on = len(gated) >= GATE_MIN_POOL
+    pool = gated if gate_on else results
+
+    picks = []
+    for r in pool:
+        fired, ok = eligible(r)
+        if not ok:
             continue
 
         risk = []
@@ -81,7 +104,13 @@ def build_opportunities(results, weights, revenue, data_date):
         })
 
     picks.sort(key=lambda p: (-p["score"], -(p["rs20"] if p["rs20"] is not None else -999)))
-    return {"date": data_date, "picks": picks[:TOP_N]}
+    return {
+        "date": data_date,
+        "picks": picks[:TOP_N],
+        # 前端/快報要能講清楚這批是「強勢股裡的技術面最佳」還是「全市場技術面最佳」
+        "gate": {"signal": GATE_SIGNAL, "applied": gate_on, "pool": len(gated),
+                 "label": bt.SIGNAL_LABELS.get(GATE_SIGNAL, GATE_SIGNAL)},
+    }
 
 
 def trading_calendar(price_hist):
@@ -162,11 +191,16 @@ def _write_json(path, obj):
         json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=None):
-    """機會股引擎主流程（build_data.main 尾段呼叫）。"""
+def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=None, force_recompute=False):
+    """機會股引擎主流程（build_data.main 尾段呼叫）。
+
+    force_recompute：略過 ensure_weights 的「距上次重算 < RECOMPUTE_DAYS 天就沿用舊權重」快取閘門，
+    強制重跑回測。改過回測計算邏輯、部署後線上數字卻還沒更新（要等最多一週）時，由
+    workflow_dispatch 的 force_recompute 輸入一路傳到這裡（見 daily.yml）。
+    """
     today = today or dt.date.today()
     print("🎯 機會股 Top 5 引擎…")
-    weights = bt.ensure_weights(price_hist, chip_hist, div_hist, universe, today=today)
+    weights = bt.ensure_weights(price_hist, chip_hist, div_hist, universe, today=today, force=force_recompute)
     revenue = mr.load_or_fetch(today)
     print(f"   月營收 YoY 覆蓋 {len(revenue)} 檔")
 

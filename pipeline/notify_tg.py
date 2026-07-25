@@ -14,13 +14,19 @@
 import argparse
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(__file__))
+import backtest_signals as bt  # noqa: E402  # ENGINE_SIGNALS/signal_flags：跟網站 Top5 同一套判準
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
 # 網站首頁「今日機會股 Top5」的產出，由 build_data → opportunities.run() 寫出。
 OPP_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "data", "opportunities.json")
+# 回測權重表（跟 opportunities.py 用同一份），score() 的退路排序改吃這份，不再手寫分數。
+WEIGHTS_PATH = os.path.join(os.path.dirname(__file__), "signal_weights.json")
 
 
 def load_opportunity_picks(dd):
@@ -50,33 +56,31 @@ def data_date(stocks):
     return max(dates) if dates else None
 
 
-def score(s):
-    sc = 0
-    if s.get("signal_ma"):
-        sc += 3
-    if s.get("signal_breakout"):
-        sc += 3
-    if s.get("sn_squeeze_breakout"):   # 小詩：縮口帶量突破（招牌招式）
-        sc += 3
-    elif s.get("signal_shishi"):       # 其餘小詩形態
-        sc += 2
-    if s.get("bull_aligned") and s.get("diverging"):
-        sc += 2
-    if s.get("foreign_streak", 0) >= 3:
-        sc += 2
-    if s.get("trust_streak", 0) >= 3:
-        sc += 2
-    # 收緊雜訊：同業低估／千張↑ 太浮濫（各佔 ~40%），只在已有「實質訊號」
-    # （技術形態 或 法人連買）時才加分，避免單靠這兩項灌高分數。
-    primary = bool(
-        s.get("signal_ma") or s.get("signal_breakout") or s.get("signal_shishi")
-        or (s.get("bull_aligned") and s.get("diverging"))
-        or s.get("foreign_streak", 0) >= 3 or s.get("trust_streak", 0) >= 3
+def load_weights():
+    """讀回測權重表（跟 opportunities.py 用同一份 pipeline/signal_weights.json）。
+
+    讀不到／格式壞掉就回空 dict——score() 會讓所有訊號落回 0 分，退化成只剩乖離扣分
+    （保守但安全，不會因為缺一個檔案就整條退路排序掛掉）。"""
+    try:
+        with open(WEIGHTS_PATH, encoding="utf-8") as f:
+            return (json.load(f) or {}).get("signals", {})
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def score(s, weights):
+    """opp_ids 讀不到時的退路排序分數。
+
+    改成讀回測權重（跟網站 Top5 同一份 signal_weights.json、同一套 bt.ENGINE_SIGNALS 判準），
+    不再手寫 +2/+3 這種分數——手寫分數曾經跟回測結論相反（例：「破底翻」回測平均超額
+    −0.91pp、weight=0，手寫卻給 +2；「外資/投信連買」回測 samples=0 沒有證據，手寫也給 +2）。
+    weight 為 0 或 signal_weights.json 缺這個 key，一律不加分（呼應 opportunities.py 的規則）。
+    """
+    flags = bt.signal_flags(s)
+    sc = sum(
+        int((weights.get(k) or {}).get("weight", 0) or 0)
+        for k in bt.ENGINE_SIGNALS if flags.get(k)
     )
-    if primary and s.get("holder_rising"):
-        sc += 1
-    if primary and s.get("undervalued"):        # 同業被低估（估值面加分）
-        sc += 1
     # 抑制追高：乖離（現價離 20 日均線幾 %）過大者扣分，讓快報偏向「還沒噴太遠、
     # 相對安全的進場點」，而非已經漲一大段的追高點。
     # ⚠️ 這裡曾經誤用 dispersion_pct——那是「四條均線彼此的離散度」，不是股價乖離。
@@ -161,10 +165,11 @@ def build_message(d):
     opp_ids = load_opportunity_picks(dd)
     ranked = [by_id[i] for i in opp_ids if i in by_id] if opp_ids else []
     if not ranked:
-        # 退路：機會股檔案缺席/日期對不上時，用自有分數排序，至少還推得出東西。
+        # 退路：機會股檔案缺席/日期對不上時，用回測權重分數排序，至少還推得出東西。
+        weights = load_weights()
         ranked = sorted(
-            [s for s in stocks if score(s) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
-            key=lambda s: (-score(s), -s.get("foreign_streak", 0)),
+            [s for s in stocks if score(s, weights) >= 4],   # 候選門檻 2→4：讓「精選」名副其實
+            key=lambda s: (-score(s, weights), -s.get("foreign_streak", 0)),
         )[:5]
 
     cnt = d.get("count", len(stocks))

@@ -21,6 +21,10 @@ on:
         description: 'backfill_bt 往回補幾個月'
         required: false
         default: '24'
+      backfill_dividends_bt:
+        description: '一次性補齊回測長歷史同期間的除權息事件（跑很久，只在需要時開；建議先跑完 backfill_bt 再跑這個）'
+        type: boolean
+        default: false
       finmind_fill:
         description: '用 FinMind 補 bt 缺格（备援；TWSE 對某天永久回空時才需要）'
         type: boolean
@@ -29,6 +33,10 @@ on:
         description: 'FinMind 补整日洞的日期（逗號分隔，如 2024-09-24）；留空＝只補個股零星缺格'
         required: false
         default: ''
+      force_recompute:
+        description: '強制重算回測權重／戰績（略過每週快取閘門）；改過回測邏輯後要開，否則線上數字最多一週才會自動更新'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,6 +66,11 @@ jobs:
         timeout-minutes: 300
         run: python pipeline/backfill_bt.py --months ${{ inputs.backfill_bt_months }} --sleep 0.8
 
+      - name: （手動）補齊回測長歷史同期間的除權息事件 dividends.json
+        if: ${{ inputs.backfill_dividends_bt }}
+        timeout-minutes: 60
+        run: python pipeline/backfill_dividends_bt.py --sleep 1.0
+
       - name: （手動）FinMind 補 bt 缺格（备援）
         if: ${{ inputs.finmind_fill }}
         timeout-minutes: 300
@@ -78,12 +91,16 @@ jobs:
       - name: 算指標、產出 screener.json + charts/
         env:
           SAMPLE: ${{ inputs.sample }}
+          FORCE_RECOMPUTE: ${{ inputs.force_recompute }}
         run: |
+          ARGS=()
           if [ -n "$SAMPLE" ]; then
-            python pipeline/build_data.py --sample "$SAMPLE"
-          else
-            python pipeline/build_data.py
+            ARGS+=(--sample "$SAMPLE")
           fi
+          if [ "$FORCE_RECOMPUTE" = "true" ]; then
+            ARGS+=(--force-recompute)
+          fi
+          python pipeline/build_data.py "${ARGS[@]}"
 
       - name: 選股快報推播 Telegram（僅新交易日資料才推）
         env:
@@ -95,16 +112,32 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pipeline/history/price.json pipeline/history/chip.json pipeline/history/dividends.json \
-                  pipeline/history/index.json pipeline/history/bt_price.json \
+                  pipeline/history/index.json pipeline/history/bt_price.json pipeline/history/price_breaks.json \
                   pipeline/holders_history.json pipeline/notify_state.json pipeline/universe.json \
                   pipeline/fetch_state.json \
                   pipeline/signal_weights.json pipeline/signal_windows.json pipeline/signal_combos.json pipeline/signal_exits.json pipeline/signal_regime.json pipeline/picks_history.json \
                   pipeline/scoreboard.json pipeline/revenue_cache.json
           if git diff --cached --quiet; then
             echo "無變動，略過"
-          else
-            git commit -m "chore: 更新全市場歷史與紀錄 [skip ci]"
-            git push origin HEAD:main
+            exit 0
+          fi
+          git commit -m "chore: 更新全市場歷史與紀錄 [skip ci]"
+          # push 前先同步 main（可能被本機/其他 workflow 搶先 push）；non-fast-forward 就
+          # rebase 後重試一次，避免這步一失敗、後面 build/deploy 全被跳過、當天完全不部署。
+          push_ok=0
+          for attempt in 1 2; do
+            if [ "$attempt" = "2" ]; then
+              echo "push 失敗，git pull --rebase 後重試第 $attempt 次…"
+              git pull --rebase origin main
+            fi
+            if git push origin HEAD:main; then
+              push_ok=1
+              break
+            fi
+          done
+          if [ "$push_ok" != "1" ]; then
+            echo "::error::push 到 main 兩次都失敗，本輪歷史/回測權重更新沒有回存"
+            exit 1
           fi
 
       - uses: actions/setup-node@v4
@@ -120,3 +153,42 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
+
+      - name: 失敗通知（推播 Telegram）
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.parse, urllib.request
+
+          sys.path.insert(0, "pipeline")
+          # 沿用既有群組常數，不在 workflow 裡明文寫 chat_id。
+          # ⚠️ import 要包起來：如果失敗發生在 checkout 這一步，pipeline/ 根本不存在，
+          # 裸 import 會讓「失敗通知」自己也炸掉 → Andy 什麼都收不到，剛好違背這步的目的。
+          try:
+              from notify_tg import CHAT_ID
+          except Exception as e:
+              print(f"讀不到 CHAT_ID（可能 checkout 就失敗了）：{e}")
+              sys.exit(0)
+
+          token = os.environ.get("TG_BOT_TOKEN")
+          run_url = os.environ.get("RUN_URL", "")
+          if not token:
+              print("缺少 TG_BOT_TOKEN，略過失敗通知")
+              sys.exit(0)
+
+          text = f"⚠️ 台股選股今日自動更新失敗，請檢查 Actions\n{run_url}"
+          data = urllib.parse.urlencode({"chat_id": CHAT_ID, "text": text}).encode()
+          req = urllib.request.Request(
+              f"https://api.telegram.org/bot{token}/sendMessage", data=data
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  resp = json.load(r)
+              if not resp.get("ok"):
+                  print(f"失敗通知本身也發送失敗：{resp}")
+          except Exception as e:
+              print(f"失敗通知本身也發送失敗：{e}")
+          PY

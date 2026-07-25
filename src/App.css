@@ -433,9 +433,25 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .combo-weak { color: var(--ink-muted); }
 .combo-weak small { font-size: .6875rem; }
 .combo-empty { text-align: center; color: var(--ink-muted); padding: 16px; }
+/* 右偏警語：「大多數交易其實輸大盤」的誠實揭露，不能被當成一般註解略過。
+   用整塊淡琥珀圓角底（不用左側色條——那跟站上的圓角卡片語言不合），強調靠 ⚠️ 與粗體字。 */
+.strategy-note.strategy-skew {
+  background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
+.strategy-note.strategy-skew b { color: var(--warn); }
+
+/* 條件分組下的說明文字（例：相對強弱那組要解釋為什麼它比其他訊號可信） */
+.cond-group-note { margin: 2px 0 8px; font-size: .8125rem; line-height: 1.6; color: var(--ink-muted); }
+.cond-group-note b { color: var(--ink-body); }
+
 /* 成分訊號可靠度標記（琥珀系＝品質警示，不用紅綠避免與漲跌語意打架）。
    不過濾也不重排任何組合，只標出「這一項的樣本外驗證沒過／樣本不足」。 */
-.combo-legend { border-left: 2px solid var(--warn-border); padding-left: 8px; }
+/* 記號說明：跟 .strategy-skew 用同一種「淡琥珀圓角塊」的警語語言，站上只保留這一種樣式 */
+.combo-legend {
+  background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
 .sig-weak, .sig-unknown { font-size: .75rem; font-weight: 800; margin-left: 1px; cursor: help; }
 .sig-weak { color: var(--warn); }
 .sig-unknown { color: var(--ink-muted); }

@@ -62,6 +62,21 @@ def append_dividends(hist, events_by_sid, window=DIV_WINDOW):
         _prune(d, window)
 
 
+DIV_META_KEY = "__meta__"   # 保留鍵：sid 一律是數字代號，永不撞到
+
+
+def set_div_coverage(hist, coverage_start, coverage_end):
+    """記錄 dividends.json 的除權息回填涵蓋區間（哪段日期已經完整查過，不是「剛好沒事件」）。
+    寫在跟 sid 同一層的保留鍵，讀取端（to_div_events 等）只會用 hist.get(sid) 存取，不受影響。"""
+    hist[DIV_META_KEY] = {"coverage_start": coverage_start, "coverage_end": coverage_end}
+
+
+def get_div_coverage(hist):
+    """回 (coverage_start, coverage_end)；沒記錄過回 (None, None)。"""
+    meta = (hist or {}).get(DIV_META_KEY) or {}
+    return meta.get("coverage_start"), meta.get("coverage_end")
+
+
 def to_div_events(stock_hist):
     """還原成 compute_indicators 吃的除權息事件 list（依日期排序）。"""
     if not stock_hist:

@@ -100,7 +100,9 @@ def is_common_stock(sid):
 
 def _ohlc(date_iso, o, h, lo, c, vol, money):
     o, h, lo, c = _f(o), _f(h), _f(lo), _f(c)
-    if None in (o, h, lo, c):
+    # close<=0 視為無效整列丟棄：TWSE 對零股/極低量成交會回 "0.00"（_f 視為合法 0.0，不是 None），
+    # 若不擋這裡，殭屍股會被寫進歷史當成「跌到 0 元」，污染漲跌幅與指標。
+    if None in (o, h, lo, c) or c <= 0:
         return None
     return {"date": date_iso, "open": o, "max": h, "min": lo, "close": c,
             "Trading_Volume": int(_f(vol) or 0), "Trading_money": _f(money) or 0}

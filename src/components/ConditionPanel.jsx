@@ -17,8 +17,14 @@ const BLANK = {
   snBreakLowRecover: false, snImmortalGuide: false, snVolumeSupport: false,
   minYield: 0, maxPe: 0, maxPb: 0, undervalued: false,
   divFill: 'all', maxFillDays: 0,
+  // 橫斷面 RS 也要列進 BLANK，否則切換快速套用時舊的勾選會殘留（清單被上一個 preset 的
+  // 條件偷偷限縮，使用者看不出原因）
+  rsStrong60: false, rsConfirmed: false, industryHot: false,
 }
 const PRESETS = [
+  // 強勢雙確認擺第一位不是寫死順序——下面 orderedPresets 會依平均超額重排；但它目前確實是
+  // 唯一「去極值後仍為正 ＋ 樣本外 robust」的訊號（2026-07-25 全樣本驗證）。
+  { key: 'rsdual', label: '強勢雙確認', icon: TrendingUp, patch: { ...BLANK, rsConfirmed: true } },
   { key: 'breakout', label: '爆量突破', icon: Rocket, patch: { ...BLANK, breakout: true } },
   { key: 'shishi', label: '小詩選股', icon: BookOpen, patch: { ...BLANK, shishiAny: true } },
   { key: 'value', label: '同業低估', icon: Gem, patch: { ...BLANK, undervalued: true } },
@@ -31,6 +37,7 @@ const PRESETS = [
 // 每個快速套用對應的回測訊號 → 用它的「平均超額報酬」當排序分數（勝率最高的排前面）。
 // 沒有對應訊號或無樣本者排到最後（維持原相對順序）。
 const PRESET_SIGNAL = {
+  rsdual: ['rs_confirmed_60_120'],
   breakout: ['signal_breakout'],
   shishi: ['sn_squeeze_breakout', 'sn_lower_reversal', 'sn_break_low_recover', 'sn_immortal_guide', 'sn_volume_support'],
   value: ['undervalued'],
@@ -47,9 +54,15 @@ function presetStat(key, weights) {
   if (!cands.length) return null
   return cands.reduce((a, b) => (b.avg_excess > a.avg_excess ? b : a))
 }
+// 排序依據＝「成本後超額」（扣手續費證交稅＋扣大盤），不是原始平均超額。
+// 原因：原始超額沒扣成本，會把「毛利看起來不錯、扣完成本其實贏不過大盤」的策略排到前面
+// （實測縮口帶量突破毛 +0.82pp、扣完只剩 +0.02pp；糾結轉強毛 +0.23pp、扣完 −0.57pp）。
+// 舊資料沒有 quality 欄位時退回 avg_excess，不讓排序整個壞掉。
 function presetScore(key, weights) {
   const s = presetStat(key, weights)
-  return s ? s.avg_excess : -Infinity
+  if (!s) return -Infinity
+  const ne = s.quality?.net_excess_expectancy
+  return ne != null ? ne : s.avg_excess
 }
 // OOS 穩健度徽章的判準已抽到 ../lib/oos（組合戰績排行榜共用同一套，避免兩張表對同一訊號不一致）。
 
@@ -108,6 +121,8 @@ export default function ConditionPanel({
               // IS +3.27pp 但 6 個時段只有 1 個合格）。不重排也不隱藏（Andy 要保留全部自行判斷），
               // 但一定要在按鈕上標記，否則「排最前＋數字最大」等於在推薦一個撐不住的策略。
               const tm = TIER_MARK[sigTier(st)]
+              // 按鈕上的戰績數字＝成本後超額（與 presetScore 的排序依據同一個數）
+              const btnScore = st ? (st.quality?.net_excess_expectancy ?? st.avg_excess) : null
               // st 為 null＝這個策略連回測事件都沒有（例：籌碼類，回測歷史只有 20 天籌碼資料），
               // 此時 oosBadge 也是 null，不可直接內插否則提示會變成「undefined——undefined」。
               const ob = oosBadge(st)
@@ -119,8 +134,11 @@ export default function ConditionPanel({
                   onClick={() => applyPreset(p.key, p.patch)}
                   title={mark}>
                   <p.icon size={14} strokeWidth={1.75} />{p.label}
-                  {st && <span className={`preset-score ${st.avg_excess > 0 ? 'good' : st.avg_excess < 0 ? 'bad' : ''}`}>
-                    {st.avg_excess >= 0 ? '+' : ''}{st.avg_excess}<small>pp</small></span>}
+                  {/* 顯示的數字要跟排序依據是同一個（成本後超額）。原本排序用淨值、卻顯示沒扣成本的
+                      毛超額，等於重演「畫面數字不是決策依據」那個 bug。 */}
+                  {btnScore != null && <span className={`preset-score ${btnScore > 0 ? 'good' : btnScore < 0 ? 'bad' : ''}`}
+                    title="成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的">
+                    {btnScore >= 0 ? '+' : ''}{btnScore}<small>pp</small></span>}
                   {tm && <sup className={tm.cls}>{tm.mark}</sup>}
                 </button>
               )
@@ -128,11 +146,17 @@ export default function ConditionPanel({
           </div>
           {weights?.signals && (
             <details className="strategy-board">
-              <summary>各策略回測戰績（依平均超額排序）</summary>
+              <summary>各策略回測戰績（依成本後超額排序）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>策略</th><th>平均超額</th><th title="樣本外驗證：只用過去資料選、拿沒看過的日子驗，看效力是否還在">樣本外</th>
-                    <th title="扣掉手續費、證交稅後平均每次真的賺多少——最重要的一個數字">成本後期望</th>
+                  {/* 欄位順序＝重要性順序。「成本後超額」原本排第 4，在 390 手機上會被切掉要橫捲
+                      才看得到——標題卻寫著「最重要的一個數字」，自相矛盾。移到策略名旁邊。 */}
+                  <thead><tr><th>策略</th>
+                    <th title="扣掉手續費證交稅、再扣掉同日大盤後，平均每次真的比大盤多賺多少——最重要的一個數字">成本後超額</th>
+                    <th title="樣本外驗證：只用過去資料選、拿沒看過的日子驗，看效力是否還在">樣本外</th>
+                    <th title="典型的一筆交易結果（中位數）。訊號報酬極度右偏：平均被少數飆股拉高，中位數才是「大多數時候」的樣子">中位數</th>
+                    <th title="扣掉成本後仍贏過同日大盤的比例。低於 50% 代表多數交易是輸給大盤的，靠少數大贏撐整體">贏大盤</th>
+                    <th title="沒扣成本、沒扣大盤的原始超額報酬（僅供對照，別拿它當決策依據）">平均超額</th>
                     <th title="平均獲利 ÷ 平均虧損。<1 代表賺小賠大、勝率再高也危險">賺賠比</th>
                     <th>勝率</th><th>樣本</th></tr></thead>
                   <tbody>
@@ -140,15 +164,25 @@ export default function ConditionPanel({
                       const s = presetStat(p.key, weights)
                       const ob = oosBadge(s)
                       const q = s?.quality
+                      // ⚠️ 2026-07-25 起看 net_excess_expectancy（成本後超額）而不是 net_expectancy
+                      // （成本後絕對報酬）。舊欄位沒扣大盤 → 大盤漲的時候什麼都是正的，破底翻
+                      // 明明輸大盤 0.91pp 卻顯示 +0.79pp 並塗成好色。
+                      const ne = q?.net_excess_expectancy
                       return (
                         <tr key={p.key}>
                           <td>{p.label}{q?.high_win_trap &&
-                            <span className="trap-flag" title="高勝率陷阱：勝率高但扣成本後期望值為負，別被勝率騙了">⚠️</span>}</td>
-                          <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
-                            {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '尚無回測'}</td>
+                            <span className="trap-flag" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了">⚠️</span>}
+                            {!q?.high_win_trap && q?.loses_to_market &&
+                              <span className="trap-flag" title="扣掉交易成本後，這個訊號平均贏不過大盤——不如直接買大盤">⚠️</span>}</td>
+                          <td className={ne > 0 ? 'good' : ne < 0 ? 'bad' : ''}>
+                            {ne != null ? `${ne >= 0 ? '+' : ''}${ne}pp` : s ? '—' : '尚無回測'}</td>
                           <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
-                          <td className={q && q.net_expectancy > 0 ? 'good' : q && q.net_expectancy < 0 ? 'bad' : ''}>
-                            {q && q.net_expectancy != null ? `${q.net_expectancy >= 0 ? '+' : ''}${q.net_expectancy}pp` : '—'}</td>
+                          <td className={q?.median_net_excess > 0 ? 'good' : q?.median_net_excess < 0 ? 'bad' : ''}>
+                            {q?.median_net_excess != null ? `${q.median_net_excess >= 0 ? '+' : ''}${q.median_net_excess}pp` : '—'}</td>
+                          <td className={q?.beat_market_rate != null && q.beat_market_rate < 0.5 ? 'combo-weak' : ''}>
+                            {q?.beat_market_rate != null ? `${Math.round(q.beat_market_rate * 100)}%` : '—'}</td>
+                          <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
+                            {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '—'}</td>
                           <td className={q && q.payoff_ratio != null && q.payoff_ratio < 1 ? 'bad' : ''}>
                             {q && q.payoff_ratio != null ? q.payoff_ratio : '—'}</td>
                           <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
@@ -162,8 +196,14 @@ export default function ConditionPanel({
               <p className="strategy-note">
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
-                <b>成本後期望</b>＝扣掉手續費證交稅後平均每次真的賺多少（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
-                <b>⚠️</b> 是「勝率高但期望值為負」的陷阱。小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
+                <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
+                <b>⚠️</b> 代表扣成本後贏不過大盤。小詩選股取最佳形態；多頭排列／填息快僅供戰績參考、不進 Top5 選股。
+              </p>
+              <p className="strategy-note strategy-skew">
+                ⚠️ <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
+                贏大盤比例都不到 44%。意思是<b>大多數交易其實小輸大盤，整體正報酬靠少數幾檔大贏撐起來</b>。
+                這種形狀的策略要能成立，必須分散買足夠多檔、而且不能在賠錢時提早出場——只買一兩檔
+                或半路放棄，很可能剛好錯過那幾檔、拿到的是中位數而不是平均數。
               </p>
             </details>
           )}
@@ -331,6 +371,25 @@ export default function ConditionPanel({
                 suffix="天內" onChange={v => set('breakoutLookback', v)} />
             </div>
           )}
+        </div>
+
+        {/* 橫斷面相對強弱／產業輪動（2026-07-25 從「僅戰績」升級為可篩選）。
+            擺在小詩選股前面是刻意的：全樣本去極值檢驗後，強勢雙確認是唯一「去掉最極端 2%
+            事件後平均超額仍為正」且樣本外 robust 的訊號，而小詩那 5 招去掉最高 1% 就轉負。 */}
+        <div className="cond-group">
+          <span className="cond-section-label"><TrendingUp size={14} strokeWidth={1.75} />相對強弱／產業輪動</span>
+          <p className="cond-group-note">
+            跟全市場比排名（不是跟大盤指數比）。<b>強勢雙確認</b>是目前回測最穩的訊號——去掉最極端
+            2% 的事件後平均超額仍為正，樣本外驗證也過關；其他訊號多半去掉最高 1% 就轉負。
+          </p>
+          <div className="cond-checks">
+            <Toggle label="強勢雙確認" hint="60日排前20% 且 120日排前30%"
+              checked={c.rsConfirmed} onChange={v => set('rsConfirmed', v)} accent />
+            <Toggle label="強勢股（60日）" hint="近60日漲幅排全市場前20%"
+              checked={c.rsStrong60} onChange={v => set('rsStrong60', v)} />
+            <Toggle label="熱門產業" hint="所屬產業近期輪動居前"
+              checked={c.industryHot} onChange={v => set('industryHot', v)} />
+          </div>
         </div>
 
         {/* 小詩選股（布林軌道系列技術形態）*/}

@@ -1,7 +1,12 @@
 import { TrendingUp, TrendingDown, Minus, Check } from 'lucide-react'
 
 // 本週市況建議：看現在大盤（市場廣度）是紅/黃/綠，從「市況分層」回測挑出「這個市況下歷史最強」的訊號。
-// 全天候（三種市況都正）會標記。可即時篩選的訊號給「套用」鈕；相對強弱/產業因需全市場排名只給戰績。
+// 全天候（三種市況都正）會標記，並給「套用」鈕一鍵套上條件。
+//
+// 2026-07-25：相對強弱／產業輪動原本只能看戰績（需要全市場排名，前端算不出來），現在後端
+// build_data 會用與回測同一支 live_xsect 算好百分位並寫進 screener.json，所以這三個也能套用了。
+// 這件事的價值：全樣本去極值驗證顯示「強勢雙確認」是唯一去掉最極端 2% 事件後仍為正的訊號，
+// 而它先前正好是唯一不能拿來選股的——最穩的訊號不能用，是最不該留著的錯配。
 const STATUS = {
   green: { label: '偏強（多頭）', tone: 'up', icon: TrendingUp },
   yellow: { label: '中性（盤整）', tone: 'flat', icon: Minus },
@@ -10,12 +15,15 @@ const STATUS = {
 }
 const BUCKET = { green: 'green', yellow: 'yellow', red: 'red', severe_red: 'red' }
 const BUCKETS = ['green', 'yellow', 'red']
-// 訊號 → 可即時套用的篩選條件（相對強弱/產業需全市場排名，網站無法即時篩，不列）
+// 訊號 → 可即時套用的篩選條件。key 必須與 filters.js 的 DEFAULT_CONDITIONS 對得上。
 const APPLY = {
   signal_ma: { signalMa: true }, signal_breakout: { breakout: true },
   sn_squeeze_breakout: { snSqueezeBreakout: true }, sn_immortal_guide: { snImmortalGuide: true },
   sn_volume_support: { snVolumeSupport: true }, sn_break_low_recover: { snBreakLowRecover: true },
   sn_lower_reversal: { snLowerReversal: true }, bull_aligned: { bullAligned: true },
+  // 橫斷面（2026-07-25 起後端已提供旗標，可即時篩）
+  rs_confirmed_60_120: { rsConfirmed: true }, rs_strong_60: { rsStrong60: true },
+  industry_hot: { industryHot: true },
 }
 
 export default function MarketAdvice({ breadth, regime, onApply }) {

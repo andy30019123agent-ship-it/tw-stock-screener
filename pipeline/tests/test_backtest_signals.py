@@ -442,13 +442,15 @@ def test_apply_cost_扣成本():
 
 def test_signal_quality_高勝率陷阱():
     # 19 筆小賺 +2%（撐得過成本）、1 筆大賠 −30%：勝率 95% 但一次大賠讓成本後期望值為負 → 陷阱成立
+    # by_date 給空的＝大盤持平，此時成本後超額等於成本後絕對報酬
     events = [{"date": f"d{i}", "sid": str(i), "i": 0, "ret": 0.02,
                "fired": ["signal_ma"]} for i in range(19)]
     events.append({"date": "dX", "sid": "X", "i": 0, "ret": -0.30, "fired": ["signal_ma"]})
-    q = bt.signal_quality(events)["signal_ma"]
+    q = bt.signal_quality(events, {})["signal_ma"]
     assert q["samples"] == 20
     assert q["net_win_rate"] >= 0.90                               # 高勝率
     assert q["net_expectancy"] < 0                                  # 但成本後期望值為負
+    assert q["net_excess_expectancy"] < 0                           # 大盤持平 → 超額同樣為負
     assert q["high_win_trap"] is True                              # 陷阱旗標成立
     assert q["payoff_ratio"] is not None and q["payoff_ratio"] < 1  # 賺賠比 <1（賺小賠大）
 
@@ -456,9 +458,63 @@ def test_signal_quality_高勝率陷阱():
 def test_signal_quality_正常訊號不觸發陷阱():
     events = [{"date": f"d{i}", "sid": str(i), "i": 0, "ret": 0.05,
                "fired": ["signal_ma"]} for i in range(30)]
-    q = bt.signal_quality(events)["signal_ma"]
+    q = bt.signal_quality(events, {})["signal_ma"]
     assert q["net_expectancy"] > 0 and q["high_win_trap"] is False
     assert q["profit_factor"] is None or q["profit_factor"] > 1
+
+
+def test_signal_quality_贏不過大盤要現形():
+    """迴歸測試（2026-07-25 修的 bug）：訊號絕對報酬是正的，但輸給同日大盤時，
+    「成本後期望」必須為負並亮 loses_to_market——原本只算絕對報酬，這種訊號會顯示正數且被塗成好色。
+    真實案例：破底翻 avg_excess −0.91pp（樣本 7101）卻顯示 net_expectancy +0.79pp。"""
+    # 訊號 +4%，同日大盤 +8% → 絕對是賺的，但明顯跑輸大盤
+    events = [{"date": f"d{i}", "sid": str(i), "i": 0, "ret": 0.04,
+               "fired": ["signal_ma"]} for i in range(40)]
+    by_date = {f"d{i}": [0.08] * 50 for i in range(40)}
+    q = bt.signal_quality(events, by_date)["signal_ma"]
+    assert q["net_expectancy"] > 0                     # 絕對報酬正（這是舊版唯一看到的數字）
+    assert q["net_excess_expectancy"] < 0              # 但成本後超額為負 ← 修好的關鍵
+    assert q["loses_to_market"] is True                # 且要亮警示
+    assert q["beat_market_rate"] == 0.0                # 沒有一筆贏過大盤
+    assert q["median_net_excess"] < 0                  # 中位數同樣為負
+
+
+def test_collect_events_排除跨越價格斷點的樣本():
+    """分割/減資的假漲跌（price_breaks.json）會生出 ±100% 的假報酬。
+    跨過斷點的 20 日報酬樣本必須整筆丟掉——連基準母體 by_date 也要丟，
+    否則假報酬會拉歪當日全市場平均（實測 0050 −74%、2380 +279% 都是這種）。"""
+    # 造一檔連續上漲的價格序列，長度足夠算指標＋持有期
+    n = 120
+    price_hist = {"9999": {f"2025-{1 + i // 28:02d}-{1 + i % 28:02d}": [10 + i * 0.1] * 4 + [500000, 0]
+                           for i in range(n)}}
+    uni = [{"id": "9999", "name": "測試", "industry": "其他"}]
+    # 不給斷點 → 應該收到基準母體
+    _, by_date_clean = bt.collect_events(price_hist, {}, {}, uni, breaks=set())
+    assert by_date_clean, "沒有斷點時應該有可評估樣本"
+
+    # 把「某一天」標成斷點 → 跨過它的那些報酬窗全部要消失（含基準母體）。
+    # 斷點索引必須落在 (MIN_BARS-1, n-1] 內才會有報酬窗跨過它——選 60 的話進場最早也是
+    # 第 64 根（指標暖身），窗口 (64, 84] 根本跨不到 60，什麼都不會被排除。
+    broken_date = sorted(price_hist["9999"])[80]
+    _, by_date_brk = bt.collect_events(price_hist, {}, {}, uni, breaks={("9999", broken_date)})
+    dates_clean, dates_brk = set(by_date_clean), set(by_date_brk)
+    assert dates_brk < dates_clean, "標了斷點後基準母體的日期應該變少"
+    # 報酬窗 = (i, i+20]，所以進場日落在斷點前 20 天內的都該被排除
+    idx = {d: i for i, d in enumerate(sorted(price_hist["9999"]))}
+    removed = dates_clean - dates_brk
+    assert removed, "應該有樣本被排除"
+    for d in removed:
+        assert idx[d] < idx[broken_date] <= idx[d] + bt.FORWARD
+
+
+def test_signal_quality_中位數揭露右偏():
+    """平均被少數飆股拉高、中位數為負的情境要看得出來（訊號報酬極度右偏）。"""
+    events = [{"date": f"d{i}", "sid": str(i), "i": 0, "ret": -0.01,
+               "fired": ["signal_ma"]} for i in range(39)]
+    events.append({"date": "dBig", "sid": "B", "i": 0, "ret": 3.0, "fired": ["signal_ma"]})
+    q = bt.signal_quality(events, {})["signal_ma"]
+    assert q["net_excess_expectancy"] > 0              # 平均被那一筆 +300% 拉成正的
+    assert q["median_net_excess"] < 0                  # 但典型結果是虧的
 
 
 # ── 市況分層回測（build_regime_series / regime_stratified_stats）──────────
@@ -495,3 +551,45 @@ def test_regime_stratified_stats_依市況分層():
     assert out["green"]["samples"] == 1 and out["green"]["avg_excess"] == 5.0
     assert out["red"]["samples"] == 1 and out["red"]["avg_excess"] == -3.0
     assert out["yellow"]["samples"] == 0                 # 無盤整事件
+
+
+# ── 除權息回填涵蓋範圍警告（只印警告，不改任何統計計算）───────────────────
+def test_dividend_coverage_gap_全落在範圍內為零():
+    import history_store as hs
+    div_hist = {}
+    hs.set_div_coverage(div_hist, "2024-08-01", "2026-07-24")
+    dates = _seq_dates(5, start="2025-01-01")
+    gap, start, end, src = bt.dividend_coverage_gap(dates, div_hist)
+    assert gap == 0.0 and src == "meta" and (start, end) == ("2024-08-01", "2026-07-24")
+
+
+def test_dividend_coverage_gap_真的沒有任何事件才算全部在範圍外():
+    dates = _seq_dates(5, start="2025-01-01")
+    gap, start, end, src = bt.dividend_coverage_gap(dates, {})
+    assert gap == 1.0 and src == "none" and start is None
+
+
+def test_dividend_coverage_gap_沒metadata時用實際事件日期推估():
+    """迴歸測試（2026-07-25）：原本沒有 __meta__ 就一律回 1.0，等於把「已經抓到並還原好的
+    區間」也謊報成沒還原（實測 dividends.json 有 2026-01-13~07-24 的真實事件，卻報 100%）。
+    現在改用事件日期的 min/max 推估。"""
+    div_hist = {"8021": {"2025-01-03": 0.99, "2025-01-08": 0.98}}   # 沒有 __meta__
+    dates = _seq_dates(5, start="2025-01-01")   # 01-01 ~ 01-05
+    gap, start, end, src = bt.dividend_coverage_gap(dates, div_hist)
+    assert src == "inferred" and (start, end) == ("2025-01-03", "2025-01-08")
+    assert gap == 0.4        # 01-01、01-02 在推估涵蓋範圍之前 → 2/5
+    # __meta__ 這類保留鍵不可被當成股票代號
+    assert bt.dividend_coverage_gap(dates, {"__meta__": {"x": 1}})[3] == "none"
+
+
+def test_dividend_coverage_gap_部分落在範圍外():
+    import history_store as hs
+    div_hist = {}
+    hs.set_div_coverage(div_hist, "2025-01-03", "2025-01-10")
+    dates = _seq_dates(5, start="2025-01-01")   # 01-01, 01-02, 01-03, 01-04, 01-05
+    # 01-01、01-02 落在涵蓋範圍之前 → 2/5 = 0.4
+    assert bt.dividend_coverage_gap(dates, div_hist)[0] == 0.4
+
+
+def test_dividend_coverage_gap_空日期列表回零():
+    assert bt.dividend_coverage_gap([], {})[0] == 0.0

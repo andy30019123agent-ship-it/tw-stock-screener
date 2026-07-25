@@ -25,6 +25,9 @@ public/data/signal_exits.json
 # 版面驗證截圖（CDP 產在 repo 根目錄，是拋棄式證據，不進版控）
 /*.png
 
+# 動歷史資料前的自動備份（clean_zero_prices.py 等會產生，單檔 10MB+，不進版控）
+pipeline/history/*.bak-*
+
 # 工具與測試快取（不應進版控、會造成 commit 雜訊）
 .impeccable/
 **/.impeccable/

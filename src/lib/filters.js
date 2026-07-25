@@ -8,6 +8,11 @@ export const DEFAULT_CONDITIONS = {
   goldenCross: false,     // 近期黃金交叉
   maRising: false,        // 均線上彎
   strongerThanMarket: false, // 相對強弱 RS20 > 0（近 20 日報酬贏過加權指數）
+  // 橫斷面相對強弱／產業輪動（2026-07-25 從「僅戰績」升級為可篩選；後端 build_data 用與回測
+  // 同一支 live_xsect 算出全市場百分位，所以勾這裡＝篩到戰績表上那個訊號本人）
+  rsStrong60: false,      // 強勢股：近 60 日漲幅排全市場前 20%
+  rsConfirmed: false,     // 強勢雙確認：60 日前 20% 且 120 日前 30%（去極值後唯一仍為正的訊號）
+  industryHot: false,     // 熱門產業：所屬產業近期輪動居前
   // 小詩選股（布林軌道系列技術形態，近 3 交易日內成立）
   shishiAny: false,           // 符合任一小詩形態
   snSqueezeBreakout: false,   // 縮口帶量突破
@@ -50,6 +55,11 @@ export function applyFilters(stocks, c) {
     if (c.maRising && !s.ma_rising) return false
     if (c.strongerThanMarket && !(s.rs20 > 0)) return false
     if (c.bigHolderRising && !s.holder_rising) return false
+
+    // 橫斷面相對強弱／產業輪動（旗標由後端算，查不到＝未成立而非缺值）
+    if (c.rsStrong60 && !s.rs_strong_60) return false
+    if (c.rsConfirmed && !s.rs_confirmed_60_120) return false
+    if (c.industryHot && !s.industry_hot) return false
 
     // 小詩選股形態
     if (c.shishiAny && !s.signal_shishi) return false
@@ -113,14 +123,14 @@ const fillRank = s => {
 export const SORT_LABELS = {
   signal: '訊號', breakout: '突破', shishi: '小詩', rs: '相對強弱', fill: '填息天數',
   change: '漲跌幅', yield: '殖利率', pe: '本益比',
-  foreign: '外資', trust: '投信', close: '收盤',
+  foreign: '外資', trust: '投信', close: '收盤', rsPct: '全市場排名',
 }
 
 // 手機排序選單的顯示順序（工具列「排序 ▾」點開的選單共用；桌機用表頭排序不吃這個）
 export const MOBILE_SORTS = [
-  ['signal', '訊號'], ['breakout', '突破'], ['shishi', '小詩'], ['rs', '相對強弱'],
-  ['change', '漲跌幅'], ['yield', '殖利率'], ['pe', '本益比'], ['fill', '填息天數'],
-  ['foreign', '外資'], ['trust', '投信'],
+  ['signal', '訊號'], ['rsPct', '全市場排名'], ['breakout', '突破'], ['shishi', '小詩'],
+  ['rs', '相對強弱'], ['change', '漲跌幅'], ['yield', '殖利率'], ['pe', '本益比'],
+  ['fill', '填息天數'], ['foreign', '外資'], ['trust', '投信'],
 ]
 
 // 目前有幾個條件在實際限縮清單（給工具列顯示「條件 N」）
@@ -130,6 +140,7 @@ export function countActiveConditions(c) {
     'signalMa', 'breakout', 'bullAligned', 'goldenCross', 'maRising', 'strongerThanMarket',
     'bigHolderRising', 'shishiAny', 'snSqueezeBreakout', 'snLowerReversal',
     'snBreakLowRecover', 'snImmortalGuide', 'snVolumeSupport', 'undervalued',
+    'rsStrong60', 'rsConfirmed', 'industryHot',
   ]
   for (const k of bools) if (c[k]) n++
   if (c.foreignDays > 0) n++
@@ -160,4 +171,6 @@ export const SORTS = {
   yield: (a, b) => (b.yield_pct || 0) - (a.yield_pct || 0),
   pe: (a, b) => (a.pe > 0 ? a.pe : 1e9) - (b.pe > 0 ? b.pe : 1e9),  // 本益比小→大（無/負殿後）
   rs: (a, b) => (b.rs20 ?? -999) - (a.rs20 ?? -999),  // 相對強弱：強於大盤越多排越前
+  // 橫斷面 RS：60 日漲幅在全市場的百分位（沒排名的用 -1 墊底，不可用 0——0 是「最弱」的合法值）
+  rsPct: (a, b) => (b.rs_pct_60 ?? -1) - (a.rs_pct_60 ?? -1),
 }

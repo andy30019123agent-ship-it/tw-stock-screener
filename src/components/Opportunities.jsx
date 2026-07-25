@@ -99,7 +99,14 @@ export default function Opportunities({ stocks, onPick, onCount }) {
       <div className="opp-head">
         <div>
           <span className="badge-pill"><Target size={14} strokeWidth={1.75} />今日機會股 Top 5</span>
-          <p className="opp-sub">當日有訊號者依「回測權重加總」排序 · 已過濾營收年減／低量 · 僅供參考，非投資建議</p>
+          {/* 有入場門檻時要講清楚這批的來歷——「強勢股裡的技術面最佳」與「全市場技術面最佳」
+              是兩件事，數字一樣但意義不同，不說會讓人誤讀 Top5 的範圍。 */}
+          <p className="opp-sub">
+            {opp.gate?.applied
+              ? <>先篩「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻，今日 {opp.gate.pool} 檔）</>
+              : '當日有訊號者'}
+            依「回測權重加總」排序 · 已過濾營收年減／低量 · 僅供參考，非投資建議
+          </p>
         </div>
         <span className="opp-date">{opp.date || '—'}</span>
         <button className="opp-toggle" onClick={() => setOpen(v => !v)}

@@ -43,3 +43,21 @@ def test_to_chip_rows_streak_compatible():
     f = [r for r in rows if r["name"] == "Foreign_Investor"]
     assert [r["buy"] for r in f] == [500, 800]
     assert all(r["sell"] == 0 for r in rows)
+
+
+def test_div_coverage_roundtrip():
+    hist = {}
+    assert hs.get_div_coverage(hist) == (None, None)
+    hs.set_div_coverage(hist, "2024-08-01", "2026-07-24")
+    assert hs.get_div_coverage(hist) == ("2024-08-01", "2026-07-24")
+
+
+def test_div_coverage_meta_key_does_not_collide_with_sids():
+    hist = {}
+    hs.append_dividends(hist, {"2603": [{"date": "2026-06-17", "ratio": 0.93}]})
+    hs.set_div_coverage(hist, "2024-08-01", "2026-07-24")
+    # __meta__ 跟真實 sid 共存，彼此互不干擾（真實查詢一律用 sid 這個數字代號當 key，
+    # 不會有人拿 "__meta__" 去查股票，見全專案 hs.to_div_events(div_hist.get(sid)) 的用法）
+    assert hs.to_div_events(hist["2603"]) == [{"date": "2026-06-17", "ratio": 0.93}]
+    assert hs.get_div_coverage(hist) == ("2024-08-01", "2026-07-24")
+    assert set(hist.keys()) == {"2603", "__meta__"}

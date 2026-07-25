@@ -25,6 +25,26 @@ def test_f_cleans_numbers():
     assert ms._f("") is None
 
 
+def test_f_zero_string_is_valid_zero_not_none():
+    # TWSE 對零股/極低量成交回 "0.00"，_f 要老實轉成 0.0（不是 None）——
+    # 擋零價污染的責任在 _ohlc，不是在 _f 把它誤判成缺值。
+    assert ms._f("0.00") == 0.0
+    assert ms._f("0") == 0.0
+
+
+def test_ohlc_drops_row_when_close_is_zero_or_negative():
+    # 根因案例：低量股（例 1213 單日成交 1 張、金額 7 元）TWSE 回 close="0.00"，
+    # 不擋的話會被寫進歷史當成「跌到 0 元」，污染漲跌幅與指標。
+    assert ms._ohlc("2026-07-16", "10", "10", "10", "0.00", "1", "7") is None
+    assert ms._ohlc("2026-07-16", "10", "10", "10", "0", "1", "7") is None
+
+
+def test_ohlc_keeps_valid_positive_close():
+    row = ms._ohlc("2026-07-16", "10.0", "10.5", "9.8", "10.2", "1000", "10200")
+    assert row is not None
+    assert row["close"] == 10.2
+
+
 def test_listed_chip_sums_foreign(monkeypatch):
     # T86：外資 = [4]外陸資 + [7]外資自營；投信 = [10]
     payload = {"data": [
