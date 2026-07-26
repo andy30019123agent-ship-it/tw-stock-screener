@@ -4,11 +4,16 @@
 由 GitHub Actions 在 build_data.py 之後呼叫：
 - 只在「出現新的交易日資料」時推一次（用 notify_state.json 記錄上次推播的資料日期）。
   → 週末/假日沒有新資料 = 不推；排程跨午夜延遲也只推一次、不誤殺。
-- 名單**直接讀 opportunities.json**（網站「今日機會股」那份，檔數 = opportunities.TOP_N），
+- 名單**直接讀 opportunities.json**（網站「今日候選」那份，2026-07-26 起不截斷成固定檔數），
   把中了哪些訊號 / 價位 / 風險寫成人看得懂的訊息。這支檔案不做任何排名判斷——
   快報與網站必須說同一套話（2026-07-25 移除了自有的退路排序）。
   名單產不出來就照實說「沒產出」，不可講成「今天沒機會」。
 - token 由環境變數 TG_BOT_TOKEN 帶入（GitHub Secret），群組 id 預設叔叔名牌TG。
+
+2026-07-26（Andy 裁示「不用幫我配好購買組合，我自己會挑」）：快報從「①②③…固定檔數編號清單」
+改成「勝率偏優／報酬偏優／雙優」三分類摘要，不再有任何暗示購買順序或組合的字樣——
+候選現在有上百檔，全列不可能、硬選幾檔又會被讀成「這幾檔就是建議買的」，改成分類摘要
+＋「共 N 檔，列前 M 檔」的措辭，把「這只是舉例、不是清單」講清楚。
 
 本機測試：
   python pipeline/notify_tg.py --dry-run          # 只印訊息不發、不動 state
@@ -22,25 +27,24 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(__file__))
-import opportunities as opp  # noqa: E402  # TOP_N：快報檔數必須與網站一致
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
-# 網站首頁「今日機會股 Top5」的產出，由 build_data → opportunities.run() 寫出。
+# 網站首頁「今日候選」的產出，由 build_data → opportunities.run() 寫出。
 OPP_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "data", "opportunities.json")
 
 
 def load_opportunity_picks(dd):
-    """讀網站的「今日機會股 Top5」代號清單（依網站順序）。
+    """讀網站的「今日候選」清單（依網站順序，含 tier 分類）。
 
-    為什麼要讀它：快報原本自己有一套手寫 3/2/1 分的排名，網站 Top5 卻是用回測權重排的，
+    為什麼要讀它：快報原本自己有一套手寫 3/2/1 分的排名，網站候選卻是用回測權重排的，
     同一天兩邊可能推薦完全不同的股票——使用者看到的是兩套互相矛盾的建議。以網站那份為準，
     快報就只負責「把同一份結論寫成人看得懂的訊息」。
 
-    回 (ids, reason)：
-      (["2395", ...], "ok")   正常
-      ([], "empty")           檔案正常但今天零檔 → **這是真實結論**，照實說「今天沒有通過門檻的」
-      (None, "missing")       檔案讀不到／日期對不上 → **這是管線故障**，不可講成市場結論
+    回 (picks, reason)：
+      ([{"id": "2395", "tier": "win"}, ...], "ok")   正常
+      ([], "ok")                                     檔案正常但今天零檔 → **這是真實結論**
+      (None, "missing")                               檔案讀不到／日期對不上 → **這是管線故障**
 
     ⚠️ 2026-07-25 改（Andy 裁示「候選不足就不用硬要呈現」）：原本回不到就退回自有排序湊數，
     結果是①快報與網站說不同的話②score>=4 在權重改版後幾乎不可能達到，於是實際行為變成
@@ -54,7 +58,7 @@ def load_opportunity_picks(dd):
         return None, "missing"
     if dd and opp.get("date") and opp["date"] != dd:
         return None, "missing"
-    return [p["id"] for p in (opp.get("picks") or [])], "ok"
+    return [{"id": p["id"], "tier": p.get("tier")} for p in (opp.get("picks") or [])], "ok"
 
 
 def data_date(stocks):
@@ -144,12 +148,65 @@ def risk_warning(s, n_reasons):
     return ""
 
 
-# 圈號 ①~⑳（Unicode 有到 ⑳）；超出就退回「N.」純數字，不讓檔數變動炸掉整個推播。
-CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+# 大盤市況文案沿用網站 MarketAdvice.jsx 同一套（src/components/MarketAdvice.jsx:11-15），
+# 快報跟網站不要各講一套市況判斷。
+MARKET_STATUS_LABEL = {
+    "green": "偏強（多頭）", "yellow": "中性（盤整）",
+    "red": "偏弱（空頭）", "severe_red": "明顯走弱（空頭）",
+}
+
+# 候選情報三分類標籤與圖示（tier 值來自 opportunities.py：win/both/return/None）。
+TIER_LABEL = {"both": "雙優候選（勝率、報酬都偏優）", "win": "勝率偏優候選", "return": "報酬偏優候選"}
+TIER_ICON = {"both": "🎯", "win": "📈", "return": "💰"}
+
+# 每個分類段落最多列幾檔：手機閱讀考量，候選現在有上百檔、不可能全列。5 檔足夠給「大概
+# 長什麼樣子」的感覺，完整名單導去網站看。這是「畫面顯示筆數」不是「建議買幾檔」——
+# 標題一律會明講「共 N 檔，這裡列前 M 檔」，不能讓 M 看起來像應該買 M 檔。
+TIER_PREVIEW_N = 5
+
+# 固定提醒（逐字，2026-07-26 規格）：候選是「情報」不是「配好的組合」，且要講清楚就算是
+# 條件最好的層級，單檔歷史賺錢機率也不到六成——不要讓人誤以為上榜＝高勝算保證。
+FIXED_DISCLAIMER = "⚠️ 這不是購買組合；單檔最好層級的歷史賺錢機率也只有約 52%。"
 
 
-def _num(i):
-    return CIRCLED[i] if 0 <= i < len(CIRCLED) else f"{i + 1}."
+def market_status_line(d):
+    """大盤市況一行摘要，讀 screener.json 頂層 market_breadth（跟網站同一份資料）。
+    沒有這個欄位（舊資料、或測試用的假資料）就不顯示，不硬湊一行。"""
+    mb = d.get("market_breadth")
+    if not mb or not mb.get("status"):
+        return ""
+    label = MARKET_STATUS_LABEL.get(mb["status"], mb["status"])
+    breadth = mb.get("breadth20")
+    detail = f"，全市場 {breadth * 100:.0f}% 站上月線" if breadth is not None else ""
+    return f"市場狀態：{label}{detail}"
+
+
+def _tier_section(tier, group):
+    """組一個分類段落：標題「共 N 檔，這裡列前 M 檔」＋每檔一行摘要（無序號，避免暗示買序）。
+
+    group：已經照 opportunities.json 原始順序、只含這個 tier 的候選（stock dict list）。
+    只顯示 TIER_PREVIEW_N 筆——候選有上百檔時全列不可能，而且列出來也不代表「該買這幾檔」，
+    純粹是「這個分類長什麼樣子」的舉例，所以標題必須同時講清楚「共 N 檔」跟「列前 M 檔」。
+    """
+    shown = group[:TIER_PREVIEW_N]
+    lines = [f"{TIER_ICON[tier]} {TIER_LABEL[tier]}（共 {len(group)} 檔，這裡列前 {len(shown)} 檔）"]
+    if not shown:
+        lines.append("（目前沒有符合的候選）")
+        return lines
+    for s in shown:
+        chg = s.get("change_pct", 0)
+        sign = "+" if chg >= 0 else ""
+        lines.append(f"・{s['name']} {s['id']}　{sign}{chg:g}%")
+        rs = " · ".join(reasons(s))
+        if rs:
+            lines.append(rs)
+        pn = price_note(s)
+        if pn:
+            lines.append(pn)
+        warn = risk_warning(s, len(reasons(s)))
+        if warn:
+            lines.append(f"⚠️ {warn}")
+    return lines
 
 
 def build_message(d):
@@ -157,19 +214,21 @@ def build_message(d):
     # 交易日優先讀頂層 data_date；舊資料沒有才退回掃 ohlc（全市場版 ohlc 已拆出，掃不到）
     dd = d.get("data_date") or data_date(stocks)
     mmdd = "/".join(dd.split("-")[1:]) if dd else "—"
-    # 排名一律以網站的「今日機會股 Top5」為準（同一套回測權重），讓網站與 TG 說同一套話。
+    # 候選一律以網站的「今日候選」為準（同一套回測權重），讓網站與 TG 說同一套話。
     by_id = {s["id"]: s for s in stocks}
-    opp_ids, opp_reason = load_opportunity_picks(dd)
+    opp_picks, opp_reason = load_opportunity_picks(dd)
     # 🔴 2026-07-25（Andy 裁示「候選不足就不用硬要呈現」）：這裡原本有一條「湊數退路」，
     # 檔案缺席時改用自有排序硬選 10 檔。已移除——快報與網站必須說同一套話，
     # 名單產不出來就照實說「產不出來」，不要生一份來源不同的清單假裝正常。
-    ranked = [by_id[i] for i in (opp_ids or []) if i in by_id]
+    tier_by_id = {p["id"]: p.get("tier") for p in (opp_picks or [])}
+    ranked = [by_id[p["id"]] for p in (opp_picks or []) if p["id"] in by_id]
     # 檔案有、但裡面的代號在 screener 裡都找不到 → 也是資料異常，不是零檔
-    if opp_ids and not ranked:
+    if opp_picks and not ranked:
         opp_reason = "missing"
 
     cnt = d.get("count", len(stocks))
     sep = "━━━━━━━━━━"  # 卡片分隔線
+    mkt = market_status_line(d)
 
     if not ranked:
         # 分清楚兩件完全不同的事——講錯會讓人做錯決定：
@@ -179,7 +238,7 @@ def build_message(d):
             lines = [
                 f"📊 台股選股快報 {mmdd}",
                 sep,
-                "⚠️ 今天的精華名單沒有產出（資料管線問題，不是「今天沒機會」）。",
+                "⚠️ 今天的候選名單沒有產出（資料管線問題，不是「今天沒機會」）。",
                 "網站上的名單可能也是空的。這不是市場結論，請不要當成看空訊號。",
                 "隔天自動更新後會恢復；若連兩天這樣請找我看。",
             ]
@@ -187,30 +246,30 @@ def build_message(d):
             lines = [
                 f"📊 台股選股快報 {mmdd}",
                 f"掃描 {cnt} 檔有量個股",
-                sep,
-                "今天沒有個股通過門檻（名單正常產出、就是零檔）——這是有效結論，可以觀望。",
             ]
+            if mkt:
+                lines.append(mkt)
+            lines.append(sep)
+            lines.append("今天沒有個股通過門檻（名單正常產出、就是零檔）——這是有效結論，可以觀望。")
     else:
+        # 候選情報三分類（2026-07-26 起）：不再是固定檔數的「精選」編號清單——候選現在有
+        # 上百檔，Andy 拍板「不用幫我配好組合、我自己會挑」，所以只依 tier 分成三個段落給概況，
+        # 完整清單導去網站看。tier=="both" 只在「雙優」段落出現一次（見 _tier_section 的
+        # 呼叫方式：三段落用 tier 互斥切分，同一檔股票不會同時落在兩段）。
         lines = [
             f"📊 台股選股快報 {mmdd}",
-            f"精選 {len(ranked)} 檔（掃描 {cnt} 檔）",
+            f"資料正常｜掃描 {cnt} 檔有量個股，候選共 {len(ranked)} 檔",
         ]
-        # 🔴 2026-07-25：這裡原本是寫死的 5 個圈號 ["①".."⑤"]，TOP_N 從 5 改成 10 之後
-        # `nums[i]` 直接 IndexError → **整個推播步驟失敗，連帶擋掉後面的存檔回 main 與部署**
-        # （workflow 是循序的，前一步 fail 後面全 skip）。
-        # 改用 CIRCLED[i] 並在超出範圍時退回純數字，讓檔數再變也不會炸。
-        for i, s in enumerate(ranked):
-            chg = s.get("change_pct", 0)
-            sign = "+" if chg >= 0 else ""
+        if mkt:
+            lines.append(mkt)
+        both = [s for s in ranked if tier_by_id.get(s["id"]) == "both"]
+        win_only = [s for s in ranked if tier_by_id.get(s["id"]) == "win"]
+        ret_only = [s for s in ranked if tier_by_id.get(s["id"]) == "return"]
+        for tier, group in (("both", both), ("win", win_only), ("return", ret_only)):
             lines.append(sep)
-            lines.append(f"{_num(i)} {s['name']} {s['id']}　{sign}{chg:g}%")
-            lines.append(" · ".join(reasons(s)))
-            pn = price_note(s)
-            if pn:
-                lines.append(pn)
-            warn = risk_warning(s, len(reasons(s)))
-            if warn:
-                lines.append(f"⚠️ {warn}")
+            lines.extend(_tier_section(tier, group))
+        lines.append(sep)
+        lines.append(FIXED_DISCLAIMER)
 
     lines.append(sep)
     lines.append(f"🔗 完整清單 {SITE}")
