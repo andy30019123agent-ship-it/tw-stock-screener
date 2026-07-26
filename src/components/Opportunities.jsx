@@ -42,7 +42,14 @@ const FEAT_LABELS = {
 // 用 turnover 這個特徵（真正拿來分「勝率偏優」的依據）算：高／低兩層的賺錢機率、以及高層的期望值。
 function HonestyCallout({ tierStats }) {
   const t = tierStats?.features?.turnover
-  if (!t?.high || !t?.mid || !t?.low) {
+  // 🔴 2026-07-26 Codex 複查：原本只檢查「三層物件存不存在」，但零樣本的層**物件存在、
+  // 欄位全是 null**（tier_stats.py 的 _tier_summary 在 n==0 時如此）。下面直接做
+  // `v.win_rate * 100`、`hi.ci90[0]`，遇到那種層會丟 TypeError，被 ErrorBoundary 攔成
+  // 「整個候選區變錯誤卡」——使用者連候選清單都看不到，只因為一張說明卡的統計缺樣本。
+  // 這裡改成檢查「真的算得出數字」，缺樣本就走上面那條溫和降級。
+  const usable = v => v && v.win_rate != null && v.avg_win_pct != null
+    && v.avg_loss_pct != null && Array.isArray(v.ci90)
+  if (!usable(t?.high) || !usable(t?.mid) || !usable(t?.low)) {
     return (
       <p className="opp-honesty">
         <Info size={15} strokeWidth={1.75} />

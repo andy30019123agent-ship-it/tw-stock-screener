@@ -101,3 +101,33 @@ def test_特徵值為None時只影響該特徵不影響其他特徵():
         "turnover 有值，不該被 bias20_pct 的 None 拖累"
     total_bias = sum(out["features"]["bias20_pct"][t]["samples"] for t in ("high", "mid", "low"))
     assert total_bias == 0, f"bias20_pct 全是 None，樣本數應為 0，實際 {total_bias}"
+
+
+def test_並列值切不開時整天跳過而不是全塞low():
+    """🔴 2026-07-26 Codex 複查抓到的 bug：某日某特徵大量並列（例如 high20_gap 全是 0，
+    因為那些股票剛好都在創新高）時，兩個三分位切點會相等，而 `v <= lo_thresh` 會優先命中
+    → 那天所有樣本被整批塞進 low、high/mid 都是 0 筆。
+
+    這比「少一天樣本」嚴重得多：low 層會混進大量「其實不低」的樣本，而外面只看得到
+    「low 的筆數比較多」，完全看不出那天根本沒被分層過——統計失真且無聲。
+
+    對照組（第二天）確保修法不是「把所有日子都跳過」：值有差異的那天必須照常分層。"""
+    ev = []
+    # 第 1 天：9 筆事件、turnover 全部相同 → 切不開，應整天跳過
+    for i in range(9):
+        ev.append({"date": "2025-03-03", "sid": f"A{i}", "ret": 0.5,
+                   "feat": {"turnover": 100.0, "bias20_pct": None,
+                            "high20_gap": None, "rs_pct_60": None}})
+    # 第 2 天（對照組）：9 筆事件、turnover 各不相同 → 應照常切成三層
+    for i in range(9):
+        ev.append({"date": "2025-03-04", "sid": f"B{i}", "ret": 0.02,
+                   "feat": {"turnover": float(i), "bias20_pct": None,
+                            "high20_gap": None, "rs_pct_60": None}})
+    out = ts.compute_tier_stats(ev, n_boot=20)
+    t = out["features"]["turnover"]
+    assert t["skipped_tie_days"] == 1, "並列那天應被記為跳過"
+    # 第 1 天的 ret=0.5（極端值）不得出現在任何一層——出現就代表它被偷偷塞進去了
+    assert t["low"]["samples"] == 3 and t["mid"]["samples"] == 3 and t["high"]["samples"] == 3, \
+        f"只應該有對照組那天的 9 筆平均分成三層，實際 {[t[k]['samples'] for k in ('low','mid','high')]}"
+    # 對照組那天 ret 全是 0.02（扣成本後仍為正）→ 三層 win_rate 都該是 1.0
+    assert t["low"]["win_rate"] == 1.0, "對照組那天應該正常分層並計入"

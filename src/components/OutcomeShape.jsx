@@ -63,6 +63,24 @@ function FeatureBlock({ meta, data }) {
         {LEVELS.map(([lvKey, lvLabel]) => {
           const d = data[lvKey]
           if (!d) return null
+          // 🔴 2026-07-26 Codex 複查：零樣本的層仍然會輸出物件，只是每個欄位都是 null
+          //（tier_stats.py 的 _tier_summary 在 n==0 時如此）。原本這裡直接 `d.win_rate * 100`
+          // 與 `d.ci90[0]`，遇到那種層會丟 TypeError → ErrorBoundary 把整個候選區換成錯誤卡。
+          // 「JSON 抓不到」早就有降級，缺的是「JSON 在、但某層沒有樣本」這條路徑。
+          // 顯示「樣本不足」比整區消失誠實，也比印出 NaN% 好。
+          if (d.win_rate == null || !Array.isArray(d.ci90)) {
+            return (
+              <div className="os-level-card" key={lvKey}>
+                <div className="os-level-card-head">
+                  <span className="os-level-name">{lvLabel}</span>
+                  <span className="os-level-win os-level-nodata">樣本不足</span>
+                </div>
+                <div className="os-level-rows">
+                  <div className="os-level-row"><span>樣本數</span><b>{d.samples ?? 0} 筆</b></div>
+                </div>
+              </div>
+            )
+          }
           return (
             <div className="os-level-card" key={lvKey}>
               <div className="os-level-card-head">
@@ -95,6 +113,10 @@ function FeatureBlock({ meta, data }) {
             {LEVELS.map(([lvKey, lvLabel]) => {
               const d = data[lvKey]
               if (!d) return <tr key={lvKey}><td>{lvLabel}</td><td colSpan={5}>—</td></tr>
+              // 同上：零樣本層的欄位全是 null，直接運算會炸掉整區（Codex 2026-07-26）
+              if (d.win_rate == null || !Array.isArray(d.ci90)) {
+                return <tr key={lvKey}><td>{lvLabel}</td><td colSpan={5}>樣本不足（{d.samples ?? 0} 筆）</td></tr>
+              }
               return (
                 <tr key={lvKey}>
                   <td>{lvLabel}</td>

@@ -91,6 +91,7 @@ def _feature_tiers(events, feat, cost, block, n_boot, rng):
         by_date.setdefault(e["date"], []).append((v, e["ret"]))
 
     tier_entries = {"high": [], "mid": [], "low": []}   # 每層： [(date, net_ret), ...]
+    skipped_ties = 0                                    # 因為並列太多而無法分層的天數
     for date in sorted(by_date):
         day = by_date[date]
         if len(day) < MIN_DAY_SAMPLES:
@@ -98,6 +99,15 @@ def _feature_tiers(events, feat, cost, block, n_boot, rng):
         values = sorted(v for v, _ in day)
         lo_thresh = _percentile(values, 100 / 3)
         hi_thresh = _percentile(values, 200 / 3)
+        # 🔴 2026-07-26 Codex 複查抓到：兩個切點相等時（例如某日的 high20_gap 有一半以上都是 0，
+        # 因為那些股票剛好都在創新高），下面的 `v <= lo_thresh` 會**優先命中**，於是那天的樣本
+        # 會被整批塞進 low、high 與 mid 都是 0 筆——而外面看到的只是「low 的樣本數比較多」，
+        # 完全看不出那天根本沒有被分層過。這會讓 low 層混入大量「其實不低」的樣本，統計失真。
+        # 決定：切不開就**整天跳過這個特徵**（跟樣本太少同一個處理），並把跳過天數輸出讓人看得到。
+        # 不用「按排名硬切」是因為值相同就是相同，硬排名等於發明一個資料裡沒有的順序。
+        if lo_thresh == hi_thresh:
+            skipped_ties += 1
+            continue
         for v, ret in day:
             if v <= lo_thresh:
                 tier = "low"
@@ -107,7 +117,9 @@ def _feature_tiers(events, feat, cost, block, n_boot, rng):
                 tier = "mid"
             tier_entries[tier].append((date, ret - cost))   # 規則 2：成本後淨報酬
 
-    return {tier: _tier_summary(tier_entries[tier], block, n_boot, rng) for tier in TIERS}
+    out = {tier: _tier_summary(tier_entries[tier], block, n_boot, rng) for tier in TIERS}
+    out["skipped_tie_days"] = skipped_ties   # 前端/報告要能看到「這個特徵有幾天切不開」
+    return out
 
 
 def _tier_summary(entries, block, n_boot, rng):

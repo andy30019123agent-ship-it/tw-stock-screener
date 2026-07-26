@@ -46,6 +46,10 @@ COST_PCT = bt.EXIT_FEE * 2 + bt.EXIT_TAX + bt.EXIT_SLIP * 2
 # 候選情報三分類的百分位門檻（Phase 1：只用單一已驗證特徵分類，不做合成分數，見計畫 Task 5）。
 TIER_HIGH_PCT = 0.67   # win_flag／ret_flag 門檻
 TIER_MID_PCT = 0.33    # return 分類另外要求 turnover 百分位不在後段
+# 🔴 2026-07-26 Codex 複查：候選少於這個數就不分類。n=1 時「跟自己比是第一名」、n=2 時只要
+# 數值不同較高者就自動 1.0——那不是「排前段」，是只有一兩個人。百分位要有意義，池子得夠大。
+# 10 是保守取值：三分位切點在 n=10 時每層約 3~4 檔，勉強能講「相對前段」。
+MIN_TIER_POOL = 10
 # picks 留檔天數。⚠️ 2026-07-25 從 90 改成 3650（約 10 年）：這份 picks_history.json 是
 # **系統實際推薦紀錄的唯一來源**，也是未來唯一能回答「這套選股真的有用嗎」的真實績效證據
 # （回測是模擬、這個是實績）。90 天上限會讓超過三個月的紀錄被永久刪掉、**之後補不回來**。
@@ -60,15 +64,20 @@ GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < �
 def _percentile_ranks(values):
     """把一組數值換算成組內百分位（0~1，同名次取平均、缺值視為最低墊底）。
 
-    用於 feat_pct：算的是「當日候選池內」的相對位置，不是全市場排名。缺值（None）墊底的邏輯
-    跟既有 rs_pct_60 排序一致（0 是合法的最弱百分位，不能拿來代表缺值；None 才代表缺值）。
-    回傳與輸入等長、對齊原始順序的 list。只有一筆候選時視為 1.0（沒有其他對象可比較）。
+    用於 feat_pct：算的是「當日候選池內」的相對位置，不是全市場排名。
+    回傳與輸入等長、對齊原始順序的 list。
+
+    🔴 2026-07-26 Codex 複查修正兩個會「無中生有」的行為：
+    ① **只有一筆候選時原本回 1.0**——「跟自己比是第一名」是套套邏輯，不是資訊。那會讓當天
+       唯一那檔股票的四個特徵全部拿到滿分、直接被標成「雙優」（實測重現過）。改回 None。
+    ② **缺值（None）原本會被當成最低值參與排名、拿到 0.0**——0.0 是「墊底」這個合法的判斷，
+       但我們其實不知道它的位置。缺值就該是缺值，改回 None，讓分類端明確地「永不達標」。
     """
     n = len(values)
     if n == 0:
         return []
     if n == 1:
-        return [1.0]
+        return [None]                      # ①：沒有比較對象＝算不出相對位置，不是滿分
     safe = [v if v is not None else float("-inf") for v in values]
     order = sorted(range(n), key=lambda i: safe[i])
     ranks = [0.0] * n
@@ -81,7 +90,8 @@ def _percentile_ranks(values):
         for k in range(i, j + 1):
             ranks[order[k]] = pct
         i = j + 1
-    return ranks
+    # ②：缺值不給百分位（上面用 -inf 只是為了排序時有個確定位置，不代表它真的最低）
+    return [None if v is None else r for v, r in zip(values, ranks)]
 
 
 def build_opportunities(results, weights, revenue, data_date):
@@ -194,15 +204,28 @@ def build_opportunities(results, weights, revenue, data_date):
         ranks = _percentile_ranks([f[key] for f in feat_raw])
         for p, pct in zip(picks, ranks):
             p.setdefault("feat_pct", {})[key] = pct
+    # 🔴 2026-07-26 Codex 複查：候選池太小時，「百分位」這個概念本身就沒有意義——n=2 時只要
+    # 兩檔數值不同，較高的那檔就自動拿到 1.0 被包裝成「排前段」。這不是排前段，是只有兩個人。
+    # 候選不足 MIN_TIER_POOL 時一律不分類，並在輸出標明原因，讓前端能講「今天候選太少不分類」
+    # 而不是硬給一個看起來有依據的標籤。
+    tier_on = len(picks) >= MIN_TIER_POOL
+
+    def _ge(v, thresh):
+        """缺值永不達標——None 代表「不知道它在哪個位置」，不是「位置很高」。"""
+        return v is not None and v >= thresh
+
     for p in picks:
         fp = p["feat_pct"]
-        win_flag = fp["turnover"] >= TIER_HIGH_PCT
-        ret_flag = fp["bias20_pct"] >= TIER_HIGH_PCT
+        if not tier_on:
+            p["tier"] = None
+            continue
+        win_flag = _ge(fp["turnover"], TIER_HIGH_PCT)
+        ret_flag = _ge(fp["bias20_pct"], TIER_HIGH_PCT)
         if win_flag and ret_flag:
             p["tier"] = "both"
         elif win_flag:
             p["tier"] = "win"
-        elif ret_flag and fp["turnover"] >= TIER_MID_PCT:
+        elif ret_flag and _ge(fp["turnover"], TIER_MID_PCT):
             p["tier"] = "return"
         else:
             p["tier"] = None

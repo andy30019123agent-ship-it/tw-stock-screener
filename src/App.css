@@ -1299,3 +1299,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   white-space: nowrap;
 }
 
+
+/* 零樣本層的降級標示（2026-07-26 Codex 複查）：某層沒有樣本時，寧可明說「樣本不足」，
+   也不要印 NaN% 或讓整個候選區被 ErrorBoundary 換成錯誤卡。用 muted 色調表示這不是數據。 */
+.os-level-nodata { color: var(--ink-muted); font-weight: 600; font-size: .875rem; }

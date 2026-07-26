@@ -124,13 +124,18 @@ def _tier_stock(sid, turnover_close, bias20):
             "rs_pct_60": 0.5, "earnings_date": None, "signal_ma": True}
 
 
-def test_每檔候選都帶組內百分位與四種分類():
+def test_每檔候選都帶組內百分位與四種分類(monkeypatch):
     """feat_pct 是「當日候選池內」的百分位、不是全市場排名。tier 分類規則（計畫 Task 5 逐字）：
     win_flag=turnover 百分位≥0.67、ret_flag=bias20_pct 百分位≥0.67；兩者皆真→both；
     只 win→win；只 ret 且 turnover 百分位≥0.33（勝率不在後段）→return；其餘 None。
 
     6 檔的 turnover／bias20_pct 各自設計成單調遞增，組內百分位剛好落在 0/0.2/0.4/0.6/0.8/1.0，
-    卡住 0.67／0.33 兩個門檻兩側，四種分類都會被踩到。"""
+    卡住 0.67／0.33 兩個門檻兩側，四種分類都會被踩到。
+
+    ⚠️ 2026-07-26：本條測的是**分類規則本身**，不是「候選池要多大才分類」（那是
+    test_候選池太小一律不分類 的職責）。新增的 MIN_TIER_POOL=10 會讓這 6 檔全部不分類，
+    所以這裡明確把門檻降到 1——**是聲明前提，不是放寬斷言**：下面每一條 tier 斷言都原封不動。"""
+    monkeypatch.setattr(opp, "MIN_TIER_POOL", 1)
     stocks = [
         _tier_stock("T1", 10.0, 10.0),    # turnover pct 0.0, bias pct 0.2 → None
         _tier_stock("T2", 20.0, 20.0),    # turnover pct 0.2, bias pct 0.4 → None
@@ -150,7 +155,8 @@ def test_每檔候選都帶組內百分位與四種分類():
     assert by_id["T6"]["tier"] == "win"
     for p in o["picks"]:
         for k in ("turnover", "bias20_pct", "high20_gap", "rs_pct_60"):
-            assert 0.0 <= p["feat_pct"][k] <= 1.0, f"{p['id']} 的 {k} 百分位超出 0~1：{p['feat_pct']}"
+            assert p["feat_pct"][k] is None or 0.0 <= p["feat_pct"][k] <= 1.0, \
+                f"{p['id']} 的 {k} 百分位既不是 None（缺值）也不在 0~1：{p['feat_pct']}"
 
 
 def test_update_picks_history存全部候選與新欄位(monkeypatch, tmp_path):
@@ -354,3 +360,50 @@ def test_gate_on_reason_still_says_gate_passed():
     o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-24")
     assert o["gate"]["applied"] is True
     assert any("僅符合門檻" in " ".join(p["reasons"]) for p in o["picks"])
+
+
+def _mk(sid, close=100.0, vol=600, bias=None, rs=0.9):
+    """造一檔會通過所有硬過濾的候選（有引擎訊號、量夠、RS 過門檻）。"""
+    ma20 = close / (1 + bias / 100) if bias is not None else close * 0.95
+    return {
+        "id": sid, "name": f"股{sid}", "close": close, "ma20": ma20,
+        "bias20_pct": bias,        # ⚠️ 程式讀的是這個欄位，不是從 close/ma20 反推
+        "ma5": close, "ma10": close, "ma60": close * 0.9,
+        "avg_vol_lots": vol, "recent_high20": close * 1.1,
+        "rs_pct_60": rs, "rs_pct_120": rs, "rs_confirmed_60_120": True,
+        "sn_squeeze_breakout": True,          # 引擎訊號，確保 eligible
+    }
+
+
+def test_單一候選不得被標成雙優(monkeypatch):
+    """🔴 2026-07-26 Codex 複查抓到：只有一檔候選時，`_percentile_ranks` 原本回 [1.0]
+    ——「跟自己比是第一名」是套套邏輯不是資訊，而且連缺值的特徵也一起拿滿分，
+    結果系統會對一檔「bias/前高/RS 全部算不出來」的股票宣稱「兩個條件都排前段」。
+
+    這是「用看起來有依據的標籤說一句資料沒支持的話」，跟今天修掉的其他問題同一類。"""
+    w = {"signals": {"sn_squeeze_breakout": {"weight": 1, "samples": 999}}}
+    out = opp.build_opportunities([_mk("9001")], w, {}, "2026-07-24")
+    assert len(out["picks"]) == 1
+    p = out["picks"][0]
+    assert p["tier"] is None, f"單一候選不該有分類，實際 {p['tier']}"
+    assert p["feat_pct"]["turnover"] is None, "沒有比較對象時百分位應為 None 而不是 1.0"
+
+
+def test_候選池太小一律不分類(monkeypatch):
+    """n=2 時只要兩檔數值不同，較高者就自動拿到 1.0 被包裝成「排前段」——那不是排前段，
+    是只有兩個人。低於 MIN_TIER_POOL 一律不分類。"""
+    w = {"signals": {"sn_squeeze_breakout": {"weight": 1, "samples": 999}}}
+    few = [_mk(f"900{i}", close=100 + i * 10, vol=600 + i * 100, bias=i * 5.0) for i in range(3)]
+    out = opp.build_opportunities(few, w, {}, "2026-07-24")
+    assert len(out["picks"]) == 3
+    assert all(p["tier"] is None for p in out["picks"]), "候選池 3 檔 < 10，全部不該分類"
+
+
+def test_候選池夠大時分類正常運作(monkeypatch):
+    """對照組：確認上面兩條的修法不是「把分類整個關掉」——池子夠大時仍要正常分出三類。"""
+    w = {"signals": {"sn_squeeze_breakout": {"weight": 1, "samples": 999}}}
+    many = [_mk(f"91{i:02d}", close=100 + i, vol=500 + i * 100, bias=float(i)) for i in range(12)]
+    out = opp.build_opportunities(many, w, {}, "2026-07-24")
+    tiers = {p["tier"] for p in out["picks"]}
+    assert "both" in tiers, f"12 檔候選應分得出雙優，實際 {tiers}"
+    assert any(t is None for t in tiers), "也應該有不符合條件、不分類的"
