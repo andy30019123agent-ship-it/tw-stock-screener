@@ -29,30 +29,11 @@ OUT_DIR = os.path.join(HERE, "..", "public", "data")
 PICKS_HISTORY_PATH = os.path.join(HERE, "picks_history.json")
 SCOREBOARD_PATH = os.path.join(HERE, "scoreboard.json")
 
-# 每天推薦幾檔。⚠️ 2026-07-25 從 5 改成 10（Andy 選 1️⃣，依 verify_top5_procedure.py 的實測）：
-#   檔數  平均   中位   日勝率  sd    最大回撤  t(NW)
-#    5   2.47  0.97  53.4% 11.80  −27.3  1.78   ← 舊設定
-#   10   2.72  1.06  55.4%  9.00  −18.8  2.38   ← 現在
-#   20   2.64  2.12  64.0%  6.35  −10.8  3.00
-#
-# 🔄 **2026-07-25 深夜改成 8（Andy 定案）**。他把目標講清楚了：不要每天下一堆單，要「最精簡、
-# 勝率相對高、又賺得多」。照這個目標重量（現行 rs_pct_60 排序、339 天、扣成本、20 交易日）：
-#   檔數  賺錢機率  贏大盤  平均絕對  中位絕對  超額 t
-#    4     63.4%   56.9%   5.86    4.78    2.22
-#    5     66.1%   58.1%   5.75    4.30    2.17
-#    8     66.7%   62.5%   6.19    5.45    2.73   ← 現行
-#   10     65.8%   62.8%   5.88    4.90    2.80
-#   15     68.7%   61.7%   5.80    4.85    3.21
-#   20     72.0%   63.4%   5.57    4.85    3.52
-#
-# ⚠️ **8 不是「量測得出來最好」的檔數，別把它當神奇數字**：持有期 20 天彼此重疊，
-# 有效獨立批次只有 339/20 ≈ 17，勝率的標準誤約 **±12pp** → 4~20 檔的勝率差距全在誤差內。
-# 唯一單調的訊號是「超額 t 值隨檔數上升」（2.17 → 3.52）＝檔數越多結論越可信。
-# 所以選 8 的真正理由是：**在測不出差別的平原上，取 Andy 要的「精簡」那一端**，
-# 而不是往下砍到 4~5 檔（那裡 t 值開始明顯掉，且單檔運氣成分變大：一次進場最慘 −44%）。
-# 改檔數時要一起回來重算這張表，並更新 src/components/OutcomeShape.jsx 的 MEASURED。
-# 可行性：score>0 的候選中位 26 檔、94.4% 的日子有 ≥5 檔，取 8 檔不會經常湊不滿。
-TOP_N = 8
+# 🔄 2026-07-26：拿掉「每天固定推 N 檔」的購買組合語意（Andy 拍板：不用幫我配好組合、我自己會
+# 挑買哪幾檔）。原本這裡有 40 行「TOP_N 該取多少」的量測紀錄（5→10→8 的實測表），連同 TOP_N
+# 常數一起刪除——那整段是舊需求（固定榜單）的產物，新需求是「輸出全部合格候選＋分類，交給
+# Andy 自己選」。舊量測數字仍留在 git 歷史（本檔 2026-07-25 之前的版本）可查。
+PREVIEW_N = 10   # 前端預設展開顯示幾筆，純粹是畫面初始狀態，不是「建議買幾檔」；候選有幾檔就出幾檔。
 MIN_VOL_LOTS = 500        # 20 日均量門檻（張）
 BIAS_FLAG_PCT = 15        # 20 日乖離 > 此值加「乖離大」風險旗標
 FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一致）
@@ -61,6 +42,10 @@ FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一�
 # 跟 backtest_signals.py 的 exit_analysis／_net_return（EXIT_FEE/EXIT_TAX/EXIT_SLIP，約 1052-1061 行）
 # 同一把尺——改一邊要改兩邊，不要在這裡另外定義獨立的成本數字。
 COST_PCT = bt.EXIT_FEE * 2 + bt.EXIT_TAX + bt.EXIT_SLIP * 2
+
+# 候選情報三分類的百分位門檻（Phase 1：只用單一已驗證特徵分類，不做合成分數，見計畫 Task 5）。
+TIER_HIGH_PCT = 0.67   # win_flag／ret_flag 門檻
+TIER_MID_PCT = 0.33    # return 分類另外要求 turnover 百分位不在後段
 # picks 留檔天數。⚠️ 2026-07-25 從 90 改成 3650（約 10 年）：這份 picks_history.json 是
 # **系統實際推薦紀錄的唯一來源**，也是未來唯一能回答「這套選股真的有用嗎」的真實績效證據
 # （回測是模擬、這個是實績）。90 天上限會讓超過三個月的紀錄被永久刪掉、**之後補不回來**。
@@ -70,6 +55,33 @@ HISTORY_MAX = 3650
 
 GATE_SIGNAL = "rs_confirmed_60_120"   # 入場門檻訊號（強勢雙確認）
 GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < 此數 → 退回不設門檻（保命）
+
+
+def _percentile_ranks(values):
+    """把一組數值換算成組內百分位（0~1，同名次取平均、缺值視為最低墊底）。
+
+    用於 feat_pct：算的是「當日候選池內」的相對位置，不是全市場排名。缺值（None）墊底的邏輯
+    跟既有 rs_pct_60 排序一致（0 是合法的最弱百分位，不能拿來代表缺值；None 才代表缺值）。
+    回傳與輸入等長、對齊原始順序的 list。只有一筆候選時視為 1.0（沒有其他對象可比較）。
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    if n == 1:
+        return [1.0]
+    safe = [v if v is not None else float("-inf") for v in values]
+    order = sorted(range(n), key=lambda i: safe[i])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and safe[order[j + 1]] == safe[order[i]]:
+            j += 1
+        pct = (i + j) / 2 / (n - 1)          # 並列取平均名次
+        for k in range(i, j + 1):
+            ranks[order[k]] = pct
+        i = j + 1
+    return ranks
 
 
 def build_opportunities(results, weights, revenue, data_date):
@@ -111,6 +123,7 @@ def build_opportunities(results, weights, revenue, data_date):
                    else "pool_too_small")
 
     picks = []
+    feat_raw = []   # 跟 picks 對齊的原始特徵值；要看到候選池全體才能算百分位，迴圈結束後統一算
     for r in pool:
         fired, ok = eligible(r)
         if not ok:
@@ -149,6 +162,7 @@ def build_opportunities(results, weights, revenue, data_date):
                        "pool_too_small": "過門檻的股票不足 20 檔"}.get(gate_reason, gate_reason)
                 reasons = [f"⚠️ 今天沒套用強勢雙確認門檻（{why}）＝這檔未經強勢篩選，"
                            "無加權訊號、按相對強弱排序"]
+        recent_high20 = r.get("recent_high20")
         picks.append({
             "id": r["id"],
             "name": r["name"],
@@ -156,13 +170,42 @@ def build_opportunities(results, weights, revenue, data_date):
             "reasons": reasons,
             "close": close,
             "support_ma20": ma20,
-            "recent_high20": r.get("recent_high20"),
+            "recent_high20": recent_high20,
             "rs20": r.get("rs20"),
             "rs_pct_60": r.get("rs_pct_60"),      # 排序依據（全市場 60 日報酬百分位）
             "revenue_yoy": yoy,
             "earnings_date": r.get("earnings_date"),
             "risk_flags": risk,
         })
+        # turnover 不可用 avg_money_e：bt_to_price_hist 把回測母體的成交金額補 0（history_store.py:214），
+        # avg_money_e 在這個資料源裡恆為 0，只能用均量×收盤價自己算。
+        feat_raw.append({
+            "turnover": (r.get("avg_vol_lots") or 0) * (close or 0),
+            "bias20_pct": r.get("bias20_pct"),
+            "high20_gap": ((recent_high20 - close) / close * 100
+                           if recent_high20 and close else None),
+            "rs_pct_60": r.get("rs_pct_60"),
+        })
+
+    # 候選情報三分類（Phase 1：只用單一已驗證特徵，不做合成分數，見計畫 Task 5）。
+    # feat_pct 是「當日候選池內」的百分位，不是全市場排名——候選池每天大小不同，同一檔股票
+    # 今天跟明天的 feat_pct 不能直接比較，只能比「跟今天其他候選比起來如何」。
+    for key in ("turnover", "bias20_pct", "high20_gap", "rs_pct_60"):
+        ranks = _percentile_ranks([f[key] for f in feat_raw])
+        for p, pct in zip(picks, ranks):
+            p.setdefault("feat_pct", {})[key] = pct
+    for p in picks:
+        fp = p["feat_pct"]
+        win_flag = fp["turnover"] >= TIER_HIGH_PCT
+        ret_flag = fp["bias20_pct"] >= TIER_HIGH_PCT
+        if win_flag and ret_flag:
+            p["tier"] = "both"
+        elif win_flag:
+            p["tier"] = "win"
+        elif ret_flag and fp["turnover"] >= TIER_MID_PCT:
+            p["tier"] = "return"
+        else:
+            p["tier"] = None
 
     # ⚠️ 2026-07-25 排序依據從 rs20 改成 rs_pct_60（Andy 選 4️⃣）。實測（verify_top5_procedure.py）：
     #   rs20 排序：+2.47pp／中位 0.97／t 1.78——但**跟隨機排序比 t 只有 0.28、0/20 seed 顯著**，
@@ -174,7 +217,9 @@ def build_opportunities(results, weights, revenue, data_date):
     picks.sort(key=lambda p: (-p["score"], -(p["rs_pct_60"] if p["rs_pct_60"] is not None else -1)))
     return {
         "date": data_date,
-        "picks": picks[:TOP_N],
+        "picks": picks,             # 2026-07-26 起不截斷：全部合格候選都輸出，買哪幾檔由 Andy 自己決定
+        "pool_n": len(picks),        # 當日候選池大小（給前端顯示「共 N 檔」）
+        "preview_n": PREVIEW_N,      # 前端預設展開幾筆，不是建議買幾檔
         # 前端/快報要能講清楚這批是「強勢股裡的技術面最佳」還是「全市場技術面最佳」
         "gate": {"signal": GATE_SIGNAL, "applied": gate_on, "pool": len(gated),
                  "reason": gate_reason, "min_pool": GATE_MIN_POOL,
@@ -227,6 +272,9 @@ def update_picks_history(opp):
         # 留下「當時的完整脈絡」而不只有代號與收盤價：事後檢討時要能回答「那天為什麼推它、
         # 當時大盤如何、門檻有沒有套上」。這些欄位當天不存，日後永遠補不回來
         # （2026-07-25 加：原本只存 id/name/close/score）。
+        # 2026-07-26 起 opp["picks"] 本身已是「全部合格候選」（不再截斷），這裡照樣全存，
+        # 並多存 feat_pct／tier——這份歷史是未來唯一能回答「這套選股真的有用嗎」的實績證據，
+        # 分類結果當天不存，日後補不回來。
         entries.append({
             "date": opp["date"],
             "gate": opp.get("gate"),                       # 門檻是否套用、候選池多大
@@ -236,7 +284,9 @@ def update_picks_history(opp):
                        "rs20": p.get("rs20"),
                        "rs_pct_60": p.get("rs_pct_60"),
                        "risk_flags": p.get("risk_flags"),
-                       "revenue_yoy": p.get("revenue_yoy")} for p in opp["picks"]],
+                       "revenue_yoy": p.get("revenue_yoy"),
+                       "feat_pct": p.get("feat_pct"),
+                       "tier": p.get("tier")} for p in opp["picks"]],
         })
     entries.sort(key=lambda e: e["date"])
     entries = entries[-HISTORY_MAX:]
@@ -302,7 +352,7 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     workflow_dispatch 的 force_recompute 輸入一路傳到這裡（見 daily.yml）。
     """
     today = today or dt.date.today()
-    print(f"🎯 機會股引擎（取前 {TOP_N} 檔）…")
+    print("🎯 機會股引擎（輸出全部合格候選，不截斷成固定檔數）…")
     weights = bt.ensure_weights(price_hist, chip_hist, div_hist, universe, today=today, force=force_recompute)
     revenue = mr.load_or_fetch(today)
     print(f"   月營收 YoY 覆蓋 {len(revenue)} 檔")
@@ -335,8 +385,9 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     if regime:
         _write_json(os.path.join(OUT_DIR, "signal_regime.json"), regime)
 
-    names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"]) or "（今日無符合標的）"
-    print(f"   Top {len(opp['picks'])}：{names}")
+    names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"][:PREVIEW_N]) or "（今日無符合標的）"
+    more = f"…等共 {opp['pool_n']} 檔" if opp["pool_n"] > PREVIEW_N else ""
+    print(f"   候選 {opp['pool_n']} 檔：{names}{more}")
     print(f"   成績單：樣本 {scoreboard['samples']}"
           + (f"、勝率 {scoreboard['win_rate']}、平均 {scoreboard['avg_ret']}%"
              if scoreboard["samples"] else "（尚未有滿 20 交易日的舊 picks）"))

@@ -5,9 +5,11 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import opportunities as opp
 
-# 跨 repo 契約欄位。rs_pct_60 於 2026-07-25 加入（排序依據從 rs20 換成它）。
+# 跨 repo 契約欄位。rs_pct_60 於 2026-07-25 加入（排序依據從 rs20 換成它）；
+# feat_pct／tier 於 2026-07-26 加入（候選情報三分類，取代固定 Top N 購買組合語意）。
 CONTRACT_KEYS = {"id", "name", "score", "reasons", "close", "support_ma20",
-                 "recent_high20", "rs20", "rs_pct_60", "revenue_yoy", "earnings_date", "risk_flags"}
+                 "recent_high20", "rs20", "rs_pct_60", "revenue_yoy", "earnings_date", "risk_flags",
+                 "feat_pct", "tier"}
 
 # 簡化權重表：糾結轉強 3 分、爆量突破 2 分、其餘預設 1
 WEIGHTS = {"signals": {
@@ -92,19 +94,80 @@ def test_no_signal_excluded_and_sorted_by_rs_pct_60():
     assert scores == sorted(scores, reverse=True)
 
 
-def test_top_n_會截斷且不寫死檔數():
-    """候選超過 TOP_N 時只留前 TOP_N。
-
-    ⚠️ 這個測試刻意**不寫死檔數**：2026-07-25 一天內從 5 改成 10 再改成 8，
-    每次寫死都要改測試，而寫死的地方（例如 notify_tg 的 5 個圈號）曾直接讓部署整條掛掉。
-    """
-    n = opp.TOP_N
-    results = [_stock(str(7000 + i), signal_ma=True, rs_pct_60=(i / 100)) for i in range(n + 5)]
+def test_輸出全部合格候選不再截斷():
+    """2026-07-26 起移除「每天只推 N 檔」的購買組合語意（Andy：不用幫我配好組合，我自己會挑）：
+    候選有幾檔就輸出幾檔，不再固定截斷。取代舊版 test_top_n_會截斷且不寫死檔數
+    ——那個測試驗的正是現在要拿掉的截斷行為，TOP_N 常數本身也已刪除。"""
+    n = 13
+    results = [_stock(str(7000 + i), signal_ma=True, rs_pct_60=(i / 100)) for i in range(n)]
     rev = {s["id"]: {"yoy": 5.0} for s in results}
     o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-02")
     assert len(o["picks"]) == n
+    assert o["pool_n"] == n
     # 同分（都 3 分）→ 依 rs_pct_60 由高到低，第一名是 rs 最高的那檔
-    assert o["picks"][0]["id"] == str(7000 + n + 4)
+    assert o["picks"][0]["id"] == str(7000 + n - 1)
+
+
+def test_preview_n是畫面預設筆數不是建議買幾檔():
+    """preview_n 是固定的前端預設顯示筆數常數，跟候選池大小無關、也不會被拿去截斷 picks。"""
+    results = [_stock(str(7100 + i), signal_ma=True) for i in range(3)]
+    rev = {s["id"]: {"yoy": 5.0} for s in results}
+    o = opp.build_opportunities(results, WEIGHTS, rev, "2026-07-02")
+    assert o["preview_n"] == opp.PREVIEW_N
+    assert o["pool_n"] == 3
+    assert len(o["picks"]) == 3
+
+
+def _tier_stock(sid, turnover_close, bias20):
+    return {"id": sid, "name": f"股{sid}", "close": turnover_close, "ma20": 95.0,
+            "avg_vol_lots": 1000, "bias20_pct": bias20, "recent_high20": None,
+            "rs_pct_60": 0.5, "earnings_date": None, "signal_ma": True}
+
+
+def test_每檔候選都帶組內百分位與四種分類():
+    """feat_pct 是「當日候選池內」的百分位、不是全市場排名。tier 分類規則（計畫 Task 5 逐字）：
+    win_flag=turnover 百分位≥0.67、ret_flag=bias20_pct 百分位≥0.67；兩者皆真→both；
+    只 win→win；只 ret 且 turnover 百分位≥0.33（勝率不在後段）→return；其餘 None。
+
+    6 檔的 turnover／bias20_pct 各自設計成單調遞增，組內百分位剛好落在 0/0.2/0.4/0.6/0.8/1.0，
+    卡住 0.67／0.33 兩個門檻兩側，四種分類都會被踩到。"""
+    stocks = [
+        _tier_stock("T1", 10.0, 10.0),    # turnover pct 0.0, bias pct 0.2 → None
+        _tier_stock("T2", 20.0, 20.0),    # turnover pct 0.2, bias pct 0.4 → None
+        _tier_stock("T3", 30.0, 30.0),    # turnover pct 0.4, bias pct 0.6 → None（ret 差一點點不到）
+        _tier_stock("T4", 40.0, 40.0),    # turnover pct 0.6, bias pct 0.8 → return（turnover 未達 win 但 ≥0.33）
+        _tier_stock("T5", 50.0, 50.0),    # turnover pct 0.8, bias pct 1.0 → both
+        _tier_stock("T6", 60.0, -10.0),   # turnover pct 1.0, bias pct 0.0 → win
+    ]
+    rev = {s["id"]: {"yoy": 5.0} for s in stocks}
+    o = opp.build_opportunities(stocks, WEIGHTS, rev, "2026-07-26")
+    by_id = {p["id"]: p for p in o["picks"]}
+    assert by_id["T1"]["tier"] is None
+    assert by_id["T2"]["tier"] is None
+    assert by_id["T3"]["tier"] is None
+    assert by_id["T4"]["tier"] == "return"
+    assert by_id["T5"]["tier"] == "both"
+    assert by_id["T6"]["tier"] == "win"
+    for p in o["picks"]:
+        for k in ("turnover", "bias20_pct", "high20_gap", "rs_pct_60"):
+            assert 0.0 <= p["feat_pct"][k] <= 1.0, f"{p['id']} 的 {k} 百分位超出 0~1：{p['feat_pct']}"
+
+
+def test_update_picks_history存全部候選與新欄位(monkeypatch, tmp_path):
+    """picks_history 是未來唯一能回答「這套選股真的有用嗎」的實績證據，當天不存日後補不回來
+    ——所以要存全部候選（不是截斷後的前幾檔），且要帶 feat_pct／tier 這兩個新欄位。
+    用 monkeypatch 把 PICKS_HISTORY_PATH 導到暫存檔，絕不能寫到真的 pipeline/picks_history.json
+    （那是正式的歷史紀錄，測試把它蓋掉會真的遺失資料）。"""
+    monkeypatch.setattr(opp, "PICKS_HISTORY_PATH", str(tmp_path / "picks_history.json"))
+    opp_out = opp.build_opportunities(
+        [_tier_stock("U1", 10.0, 10.0), _tier_stock("U2", 60.0, 60.0)],
+        WEIGHTS, {"U1": {"yoy": 5.0}, "U2": {"yoy": 5.0}}, "2026-07-26",
+    )
+    entries = opp.update_picks_history(opp_out)
+    stored = next(e for e in entries if e["date"] == "2026-07-26")
+    assert len(stored["picks"]) == len(opp_out["picks"]) == 2
+    for p in stored["picks"]:
+        assert "feat_pct" in p and "tier" in p
 
 
 def test_缺rs_pct_60用最低值墊底_不可用0():
