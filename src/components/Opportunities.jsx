@@ -10,7 +10,10 @@ import OutcomeShape from './OutcomeShape'
 const TIER_META = {
   both: { label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段' },
   win: { label: '勝率偏優', Icon: Award, blurb: '成交金額排在候選池前段——歷史上這組單檔賺錢機率較高' },
-  return: { label: '報酬偏優', Icon: Coins, blurb: '20 日乖離排在候選池前段、成交金額不在後段——歷史上這組賺的時候賺比較多' },
+  // ⚠️ 2026-07-26 實測（_reports/驗證_雙優分類_2026-07-26.md）：「只有乖離高」的賺錢機率 42.5%，
+  // 比「兩個條件都不符合」的 42.6% 還低一點——乖離單獨看只增加賺賠「幅度」，不增加「頻率」。
+  // 所以這個分類的說明**絕對不可以**暗示勝率比較好，只能講幅度。
+  return: { label: '報酬偏優', Icon: Coins, blurb: '20 日乖離排在候選池前段、成交金額不在後段——歷史上這組賺的時候賺比較多（+13.4% vs 未分類的 +11.4%），但賺錢的「次數」並沒有比較多' },
 }
 const TIER_ORDER = ['both', 'win', 'return']
 
