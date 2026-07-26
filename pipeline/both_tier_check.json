@@ -1,0 +1,42 @@
+{
+ "both": {
+  "n": 39398,
+  "days": 395,
+  "blocks": 19,
+  "win_rate": 0.5003,
+  "avg_win_pct": 18.39,
+  "avg_loss_pct": -10.46,
+  "ev_pct": 3.97,
+  "median_pct": 0.01
+ },
+ "turn": {
+  "n": 54503,
+  "days": 395,
+  "blocks": 19,
+  "win_rate": 0.4762,
+  "avg_win_pct": 14.77,
+  "avg_loss_pct": -9.53,
+  "ev_pct": 2.04,
+  "median_pct": -0.76
+ },
+ "bias": {
+  "n": 54550,
+  "days": 395,
+  "blocks": 19,
+  "win_rate": 0.4245,
+  "avg_win_pct": 13.4,
+  "avg_loss_pct": -8.68,
+  "ev_pct": 0.69,
+  "median_pct": -1.75
+ },
+ "none": {
+  "n": 132979,
+  "days": 395,
+  "blocks": 19,
+  "win_rate": 0.4257,
+  "avg_win_pct": 11.41,
+  "avg_loss_pct": -7.85,
+  "ev_pct": 0.35,
+  "median_pct": -1.6
+ }
+}
