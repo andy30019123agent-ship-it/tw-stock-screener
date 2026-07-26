@@ -80,7 +80,7 @@ export function holdUntil(dataDate, days = HOLD_DAYS) {
 
 /**
  * 集中度：同產業檔數占比。
- * 為什麼要看：實測今天 Top5 有 4~5 檔同屬「電腦及週邊設備」，名義分散 5 檔、實際是同一個賭注
+ * 為什麼要看：實測候選情報常有多檔同屬「電腦及週邊設備」，名義分散多檔、實際是同一個賭注
  * 下多次。同產業個股的相關性高，一起漲也一起跌。
  */
 export function concentration(picks) {

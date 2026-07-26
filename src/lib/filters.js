@@ -34,7 +34,7 @@ export const DEFAULT_CONDITIONS = {
   chipLogic: 'and',       // 'and' 外資與投信都要 / 'or' 任一即可
   market: 'all',          // 'all' / '上市' / '上櫃'
   industry: 'all',        // 'all' 或產業名稱
-  // 風險濾網（Phase C，預設關閉、不影響 Top5，只是使用者自選）
+  // 風險濾網（Phase C，預設關閉、不影響候選情報，只是使用者自選）
   minMoney: 0,            // 最低 20 日均成交額（億元），0 = 不限
   excludeRunaway: false,  // 排除「極端暴走股」（乖離/短漲/波動過高）
   keyword: '',

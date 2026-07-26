@@ -85,7 +85,7 @@ function presetScore(key, weights) {
 // 橫斷面訊號（相對強弱＋產業輪動）。⚠️ 2026-07-25 起狀態已改變，別照舊註解理解：
 //   ① **可以即時篩選**——後端 build_data 用 live_xsect 每天算好全市場百分位寫進 screener.json，
 //      三個都在 filters.js 有對應條件（rsStrong60 / rsConfirmed / industryHot）。
-//   ② **`rs_confirmed_60_120` 已是 Top5 的入場門檻**（opportunities.GATE_SIGNAL）——先篩它、
+//   ② **`rs_confirmed_60_120` 已是候選情報的入場門檻**（opportunities.GATE_SIGNAL）——先篩它、
 //      再用技術訊號排名。但它**不參與加權計分**（21% 的股票符合，當加分項會淹掉窄訊號）。
 // 本常數這裡只是「戰績展示表要列哪幾個」的清單，與上面兩件事無關。
 const XSECT_SIGNALS = [
@@ -222,7 +222,7 @@ export default function ConditionPanel({
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
                 <b>⚠️</b> 代表扣成本後贏不過大盤。<b>小詩選股顯示的是 5 招母體</b>（勾「符合任一形態」實際會篩到的
                 那一整批，成本後 −0.78pp）——不是最好的那一招（縮口帶量突破 +0.04pp）；
-                多頭排列／填息快僅供戰績參考、不進機會股名單。
+                多頭排列／填息快僅供戰績參考、不進候選情報清單。
               </p>
               <p className="strategy-note strategy-skew">
                 ⚠️ <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
@@ -235,7 +235,7 @@ export default function ConditionPanel({
           <ComboBoard combos={combos} weights={weights} />
 
           {/* 相對強弱＋產業輪動的樣本外驗證戰績表。注意：這三個訊號現在**可以即時篩選**、
-              且 rs_confirmed_60_120 已是 Top5 入場門檻（見 XSECT_SIGNALS 上方註解）；
+              且 rs_confirmed_60_120 已是候選情報入場門檻（見 XSECT_SIGNALS 上方註解）；
               這張表只是它們的回測戰績展示。 */}
           {weights?.signals && XSECT_SIGNALS.some(s => (weights.signals[s.key]?.samples || 0) > 0) && (
             <details className="strategy-board">
@@ -264,7 +264,7 @@ export default function ConditionPanel({
               <p className="strategy-note">
                 「相對強弱」＝拿個股近期漲幅跟全市場排名（不是跟大盤指數比）；「熱門產業」＝所屬產業近期輪動居前。
                 這些是<b>橫斷面（跨股票比較）</b>訊號。2026-07-25 起後端每天算好全市場排名，所以<b>都可以直接勾選篩股</b>；
-                其中<b>「強勢雙確認」已成為機會股名單的入場門檻</b>（先篩出強勢股，再用技術訊號排名）——
+                其中<b>「強勢雙確認」已成為候選情報清單的入場門檻</b>（先篩出強勢股，再用技術訊號排名）——
                 它<b>不參與加權計分</b>，因為它有 21% 的股票符合，當加分項會淹掉真正有區辨力的窄訊號。
               </p>
             </details>
@@ -356,7 +356,7 @@ export default function ConditionPanel({
           </div>
         </div>
 
-        {/* 風險濾網（Phase C，預設關閉、不影響 Top5，只是使用者自選過濾雜訊） */}
+        {/* 風險濾網（Phase C，預設關閉、不影響候選情報，只是使用者自選過濾雜訊） */}
         <div className="cond-group">
           <span className="cond-section-label">風險濾網</span>
           <div className="cond-chips">
