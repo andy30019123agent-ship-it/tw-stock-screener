@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
-import HowManyToBuy from './HowManyToBuy'
 
 // 勝率榜一格：主數字＝平均超額（pp，權重依據），次行＝超額勝率與樣本。
 // 樣本不足（validated=false）整格轉灰＋提示，提醒「別信這個數字」；無資料顯示「—」。
@@ -193,22 +192,19 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
         })}
       </div>
 
-      {/* 操作計畫（2026-07-25 加）：回答「買多少、跌到哪走、抱到什麼時候」。
-          picks 本身沒有產業/波動度/月線，從 screener.json 併回來。 */}
+      {/* 個股觀察位（2026-07-25 加，2026-07-26 誠實化：拿掉購買組合語意，只留近 20 日前高與績效檢視日）。
+          picks 本身沒有產業，從 screener.json 併回來（集中度警示要用）。 */}
       <PositionPlan dataDate={opp.date} picks={opp.picks.map(p => {
         const full = stocks?.find(s => s.id === p.id)
         return {
           id: p.id, name: p.name,
           close: p.close ?? full?.close ?? null,
-          ma20: p.support_ma20 ?? full?.ma20 ?? null,
-          rv20_pct: full?.rv20_pct ?? null,
           industry: full?.industry ?? null,
-          recent_high20: p.recent_high20 ?? full?.recent_high20 ?? null,   // 目標價要用（技術壓力位）
+          recent_high20: p.recent_high20 ?? full?.recent_high20 ?? null,   // 近 20 日前高（觀察位）要用
         }
       })} />
 
       {/* 報酬分佈（2026-07-25 加）：把「典型會怎樣、最壞多壞」寫出來，防止在正常虧損期誤判成系統壞了 */}
-      <HowManyToBuy pickCount={opp.picks.length} />
       <OutcomeShape pickCount={opp.picks.length} />
 
       {board && (

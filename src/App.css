@@ -1052,15 +1052,6 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .pp { margin-top: 20px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 16px 18px; }
 .pp-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.pp-budget { display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
-  font-size: 1rem; color: var(--ink-body); font-weight: 600; }
-.pp-budget input {
-  width: 7.5em; min-height: 44px; padding: 4px 10px; text-align: right;
-  border: 1px solid var(--border-strong); border-radius: var(--r-sm);
-  font-family: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; color: var(--ink);
-  background: var(--surface);
-}
-.pp-budget input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 
 /* 集中度警示：琥珀＝品質/風險提示，不用紅綠（那是漲跌語意） */
 .pp-warn {
@@ -1083,19 +1074,11 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   text-align: left; font-weight: 700; color: var(--ink);
   position: sticky; left: 0; background: var(--surface); z-index: 1;
 }
-.pp-table .pp-odd { color: var(--warn); }        /* 買不到整張 */
-.pp-table .pp-hot { color: var(--warn); }        /* 波動偏高 */
-
 .pp-note {
   display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0;
   font-size: 1rem; line-height: 1.75; color: var(--ink-body);
 }
 .pp-note svg { flex: none; margin-top: 4px; color: var(--ink-muted); }
-.pp-note-warn {
-  background: color-mix(in srgb, var(--warn-bg) 45%, transparent);
-  border-radius: var(--r-md); padding: 12px 14px;
-}
-.pp-note-warn svg { color: var(--warn); }
 
 /* ===== 報酬分佈卡（這批大概會怎樣）===== */
 .os { margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 12px; }
@@ -1147,17 +1130,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   .os-key { grid-template-columns: repeat(3, 1fr); }
 }
 
-/* 目標價／出場價：用漲跌語意色（這裡確實是行情方向，符合 MASTER 對 --up/--down 的定義） */
+/* 近 20 日前高（觀察位）：用漲跌語意色（這裡確實是行情方向，符合 MASTER 對 --up/--down 的定義） */
 .pp-table .pp-target { color: var(--up); font-weight: 700; }
-.pp-table .pp-stop { color: var(--down); font-weight: 700; }
-.pp-table .pp-target small, .pp-table .pp-stop small { color: var(--ink-muted); font-weight: 400; }
-/* 金額配置收在 details 裡（Andy 說先不管預算） */
-.pp-money { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 10px; }
-.pp-money > summary {
-  cursor: pointer; min-height: 44px; display: flex; align-items: center;
-  font-size: 1rem; font-weight: 700; color: var(--ink-muted);
-}
-.pp-money > summary:hover { color: var(--primary); }
+.pp-table .pp-target small { color: var(--ink-muted); font-weight: 400; }
 
 /* 機會股取不到時的明示區塊（2026-07-25）：原本靜默消失，使用者會誤判成「今天沒選到股」。
    用 --warn 系列而非紅色——這是狀態說明，不是價格漲跌，不可佔用紅漲綠跌語意。 */
@@ -1189,30 +1164,3 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   white-space: nowrap;
 }
 
-/* 「我只想買幾檔？」卡（2026-07-25）：沿用 .os 的視覺語彙（同一種「量測資訊」卡）。
-   刻意不用警示色——這是取捨資訊不是錯誤，紅綠只保留給價格漲跌。 */
-.hm { margin: 12px 0 0; }
-.hm-toggle {
-  display: flex; align-items: center; gap: 6px;
-  width: 100%; min-height: 44px; padding: 10px 12px;
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600;
-  cursor: pointer; text-align: left;
-}
-.hm-toggle:hover { border-color: var(--border-strong); }
-.hm-lead, .hm-note {
-  margin: 10px 0 0; padding: 12px 14px; font-size: 15px; line-height: 1.75;
-  border-radius: var(--r-md); background: var(--surface-tint); color: var(--ink-body);
-}
-.hm-note small { display: block; margin-top: 6px; font-size: 13px; color: var(--ink-muted); }
-.hm-scroll { overflow-x: auto; margin-top: 10px; -webkit-overflow-scrolling: touch; }
-.hm-table { width: 100%; border-collapse: collapse; font-size: 15px; white-space: nowrap; }
-.hm-table th, .hm-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; }
-.hm-table th:first-child, .hm-table td:first-child {
-  position: sticky; left: 0; z-index: 1; text-align: left;
-  background: var(--surface); font-weight: 600;
-}
-.hm-table thead th { color: var(--ink-muted); font-weight: 600; font-size: 14px; }
-.hm-table td small { display: block; font-size: 12px; color: var(--ink-muted); font-weight: 400; }
-.hm-table tr.hm-cur td { background: var(--primary-tint); }
-.hm-table tr.hm-cur td:first-child { background: var(--primary-tint); }

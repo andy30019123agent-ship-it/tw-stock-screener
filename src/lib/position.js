@@ -1,55 +1,18 @@
-// 部位計算：把「該買多少」「防守價放哪」「持有到哪天」算出來（Andy 2026-07-25 要求）。
+// 部位計算：個股觀察位（近 20 日前高）與績效檢視日（Andy 2026-07-25 要求，2026-07-26 誠實化調整）。
 //
-// 為什麼需要：站上原本只告訴使用者「買哪 5 檔」，但實際下單還缺三件事——買多少錢、跌到哪要走、
-// 抱到什麼時候。而且 Top5 常出現一張要幾十萬甚至五百多萬的股票（實測緯穎一張 573 萬），
-// 若使用者的標準部位是 20 萬，等於根本買不了整張。
+// 2026-07-26：移除 volatilityParity（資金配置／買幾張）——Andy 明確表示「不用提供給我購買組合，
+// 我會自行評估是否買入」，這屬於購買組合語意。defendPrice 保留計算邏輯供 Phase 3 參考，
+// 但拿掉了「已驗證」的結論性文案（見下方函式註解）。
 //
 // 純函式、不碰 I/O，方便單測與前端重用。
 
-/** 一張＝1000 股（台股整股單位） */
-export const LOT = 1000
-
 /**
- * 波動平價（volatility parity）配置金額：波動越大、投入越少，讓每檔的「風險貢獻」接近。
+ * 防守價（停損參考，−15% 與 20 日均線取較高者）。
  *
- * 為什麼不用等金額：Top5 的年化波動實測從 10% 到 132% 都有（中位約 59%）。等金額買
- * 一檔波動 100% 與一檔 30% 的，前者對組合損益的影響是後者的三倍多，名義分散但實際沒分散。
- *
- * 做法：權重 ∝ 1/波動，再正規化到總預算。缺波動資料的用中位數當替代（不因缺資料就給極端權重）。
- * clamp 上下限避免極端值吃掉整個預算或被壓到買不到一股。
- */
-export function volatilityParity(picks, budget, { fallbackVol = 60, minShare = 0.08, maxShare = 0.40 } = {}) {
-  if (!picks?.length || !(budget > 0)) return []
-  const vols = picks.map(p => (p.rv20_pct > 0 ? p.rv20_pct : fallbackVol))
-  const raw = vols.map(v => 1 / v)
-  const sum = raw.reduce((a, b) => a + b, 0)
-  let share = raw.map(r => r / sum)
-  // clamp 後重新正規化（單純 clamp 會讓總和不等於 1）
-  share = share.map(s => Math.min(maxShare, Math.max(minShare, s)))
-  const s2 = share.reduce((a, b) => a + b, 0)
-  share = share.map(s => s / s2)
-  return picks.map((p, i) => {
-    const amount = budget * share[i]
-    const px = p.close > 0 ? p.close : null
-    const shares = px ? Math.floor(amount / px) : 0
-    return {
-      share: share[i],
-      amount,                                   // 建議投入金額
-      shares,                                   // 可買股數（零股）
-      lots: px ? amount / (px * LOT) : 0,        // 換算成幾張（<1 代表買不到整張）
-      lotPrice: px ? px * LOT : null,             // 一張多少錢
-      affordable: px ? px * LOT <= budget : false, // 整個預算買不買得起一張
-      vol: vols[i],
-    }
-  })
-}
-
-/**
- * 防守價（停損參考）。
- *
- * ⚠️ 刻意用 −15% 而不是常見的 −8%：實測 26,425 筆歷史交易（用區間最低價判斷是否觸發），
- * −8% 會觸發 56% 的交易並砍掉 22% 的「最終漲幅 ≥20%」大贏家；−15% 只砍掉 5%。
- * 這套系統的報酬形狀是「多數小輸、少數大贏」，停損太緊會先把大贏家砍掉，反而毀掉整體期望值。
+ * ⚠️ 2026-07-26 更正：舊註解宣稱「實測 26,425 筆歷史交易驗證 −15% 優於 −8%」，
+ * 但產生那組數字的腳本不在 repo 裡、無法重現，Phase 3 會用逐日 OHLC 重做驗證。
+ * 在驗證補上前，這個函式只是一個未經驗證的參考位計算，前端不掛任何「已驗證」的結論性文案，
+ * 也不在畫面上呈現（Task 7 已把「出場價」整欄移除）。
  *
  * 同時給「離 20 日均線」的距離當第二參考——跌破月線是趨勢轉弱的常見訊號。
  */
@@ -78,35 +41,22 @@ export function defendPrice(p) {
   }
 }
 
-/** 建議持有到期日：回測用固定持有 20 交易日結算，所以「到期」就是那一天。 */
+/** 20 日績效檢視日：回測用固定持有 20 交易日結算，這是回測口徑，不是建議賣出日。 */
 export const HOLD_DAYS = 20
 
-// 目標價的統計依據（2026-07-25 實測，成本後）：
-//   訊號「賺的時候」平均賺多少——縮口帶量突破 +15.4%、強勢雙確認 +18.7%、爆量突破 +14.8%。
-//   持有 20 交易日的整體平均獲利 +13.7%（持有 40 日是 +21.8%，但 40 日設定尚未過樣本外驗證）。
-// 取 +13.7% 當基準目標，是「持有 20 日、賺的時候的平均幅度」——與回測的結算方式一致。
-export const TARGET_PCT = 0.137
-// 平均最大逆走（持有 20 日期間曾經最多虧多少）＝ −7.15%。這個數字的用途是告訴使用者
-// 「即使最後是賺的，中途也常常先虧 7% 上下」，避免看到帳面虧損就砍在最低點。
-export const TYPICAL_DRAWDOWN_PCT = 0.0715
-
 /**
- * 目標價（獲利參考位）。給兩個互相對照的依據，不給單一「神奇數字」：
- *  statTarget＝收盤 ×(1+13.7%)：歷史上持有 20 日、**賺的時候**的平均幅度。
- *  techTarget＝近 20 日高點：技術上的壓力位；若已突破前高則回退用統計目標。
- * 兩者取較低者當「先看到的第一個目標」——先碰到的那個才是實務上會遇到的。
+ * 近 20 日前高（觀察位）。
+ * 2026-07-26 移除原本的「統計目標」（收盤 ×(1+13.7%)）：13.7% 是歷史上「持有 20 日、
+ * 賺的時候」的平均幅度，忽略了虧損事件，不能代表這檔的預期報酬，掛出來會誤導成「目標價」。
+ * 現在只呈現一個事實性數字：近 20 日內的最高價，單純的技術觀察位。
  */
 export function targetPrice(p) {
   if (!(p?.close > 0)) return null
-  const stat = p.close * (1 + TARGET_PCT)
   const high = p.recent_high20 > p.close ? p.recent_high20 : null
-  const first = high ? Math.min(stat, high) : stat
+  if (high == null) return null
   return {
-    stat: Math.round(stat * 100) / 100,
-    high: high ? Math.round(high * 100) / 100 : null,
-    first: Math.round(first * 100) / 100,
-    firstIsHigh: high != null && high < stat,
-    upsidePct: (first / p.close - 1) * 100,
+    high: Math.round(high * 100) / 100,
+    upsidePct: (high / p.close - 1) * 100,
   }
 }
 
