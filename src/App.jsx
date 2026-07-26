@@ -32,6 +32,7 @@ export default function App() {
   const [combos, setCombos] = useState(null)         // signal_combos.json：組合戰績排行榜
   const [exits, setExits] = useState(null)           // signal_exits.json：出場優化分析
   const [regime, setRegime] = useState(null)         // signal_regime.json：市況分層回測
+  const [tierStats, setTierStats] = useState(null)   // tier_stats.json：候選情報條件層級的歷史分佈（Opportunities/OutcomeShape 用）
   // 手機卡片密度：精簡（預設，省滑）／完整；記住上次選擇
   const [dense, setDense] = useState(() => {
     if (typeof localStorage === 'undefined') return true
@@ -71,6 +72,9 @@ export default function App() {
       .then(r => (r.ok ? r.json() : null)).then(setExits).catch(() => setExits(null))
     fetch(`${import.meta.env.BASE_URL}data/signal_regime.json`)
       .then(r => (r.ok ? r.json() : null)).then(setRegime).catch(() => setRegime(null))
+    // 條件層級歷史分佈（同模式：抓不到就 null，Opportunities/OutcomeShape 各自優雅降級，不拖垮整頁）
+    fetch(`${import.meta.env.BASE_URL}data/tier_stats.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setTierStats).catch(() => setTierStats(null))
   }, [])
 
   const filtered = useMemo(() => {
@@ -148,7 +152,7 @@ export default function App() {
               <div className="st-value mono">{filtered.length}<small> 檔</small></div>
             </div>
             <div className="stat-tile">
-              <div className="st-name">今日機會股</div>
+              <div className="st-name">今日候選</div>
               <div className="st-value mono">{oppCount ?? '—'}<small> 檔</small></div>
             </div>
           </div>
@@ -181,7 +185,7 @@ export default function App() {
               data.market_breadth.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'}
             ——全市場僅 <b>{Math.round(data.market_breadth.breadth20 * 100)}%</b> 的股票站上月線
             （20 日報酬中位 {data.market_breadth.median_ret20_pct >= 0 ? '+' : ''}{data.market_breadth.median_ret20_pct}%）。
-            Top5 仍照常產生，<b>請自行斟酌降低曝險</b>。（此為市場廣度代理、非大盤指數；僅供參考、不改選股）
+            候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。（此為市場廣度代理、非大盤指數；僅供參考、不改選股）
           </span>
         </div>
       )}
@@ -199,9 +203,9 @@ export default function App() {
         </div>
       )}
 
-      <ErrorBoundary name="opportunities" label="今日機會股">
+      <ErrorBoundary name="opportunities" label="候選情報">
         <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount}
-          engineStatus={data?.engine_status} />
+          engineStatus={data?.engine_status} tierStats={tierStats} />
       </ErrorBoundary>
 
       {data && (

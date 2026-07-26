@@ -1,7 +1,157 @@
 import { useState, useEffect } from 'react'
-import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
+import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Sparkles, Award, Coins, Info } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
+
+// 候選情報三分類（2026-07-26 誠實化）：tier 由後端 opportunities.py 依「當日候選池內百分位」算好，
+// 前端只負責分組顯示，不重新排序、不重新判斷。
+// ⚠️ 名次沒有證據（2026-07-25 實測：前 3 名 vs 第 4~8 名 t=-0.22，第 2 名反而最差）——
+// 每組清單一律照 JSON 給的原始順序顯示，不做任何「誰比較好」的二次排序。
+const TIER_META = {
+  both: { label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段' },
+  win: { label: '勝率偏優', Icon: Award, blurb: '成交金額排在候選池前段——歷史上這組單檔賺錢機率較高' },
+  return: { label: '報酬偏優', Icon: Coins, blurb: '20 日乖離排在候選池前段、成交金額不在後段——歷史上這組賺的時候賺比較多' },
+}
+const TIER_ORDER = ['both', 'win', 'return']
+
+const fmtPct01 = v => (v == null ? '—' : `${Math.round(v * 100)}%`)
+
+// feat_pct 的四個特徵怎麼標：turnover／bias20_pct 是分類真正依據，可以講「排在前段」；
+// high20_gap 重算後方向與舊研究相反（不穩定特徵），rs_pct_60 目前也沒進分類——
+// 這兩個只顯示數值當事實，UI 不可加「偏優」「加分」之類的字眼（硬性限制，見實作計畫 Task 8）。
+const FEAT_LABELS = {
+  turnover: '成交金額位階',
+  bias20_pct: '乖離位階',
+  high20_gap: '距前高位階',
+  rs_pct_60: '相對強弱位階',
+}
+
+// 「這套的優勢在賺賠幅度、不是勝率」——今天重算後的頭條數字，一律從 tier_stats.json 算，不寫死。
+// 用 turnover 這個特徵（真正拿來分「勝率偏優」的依據）算：高／低兩層的賺錢機率、以及高層的期望值。
+function HonestyCallout({ tierStats }) {
+  const t = tierStats?.features?.turnover
+  if (!t?.high || !t?.mid || !t?.low) {
+    return (
+      <p className="opp-honesty">
+        <Info size={15} strokeWidth={1.75} />
+        <span>條件層級的歷史分佈暫時取不到，候選清單本身仍正常——買哪幾檔、買不買由你決定。</span>
+      </p>
+    )
+  }
+  const { high: hi, mid, low: lo } = t
+  const winPct = v => (v.win_rate * 100).toFixed(1)
+  const allBelowHalf = [hi, mid, lo].every(x => x.win_rate < 0.5)
+  const ev = hi.win_rate * hi.avg_win_pct + (1 - hi.win_rate) * hi.avg_loss_pct
+  return (
+    <p className="opp-honesty">
+      <Info size={15} strokeWidth={1.75} />
+      <span>
+        成交金額最高的三分之一，單檔歷史賺錢機率 <b>{winPct(hi)}%</b>；最低的三分之一 <b>{winPct(lo)}%</b>
+        {allBelowHalf
+          ? <>——<b>三層都不到一半</b></>
+          : <>（中段 {winPct(mid)}%）</>}
+        。這套的優勢在賺賠幅度（賺時 <b className="good">+{hi.avg_win_pct.toFixed(1)}%</b>、
+        賠時 <b className="bad">−{Math.abs(hi.avg_loss_pct).toFixed(1)}%</b>，
+        期望值 <b className={ev >= 0 ? 'good' : 'bad'}>{ev >= 0 ? '+' : ''}{ev.toFixed(2)}%</b>），不是在勝率。
+        <small className="opp-ci-note">
+          （{hi.blocks} 批獨立樣本，90% CI 高層 {hi.ci90[0]}–{hi.ci90[1]}% ／ 低層 {lo.ci90[0]}–{lo.ci90[1]}%）
+        </small>
+      </span>
+    </p>
+  )
+}
+
+// 一張候選卡：不放名次號碼、不做「領先卡」特殊放大——這批清單不是排行榜（見上方 TIER_META 註解）。
+function CandidateCard({ p, onClick }) {
+  const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
+  const fp = p.feat_pct || {}
+  return (
+    <div className="opp-card" onClick={onClick}>
+      <div className="opp-card-top">
+        <div className="opp-name">
+          <span className="opp-sid">{p.id}</span>
+          <span className="opp-sname">{p.name}</span>
+        </div>
+        {p.score > 0 && <span className="opp-score" title="回測權重加總（透明化用，不是名次）">{p.score}<small>分</small></span>}
+      </div>
+
+      <div className="opp-reasons">
+        {(p.reasons || []).map(r => <span className="opp-reason" key={r}>{r}</span>)}
+      </div>
+
+      <div className="opp-refs">
+        <span>現價 <b>{p.close}</b></span>
+        {p.support_ma20 && (
+          <span>MA20 <b>{p.support_ma20}</b>{p.close >= p.support_ma20 ? '撐' : '壓'}</span>
+        )}
+        {p.recent_high20 && <span>近高 <b>{p.recent_high20}</b></span>}
+        {p.rs20 != null && (
+          <span className={`opp-rs ${p.rs20 >= 0 ? 'pos' : 'neg'}`}>
+            RS {p.rs20 >= 0 ? '+' : ''}{p.rs20}
+          </span>
+        )}
+        {p.revenue_yoy != null && (
+          <span>營收 YoY <b className={p.revenue_yoy >= 0 ? 'good' : ''}>{p.revenue_yoy >= 0 ? '+' : ''}{p.revenue_yoy}%</b></span>
+        )}
+      </div>
+
+      {/* 候選池內百分位——事實，不是評語。high20_gap 不可標「偏優」（重算後方向不穩定）。 */}
+      <div className="opp-featpct">
+        {(['turnover', 'bias20_pct', 'high20_gap', 'rs_pct_60']).map(k => (
+          fp[k] != null && (
+            <span className="opp-fp" key={k}>{FEAT_LABELS[k]} <b>{fmtPct01(fp[k])}</b></span>
+          )
+        ))}
+      </div>
+
+      <div className="opp-flags">
+        {p.earnings_date && (
+          <span className="opp-earn"><Calendar size={12} strokeWidth={1.75} />{p.earnings_date.slice(5)} 法說會</span>
+        )}
+        {(p.risk_flags || []).map(f => (
+          <span className="opp-risk" key={f}><AlertTriangle size={12} strokeWidth={1.75} />{f}</span>
+        ))}
+        {bias != null && bias <= 15 && bias >= 8 && (
+          <span className="opp-muted">乖離 {bias.toFixed(0)}%</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// 一個分類分區（雙優／勝率偏優／報酬偏優／其他候選）：標題講清楚共幾檔、列前幾檔，
+// 旁邊一律附「不是好壞排名」的提醒——這是 2026-07-25 實測推翻過的東西，不可回歸。
+function TierSection({ tierKey, label, Icon, blurb, list, previewN, onPick }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!list.length) return null
+  const shown = expanded ? list : list.slice(0, previewN)
+  const hasMore = list.length > shown.length
+  return (
+    <div className="opp-tier" data-tier={tierKey}>
+      <div className="opp-tier-head">
+        <span className="opp-tier-title">
+          {Icon && <Icon size={15} strokeWidth={1.75} />}{label}
+          <span className="opp-tier-count">
+            共 {list.length} 檔{list.length > previewN && !expanded ? `，這裡列前 ${previewN} 檔` : '（已全部列出）'}
+          </span>
+        </span>
+      </div>
+      {blurb && <p className="opp-tier-blurb">{blurb}</p>}
+      <p className="opp-tier-note">照候選清單原始順序，不是好壞排名</p>
+      <div className="opp-cards">
+        {shown.map(p => <CandidateCard key={p.id} p={p} onClick={() => onPick(p)} />)}
+      </div>
+      {hasMore && (
+        <button className="opp-more" onClick={() => setExpanded(true)}>
+          展開全部 {list.length} 檔<ChevronDown size={14} strokeWidth={2} />
+        </button>
+      )}
+      {expanded && list.length > previewN && (
+        <button className="opp-more" onClick={() => setExpanded(false)}>收合</button>
+      )}
+    </div>
+  )
+}
 
 // 勝率榜一格：主數字＝平均超額（pp，權重依據），次行＝超額勝率與樣本。
 // 樣本不足（validated=false）整格轉灰＋提示，提醒「別信這個數字」；無資料顯示「—」。
@@ -29,16 +179,18 @@ function trendOf(row) {
   return d >= 0.1 ? 'up' : d <= -0.1 ? 'down' : 'flat'
 }
 
-// 機會股區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights/windows.json。
-// ⚠️ 檔數不可寫死——2026-07-25 從 5 改成 10（見 opportunities.TOP_N），標題與文案一律用 picks.length。
-// 都採「抓不到就靜默省略該部分」，不讓機會股區塊拖垮既有選股頁。
-export default function Opportunities({ stocks, onPick, onCount, engineStatus }) {
+// 候選情報區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights/windows.json。
+// 2026-07-26 誠實化：從「每天固定推 N 檔」改成「輸出全部合格候選＋三分類，交給 Andy 自己選」
+// （Andy 拍板：不用幫我配好購買組合）。picks 不再截斷，檔數一律讀 opp.pool_n，不寫死。
+// 都採「抓不到就靜默省略該部分」，不讓這區拖垮既有選股頁。
+export default function Opportunities({ stocks, onPick, onCount, engineStatus, tierStats }) {
   const [opp, setOpp] = useState(null)
   const [board, setBoard] = useState(null)
   const [weights, setWeights] = useState(null)
   const [windows, setWindows] = useState(null)   // 多時間窗勝率榜（signal_windows.json）
   const [sortWin, setSortWin] = useState('all')   // 目前聚焦／排序的時間窗欄
   const [showWeights, setShowWeights] = useState(false)
+  const [showOther, setShowOther] = useState(false)   // 「其他候選（未達分類門檻）」收合區
   // 手機預設收合（省捲動，Andy 2026-07-09 指定）；桌機不顯示收合鈕故恆展開。
   // 斷點用 720 對齊「手機卡片版」的斷點（641~720 也是手機版，之前用 640 會在這區間誤展開）。
   const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 720 : true))
@@ -61,7 +213,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
     const grab = (name, set) =>
       fetch(`${base}data/${name}.json`)
         .then(r => (r.ok ? r.json() : null)).then(set).catch(() => set(null))
-    grab('opportunities', d => { setOpp(d); onCount?.(d?.picks?.length ?? 0) })
+    grab('opportunities', d => { setOpp(d); onCount?.(d?.pool_n ?? d?.picks?.length ?? 0) })
     grab('scoreboard', setBoard)
     grab('signal_weights', setWeights)
     grab('signal_windows', setWindows)
@@ -69,7 +221,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
   }, [])
 
   // 桌機（≥641px）恆展開：視窗放大到桌機時強制 open=true，避免「手機載入收合→拉大到桌機、
-  // 收合鈕被 CSS 藏起卻仍收合」導致桌機看不到機會股。
+  // 收合鈕被 CSS 藏起卻仍收合」導致桌機看不到候選情報。
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 721px)')
     const sync = () => { if (mq.matches) setOpen(true) }
@@ -83,16 +235,16 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
   // 而畫面完全沒有異狀 → 靜默省略在這裡是錯的（那是主功能，不是裝飾）。
   // 現在分三種情況：檔案缺（管線問題）／有檔但零檔（真的沒選到）／正常。
   if (!opp) return (
-    <section className="opp opp-fail" data-region="機會股">
+    <section className="opp opp-fail" data-region="候選情報">
       <p>
-        <b>今日精華名單暫時取不到</b>——這通常是資料管線出問題（不是「今天沒選到股」）。
+        <b>今日候選情報暫時取不到</b>——這通常是資料管線出問題（不是「今天沒選到股」）。
         {engineStatus && engineStatus !== 'ok' && <><br />管線回報：<code>{engineStatus}</code></>}
         <br />其他選股條件與戰績仍可正常使用；隔天自動更新後會恢復。
       </p>
     </section>
   )
   if (!opp.picks || opp.picks.length === 0) return (
-    <section className="opp opp-fail" data-region="機會股">
+    <section className="opp opp-fail" data-region="候選情報">
       <p><b>今天沒有個股通過門檻</b>（名單產出正常、就是零檔）——這是正常結果，不必找原因。</p>
     </section>
   )
@@ -114,13 +266,19 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
         .filter(x => x.w > 0).sort((a, b) => b.w - a.w)
     : []
 
+  const poolN = opp.pool_n ?? opp.picks.length
+  const previewN = opp.preview_n || 10
+  const tiered = { both: [], win: [], return: [], other: [] }
+  for (const p of opp.picks) (tiered[p.tier] || tiered.other).push(p)
+
   return (
-    <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="機會股">
+    <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="候選情報">
       <div className="opp-head">
         <div>
-          <span className="badge-pill"><Target size={14} strokeWidth={1.75} />今日機會股 Top {opp.picks.length}</span>
+          <span className="badge-pill"><Target size={14} strokeWidth={1.75} />候選情報 · 共 {poolN} 檔</span>
           {/* 有入場門檻時要講清楚這批的來歷——「強勢股裡的技術面最佳」與「全市場技術面最佳」
-              是兩件事，數字一樣但意義不同，不說會讓人誤讀推薦名單的範圍。 */}
+              是兩件事，數字一樣但意義不同，不說會讓人誤讀候選清單的範圍。 */}
+          <p className="opp-tagline">這不是購買組合，是候選情報。買哪幾檔、買不買，由你決定。</p>
           <p className="opp-sub">
             {opp.gate?.applied
               ? <>先篩「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻，今日 {opp.gate.pool} 檔）</>
@@ -129,72 +287,45 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
                 : opp.gate?.reason === 'pool_too_small'
                   ? <><b className="opp-degraded">⚠️ 今日符合「{opp.gate.label}」的候選僅 {opp.gate.pool} 檔（不足 {opp.gate.min_pool}），門檻未套用</b></>
                   : '當日有訊號者'}
-            依「回測權重加總」排序 · 已過濾營收年減／低量 · 僅供參考，非投資建議
+            ，已過濾營收年減／低量 · 僅供參考，非投資建議
           </p>
         </div>
         <span className="opp-date">{opp.date || '—'}</span>
         <button className="opp-toggle" onClick={() => setOpen(v => !v)}
-          aria-expanded={open} aria-label={open ? '收合今日機會股' : '展開今日機會股'}>
+          aria-expanded={open} aria-label={open ? '收合候選情報' : '展開候選情報'}>
           {open ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
-          <span>{open ? '收合' : `展開 ${opp.picks.length} 檔`}</span>
+          <span>{open ? '收合' : `展開 ${poolN} 檔`}</span>
         </button>
       </div>
 
       {open && (<>
-      <div className="opp-cards">
-        {opp.picks.map((p, i) => {
-          const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
-          return (
-            <div className={`opp-card ${i === 0 ? 'opp-card-lead' : ''}`} key={p.id}
-              style={{ '--i': Math.min(i, 5) }} onClick={() => handlePick(p)}>
-              <div className="opp-card-top">
-                <span className="opp-rank">{String(i + 1).padStart(2, '0')}</span>
-                <div className="opp-name">
-                  <span className="opp-sid">{p.id}</span>
-                  <span className="opp-sname">{p.name}</span>
-                </div>
-                <span className="opp-score" title="回測權重加總">{p.score}<small>分</small></span>
-              </div>
+      <HonestyCallout tierStats={tierStats} />
 
-              <div className="opp-reasons">
-                {(p.reasons || []).map(r => <span className="opp-reason" key={r}>{r}</span>)}
-              </div>
+      {TIER_ORDER.map(key => (
+        <TierSection key={key} tierKey={key} label={TIER_META[key].label} Icon={TIER_META[key].Icon}
+          blurb={TIER_META[key].blurb} list={tiered[key]} previewN={previewN} onPick={handlePick} />
+      ))}
 
-              <div className="opp-refs">
-                <span>現價 <b>{p.close}</b></span>
-                {p.support_ma20 && (
-                  <span>MA20 <b>{p.support_ma20}</b>{p.close >= p.support_ma20 ? '撐' : '壓'}</span>
-                )}
-                {p.recent_high20 && <span>近高 <b>{p.recent_high20}</b></span>}
-                {p.rs20 != null && (
-                  <span className={`opp-rs ${p.rs20 >= 0 ? 'pos' : 'neg'}`}>
-                    RS {p.rs20 >= 0 ? '+' : ''}{p.rs20}
-                  </span>
-                )}
-                {p.revenue_yoy != null && (
-                  <span>營收 YoY <b className={p.revenue_yoy >= 0 ? 'good' : ''}>{p.revenue_yoy >= 0 ? '+' : ''}{p.revenue_yoy}%</b></span>
-                )}
-              </div>
-
-              <div className="opp-flags">
-                {p.earnings_date && (
-                  <span className="opp-earn"><Calendar size={12} strokeWidth={1.75} />{p.earnings_date.slice(5)} 法說會</span>
-                )}
-                {(p.risk_flags || []).map(f => (
-                  <span className="opp-risk" key={f}><AlertTriangle size={12} strokeWidth={1.75} />{f}</span>
-                ))}
-                {bias != null && bias <= 15 && bias >= 8 && (
-                  <span className="opp-muted">乖離 {bias.toFixed(0)}%</span>
-                )}
-              </div>
+      {tiered.other.length > 0 && (
+        <div className="opp-tier opp-tier-other">
+          <button className="opp-tier-other-toggle" onClick={() => setShowOther(v => !v)} aria-expanded={showOther}>
+            {showOther ? <ChevronDown size={14} strokeWidth={2} /> : <ChevronRight size={14} strokeWidth={2} />}
+            其他候選（未達分類門檻）共 {tiered.other.length} 檔
+          </button>
+          {showOther && (<>
+            <p className="opp-tier-note">照候選清單原始順序，不是好壞排名</p>
+            <div className="opp-cards">
+              {tiered.other.map(p => <CandidateCard key={p.id} p={p} onClick={() => handlePick(p)} />)}
             </div>
-          )
-        })}
-      </div>
+          </>)}
+        </div>
+      )}
 
       {/* 個股觀察位（2026-07-25 加，2026-07-26 誠實化：拿掉購買組合語意，只留近 20 日前高與績效檢視日）。
+          只帶「雙優／勝率偏優／報酬偏優」三類進觀察位表——候選池全開後常有百餘檔，「其他候選」
+          全塞進表格會讓這張表長到失去用途；三類本身就是畫面上特別標出來的那批，適合放觀察位。
           picks 本身沒有產業，從 screener.json 併回來（集中度警示要用）。 */}
-      <PositionPlan dataDate={opp.date} picks={opp.picks.map(p => {
+      <PositionPlan dataDate={opp.date} picks={[...tiered.both, ...tiered.win, ...tiered.return].map(p => {
         const full = stocks?.find(s => s.id === p.id)
         return {
           id: p.id, name: p.name,
@@ -204,12 +335,12 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
         }
       })} />
 
-      {/* 報酬分佈（2026-07-25 加）：把「典型會怎樣、最壞多壞」寫出來，防止在正常虧損期誤判成系統壞了 */}
-      <OutcomeShape pickCount={opp.picks.length} />
+      {/* 條件層級歷史分佈（2026-07-26 重寫）：不是「這批會怎樣」，是「這個條件層級歷史上長怎樣」 */}
+      <OutcomeShape tierStats={tierStats} />
 
       {board && (
         <div className="opp-board">
-          <span className="opp-board-title"><TrendingUp size={14} strokeWidth={1.75} />機會股成績單</span>
+          <span className="opp-board-title"><TrendingUp size={14} strokeWidth={1.75} />候選情報成績單</span>
           {board.samples > 0 ? (
             <div className="opp-board-stats">
               <span>勝率 <b>{Math.round(board.win_rate * 100)}%</b></span>
@@ -275,7 +406,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus })
               </div>
               {activeWeights.length > 0 && (
                 <p className="opp-muted opp-weights-note">
-                  目前機會股引擎採用「歷史」欄權重排序：
+                  目前候選情報引擎採用「歷史」欄權重排序：
                   {activeWeights.map(x => `${x.label} ${x.w}`).join('、')}。
                   其餘（含外資／投信連買、千張大戶、同業低估）平均超額 ≤0 或樣本不足 → 權重 0。
                   回測母體＝約兩年長歷史（{win.as_of} 為止）。

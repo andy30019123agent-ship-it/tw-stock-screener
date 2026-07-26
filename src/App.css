@@ -157,13 +157,13 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   text-align: center; margin-top: 48px; padding: 32px; font-size: .9375rem; opacity: .92; line-height: 1.7;
 }
 
-/* ===== 機會股 Top 5 ===== */
+/* ===== 候選情報清單 ===== */
 .opp {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
   padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 48px;
 }
 .opp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-/* 手機收合鈕：桌機隱藏（機會股恆展開），手機為膠囊、44px 觸控 */
+/* 手機收合鈕：桌機隱藏（候選情報恆展開），手機為膠囊、44px 觸控 */
 .opp-toggle { display: none; }
 @media (max-width: 640px) {
   .opp-toggle {
@@ -174,6 +174,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
     font-family: inherit; font-size: .875rem; font-weight: 700; cursor: pointer;
   }
 }
+/* 「這不是購買組合，是候選情報」——頭條句，2026-07-26 誠實化必須逐字出現在畫面上（實作計畫 Task 8） */
+.opp-tagline { font-size: 1rem; font-weight: 700; color: var(--ink); margin-top: 12px; line-height: 1.6; }
 .opp-sub { font-size: .875rem; color: var(--ink-muted); margin-top: 10px; max-width: 60ch; }
 .opp-date {
   font-size: .875rem; color: var(--ink-body); font-weight: 700;
@@ -181,27 +183,54 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   border-radius: var(--r-pill); padding: 6px 14px; white-space: nowrap;
 }
 
+/* 誠實揭露 callout：賺賠幅度 vs 勝率的頭條數字，一律從 tier_stats.json 算（不寫死） */
+.opp-honesty {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--surface-tint); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 14px 16px; margin-bottom: 24px; font-size: .9375rem; line-height: 1.7; color: var(--ink-body);
+}
+.opp-honesty svg { flex: none; margin-top: 3px; color: var(--primary-strong); }
+.opp-honesty b { color: var(--ink); }
+.opp-honesty .good { color: var(--up); }
+.opp-honesty .bad { color: var(--down); }
+.opp-ci-note { display: block; margin-top: 4px; color: var(--ink-muted); font-size: .8125rem; }
+
+/* 分類分區（雙優／勝率偏優／報酬偏優／其他候選） */
+.opp-tier { margin-bottom: 28px; }
+.opp-tier-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.opp-tier-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Manrope', sans-serif; font-size: 1.0625rem; font-weight: 800; color: var(--ink);
+}
+.opp-tier-title svg { color: var(--primary-strong); }
+.opp-tier-count { font-size: .8125rem; font-weight: 500; color: var(--ink-muted); margin-left: 4px; }
+.opp-tier-blurb { font-size: .875rem; color: var(--ink-muted); margin-top: 4px; max-width: 64ch; }
+.opp-tier-note { font-size: .8125rem; color: var(--ink-muted); font-style: italic; margin: 4px 0 12px; }
+.opp-more {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; min-height: 44px; padding: 0 4px;
+  background: none; border: none; color: var(--primary-strong); font-family: inherit;
+  font-size: .875rem; font-weight: 700; cursor: pointer;
+}
+.opp-more:hover { color: var(--primary); }
+.opp-tier-other { border-top: 1px dashed var(--border); padding-top: 16px; }
+.opp-tier-other-toggle {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+  background: none; border: none; color: var(--ink-muted); font-family: inherit; cursor: pointer;
+  font-size: .9375rem; font-weight: 700;
+}
+.opp-tier-other-toggle:hover { color: var(--primary); }
+
 .opp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
 .opp-card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-md); padding: 16px; box-shadow: var(--shadow-sm);
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;
   cursor: pointer; transition: border-color .15s, transform .12s, box-shadow .15s;
 }
 .opp-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .opp-card:active { transform: translateY(0) scale(.99); }
 
-/* 第 1 名主從強調：跨欄放大 + primary 邊框 + tint 底 */
-.opp-card-lead {
-  grid-column: 1 / -1; border-color: var(--primary); background: var(--surface-tint);
-  padding: 20px 24px;
-}
-.opp-card-lead .opp-rank { color: var(--primary); font-size: 2rem; }
-.opp-card-lead .opp-sid { font-size: 1.25rem; }
-.opp-card-lead .opp-score { font-size: 1.5rem; }
-
 .opp-card-top { display: flex; align-items: center; gap: 12px; }
-.opp-rank { font-family: 'Manrope', sans-serif; font-size: 1.375rem; font-weight: 800; color: var(--ink-muted); flex: none; }
 .opp-name { display: flex; flex-direction: column; line-height: 1.3; flex: 1; min-width: 0; }
 .opp-sid { font-weight: 800; font-size: 1.0625rem; color: var(--ink); }
 .opp-sname { font-size: .875rem; color: var(--ink-muted); }
@@ -213,8 +242,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
 .opp-reasons { display: flex; flex-wrap: wrap; gap: 6px; }
 .opp-reason {
-  font-size: .875rem; font-weight: 700; padding: 4px 12px; border-radius: var(--r-pill);
-  background: var(--primary-tint); color: var(--ink); white-space: nowrap;
+  font-size: .875rem; font-weight: 700; padding: 4px 12px; border-radius: var(--r-md);
+  background: var(--primary-tint); color: var(--ink); max-width: 100%;
 }
 
 .opp-refs {
@@ -227,6 +256,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .opp-rs { font-weight: 700; }
 .opp-rs.pos { color: var(--up); }
 .opp-rs.neg { color: var(--down); }
+
+/* 候選池內百分位——事實性數值，不是評語（high20_gap 不可標偏優，見 Opportunities.jsx 註解） */
+.opp-featpct { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8125rem; color: var(--ink-muted); }
+.opp-featpct b { color: var(--ink-body); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .opp-flags { display: flex; flex-wrap: wrap; gap: 8px; }
 .opp-earn {
@@ -858,10 +891,6 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 
 @media (max-width: 720px) {
   .opp-cards { grid-template-columns: 1fr; }
-  .opp-card-lead { padding: 16px; }
-  .opp-card-lead .opp-rank { font-size: 1.375rem; }
-  .opp-card-lead .opp-sid { font-size: 1.0625rem; }
-  .opp-card-lead .opp-score { font-size: 1.25rem; }
 
   /* 桌機表格隱藏，改用卡片 */
   .table-wrap { display: none; }
@@ -877,10 +906,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   }
   .density-btn.on { background: var(--primary); color: var(--on-primary); }
 
-  /* 機會股收合時縮成一條窄列：藏副標與日期、縮 padding/margin，讓清單往上跑 */
+  /* 候選情報收合時縮成一條窄列：藏副標與日期、縮 padding/margin，讓清單往上跑 */
   .opp-collapsed { padding: 10px 14px; margin-bottom: 16px; }
   .opp-collapsed .opp-head { margin-bottom: 0; align-items: center; }
-  .opp-collapsed .opp-sub, .opp-collapsed .opp-date { display: none; }
+  .opp-collapsed .opp-sub, .opp-collapsed .opp-date, .opp-collapsed .opp-tagline { display: none; }
 
   /* 常駐工具列：吸頂、不透明底避免疊字，層級在卡片之上、彈窗之下 */
   .mobile-toolbar {
@@ -1088,13 +1117,15 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   font-family: inherit; font-size: 1rem; font-weight: 700; color: var(--ink-muted); text-align: left;
 }
 .os-toggle:hover { color: var(--primary); }
-.os-key { display: grid; gap: 10px; margin: 10px 0 12px; }
-.os-stat { background: var(--surface-tint); border-radius: var(--r-md); padding: 12px 14px; }
-.os-lab { display: block; font-size: .9375rem; color: var(--ink-muted); font-weight: 600; }
-.os-stat b { display: block; font-family: 'Manrope', sans-serif; font-size: 1.5rem; line-height: 1.2; margin: 2px 0; color: var(--ink); }
-.os-stat b.good { color: var(--up); }
-.os-stat b.bad { color: var(--down); }
-.os-stat small { display: block; font-size: .875rem; color: var(--ink-muted); line-height: 1.6; }
+
+/* 條件層級分佈：每個特徵（成交金額／乖離／距前高／相對強弱）各一塊 */
+.os-feat { margin: 16px 0; }
+.os-feat-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.os-feat-label { font-family: 'Manrope', sans-serif; font-size: 1rem; font-weight: 800; color: var(--ink); }
+.os-feat-used { font-size: .8125rem; color: var(--primary-strong); font-weight: 700; }
+.os-feat-unused { font-size: .8125rem; color: var(--ink-muted); }
+.os-feat-caution { margin-top: 6px; }
+.os-ci { font-size: .8125rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
 .os-warn {
   background: color-mix(in srgb, var(--warn-bg) 55%, transparent);
@@ -1114,27 +1145,16 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 }
 .os-table td.good { color: var(--up); font-weight: 700; }
 .os-table td.bad { color: var(--down); font-weight: 700; }
-.os-table tr.os-cur { background: var(--surface-tint); }
-.os-table tr.os-cur td:first-child { background: var(--surface-tint); }
 .os-table small { font-size: .8125rem; color: var(--primary); font-weight: 700; margin-left: 4px; }
 
 .os-note { font-size: 1rem; line-height: 1.8; color: var(--ink-body); margin: 12px 0 0; }
 .os-note b { color: var(--ink); }
-.os-honest {
-  background: color-mix(in srgb, var(--warn-bg) 40%, transparent);
-  border-radius: var(--r-md); padding: 12px 14px;
-}
-.os-honest b { color: var(--warn); }
-
-@media (min-width: 721px) {
-  .os-key { grid-template-columns: repeat(3, 1fr); }
-}
 
 /* 近 20 日前高（觀察位）：用漲跌語意色（這裡確實是行情方向，符合 MASTER 對 --up/--down 的定義） */
 .pp-table .pp-target { color: var(--up); font-weight: 700; }
 .pp-table .pp-target small { color: var(--ink-muted); font-weight: 400; }
 
-/* 機會股取不到時的明示區塊（2026-07-25）：原本靜默消失，使用者會誤判成「今天沒選到股」。
+/* 候選情報取不到時的明示區塊（2026-07-25）：原本靜默消失，使用者會誤判成「今天沒選到股」。
    用 --warn 系列而非紅色——這是狀態說明，不是價格漲跌，不可佔用紅漲綠跌語意。 */
 .opp-fail {
   margin: 12px 0;
