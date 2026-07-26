@@ -250,7 +250,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   font-family: 'Manrope', sans-serif; font-size: 1.0625rem; font-weight: 800; color: var(--ink);
 }
 .opp-tier-title svg { color: var(--primary-strong); }
-.opp-tier-count { font-size: .8125rem; font-weight: 500; color: var(--ink-muted); margin-left: 4px; }
+/* 2026-07-26 主對話複驗補修：「共 N 檔，這裡列前 M 檔」是**強制揭露**（防止「列 10 檔」被讀成
+   「建議買 10 檔」——寫死檔數正是 5→10→8 時代到處出錯的原因），不是次要標籤。原本 13px，
+   低於 MASTER §2 的全站 14px 下限，而且又落進「誠實文案比一般文案小」的同一個模式。 */
+.opp-tier-count { font-size: .875rem; font-weight: 500; color: var(--ink-muted); margin-left: 4px; }
 .opp-tier-blurb { font-size: .875rem; color: var(--ink-muted); margin-top: 4px; max-width: 64ch; }
 /* 「照候選清單原始順序，不是好壞排名」是誠實揭露內容（推翻過的錯誤認知：2026-07-25 實測
    名次沒有區辨力），不該比一般文案還小——拉到 14px 下限（原本 .8125rem＝13px）。 */
