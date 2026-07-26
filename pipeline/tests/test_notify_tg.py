@@ -174,12 +174,22 @@ def test_three_tier_category_headers_present(tmp_path, monkeypatch):
 
 
 def test_contains_fixed_disclaimer_verbatim(tmp_path, monkeypatch):
-    """固定提醒逐字出現：不是購買組合，且要講清楚「最好層級」的歷史賺錢機率也只有約 52%
-    ——不要讓人誤以為推薦名單等於高勝算保證。"""
+    """固定提醒必須同時講兩件事，缺一就會誤導：
+    ① 這不是購買組合
+    ② 就算落在最好的層級，單檔賺錢機率也不到一半（49%）——**而且優勢在賺賠幅度不是勝率**
+
+    🔴 2026-07-26 更新：原本寫「約 52%」是「當天收盤進場」時代的數字。改成隔日開盤進場、
+    扣 0.785% 成本重算後（tier_stats.json，n=93,901、19 個約當獨立批次）是 48.6%，
+    最差層級 41.4%，三層全都不到 50%。只寫勝率會讓人以為「上榜＝比較會賺」，所以這裡
+    強制要求把不對稱（賺時 +16%／賠時 −10%）一起寫進去——期望值的來源是它，不是勝率。"""
     _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["win"])
     stocks = [_stock(id="9001", name="股9001")]
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
-    assert "這不是購買組合；單檔最好層級的歷史賺錢機率也只有約 52%。" in text
+    assert "這不是購買組合" in text
+    assert "49%（不到一半）" in text
+    assert "賺時約 +16%" in text and "賠時約 −10%" in text
+    assert "不是在勝率" in text
+    assert "52%" not in text, "舊口徑數字不可復活"
 
 
 def test_both_tier_listed_once_not_duplicated_across_sections(tmp_path, monkeypatch):

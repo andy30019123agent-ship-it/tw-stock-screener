@@ -37,3 +37,6 @@ __pycache__/
 
 # Top5 程序回測的中間快取（一次性分析產物，重跑可再生，不進版控）
 /top5_results*.json
+
+# 條件層級歷史分佈的「服務用」副本（持久化副本在 pipeline/tier_stats.json）
+public/data/tier_stats.json

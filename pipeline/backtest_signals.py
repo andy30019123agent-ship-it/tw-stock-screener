@@ -32,6 +32,7 @@ WINDOWS_PATH = os.path.join(HERE, "signal_windows.json")
 COMBOS_PATH = os.path.join(HERE, "signal_combos.json")
 EXITS_PATH = os.path.join(HERE, "signal_exits.json")
 REGIME_PATH = os.path.join(HERE, "signal_regime.json")
+TIER_STATS_PATH = os.path.join(HERE, "tier_stats.json")
 BT_PRICE_PATH = os.path.join(HERE, "history", "bt_price.json")
 
 # 勝率榜的時間窗（曆日數，從最新資料日往回；歷史=全部）。
@@ -1424,6 +1425,28 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     if best:
         print(f"   出場分析：{exits['n_events']} 筆事件、來回成本 {exits['cost']['round_trip_pct']}%，"
               f"淨超額最高＝{best['label']}（{best['avg_net_excess']}pp、勝率 {round(best['net_win_rate']*100)}%）")
+
+    # 條件層級歷史分佈（2026-07-26「候選情報」改版）：Andy 自己挑股票時，不該被告知
+    # 「這檔勝率 57%」（資料沒有那個解析度），只能被告知「你挑的這檔落在哪個條件層級、
+    # 那個層級歷史上表現如何」。
+    # ⚠️ **刻意放在 ensure_weights 而不是每日的 opportunities.run()**：它吃的 events 是
+    # collect_events 的產物（逐檔重算指標的重活，跑一次約 20 分鐘）。接在每日流程等於
+    # 每天多跑 20 分鐘；放這裡則沿用既有的 RECOMPUTE_DAYS 快取閘門（約每週一次），
+    # 且與權重、勝率榜、組合、市況、出場共用同一批 events——同一把尺量出來的數字。
+    try:
+        import tier_stats as ts
+        tiers = ts.compute_tier_stats(events)
+        tiers.update({"date": today.isoformat(), "computed": out["computed"], "forward_days": FORWARD})
+        with open(TIER_STATS_PATH, "w", encoding="utf-8") as f:
+            json.dump(tiers, f, ensure_ascii=False, separators=(",", ":"))
+        tn = tiers["features"]["turnover"]
+        print(f"   條件層級分佈：成交金額高層賺錢機率 {round((tn['high']['win_rate'] or 0) * 100)}%"
+              f"／低層 {round((tn['low']['win_rate'] or 0) * 100)}%"
+              f"（約當獨立批次 {tn['high']['blocks']}）")
+    except Exception as e:
+        # 失敗不能擋權重更新（它是選股的必需品，層級分佈只是展示用）——但要講清楚，
+        # 不可靜默沿用舊檔讓前端顯示過期數字卻沒人知道。
+        print(f"   ⚠️ 條件層級分佈計算失敗，本次沿用既有 tier_stats.json（可能過期）：{e}")
 
     strong = max(weights.items(), key=lambda kv: (kv[1]["weight"], kv[1]["samples"]))
     print(f"   權重已更新，最強訊號：{strong[1]['label']}（權重 {strong[1]['weight']}、樣本 {strong[1]['samples']}）")

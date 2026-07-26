@@ -384,6 +384,9 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     regime = bt._load(bt.REGIME_PATH)         # 市況分層回測
     if regime:
         _write_json(os.path.join(OUT_DIR, "signal_regime.json"), regime)
+    tiers = bt._load(bt.TIER_STATS_PATH)      # 條件層級歷史分佈（候選情報用，不給個股精確勝率）
+    if tiers:
+        _write_json(os.path.join(OUT_DIR, "tier_stats.json"), tiers)
 
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"][:PREVIEW_N]) or "（今日無符合標的）"
     more = f"…等共 {opp['pool_n']} 檔" if opp["pool_n"] > PREVIEW_N else ""
