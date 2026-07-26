@@ -370,7 +370,9 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
                    forward=FORWARD, min_bars=MIN_BARS, cooldown=None, xsect=None, breaks=None):
     """逐檔、逐歷史交易日評估訊號，回傳 (events, by_date)。
 
-    events：[{date, sid, ret, fired:[訊號…]}]，只收「有訊號成立」的事件。
+    events：[{date, sid, ret, fired:[訊號…], feat:{...}}]，只收「有訊號成立」的事件。
+             feat＝point-in-time 特徵值（turnover/bias20_pct/high20_gap/rs_pct_60），
+             供 Task 3 條件層級統計分層用，見下方迴圈內註解。
     by_date：{date: [該日所有可評估個股的 forward 報酬…]}，當「同日全市場平均」基準用——
              這是唯一能從現有資料算出的乾淨對照組（指數歷史只有 39 天，蓋不住 110 天回測窗）。
 
@@ -448,9 +450,10 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
             # raw_fired＝當天所有「原始成立」的訊號（不管冷卻）；eligible＝過了單訊號冷卻期的。
             # 單訊號統計吃 eligible（維持原結果不變）；組合統計吃 raw_fired（才是「當天真的同時
             # 成立 A+B」，否則 A 在冷卻期時 A+B 會被漏算——Codex 2026-07-24 指出）。
+            x = xsect.get(di, {}).get(sid) if xsect is not None else None   # 當下（PIT）橫斷面快取
             flags = signal_flags(ind)
             if xsect is not None:                 # Phase B 橫斷面訊號（RS/產業）從 PIT cache 併入
-                flags.update(_xsect_flags(xsect.get(di, {}).get(sid)))
+                flags.update(_xsect_flags(x))
             raw_fired, eligible_fired = [], []
             for k, hit in flags.items():
                 if not hit:
@@ -461,8 +464,21 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
                 last_fire[k] = i
                 eligible_fired.append(k)
             if raw_fired:
+                # point-in-time 特徵值（供 Task 3 條件層級統計分層用）：全部取自「訊號成立當下」
+                # 的 ind／x，不可用最新值——否則今天才旺的股票會被拿去解釋兩年前那筆訊號的勝率。
+                # turnover 刻意不用 ind['avg_money_e']：bt_to_price_hist 把回測母體的成交金額
+                # 補 0（history_store.py:214），avg_money_e 在回測裡恆為 0，算出來的分層會整批失真。
+                close_now = ind.get("close")
+                high20 = ind.get("recent_high20")
+                feat = {
+                    "turnover": (ind.get("avg_vol_lots", 0) or 0) * (close_now or 0),
+                    "bias20_pct": ind.get("bias20_pct"),
+                    "high20_gap": (round((high20 - close_now) / close_now * 100, 2)
+                                   if high20 is not None and close_now else None),
+                    "rs_pct_60": (x.get("rs_pct_60") if x else None),
+                }
                 events.append({"date": di, "sid": sid, "i": i, "ret": ret,
-                               "fired": eligible_fired, "raw_fired": raw_fired})
+                               "fired": eligible_fired, "raw_fired": raw_fired, "feat": feat})
     if n_skipped_breaks:
         print(f"   排除跨越價格斷點（分割/減資假漲跌）的樣本 {n_skipped_breaks} 筆")
     return events, by_date

@@ -530,6 +530,31 @@ def test_進場價用隔日開盤而非當日收盤():
         f"by_date[{di}] 應含同一口徑算出的 0.10，實際 {by_date.get(di)}"
 
 
+def test_collect_events_event帶point_in_time特徵值():
+    """Task 2：條件層級統計（tier_stats）要用『訊號成立當下』的特徵值分層，不能用最新值——
+    否則今天看起來很旺的股票，會被拿去解釋兩年前那筆訊號的勝率，因果顛倒。
+
+    turnover 刻意不用 ind['avg_money_e']：bt_to_price_hist（history_store.py:214）把回測母體
+    的成交金額補 0，avg_money_e 在回測裡恆為 0，用它算出來的 turnover 分層會整批失真。"""
+    n = 100
+    rows = _make_rows(n=n, close=100.0)
+    i_sig = 70
+    price_hist = {"9999": _rows_to_hist(rows)}
+    universe = [{"id": "9999", "name": "測試", "market": "上市", "industry": "IND00"}]
+    events, by_date = bt.collect_events(price_hist, {}, {}, universe)
+    ev = [e for e in events if e["i"] == i_sig]
+    assert ev, "訊號日應有事件（多頭排列訊號在單調上升序列中應恆成立）"
+    feat = ev[0]["feat"]
+    # turnover = 當下 20 日均量（張，_make_rows 固定 500000 股＝500 張）× 當下收盤（100+70*0.5=135）
+    close_i = round(100.0 + i_sig * 0.5, 2)
+    assert feat["turnover"] == 500 * close_i
+    # 單調上升序列：近 20 日最高點就是今天收盤，離前高距離必為 0（high20_gap 定義：正值＝還沒到前高）
+    assert abs(feat["high20_gap"] - 0.0) < 1e-6
+    assert feat["bias20_pct"] is not None and feat["bias20_pct"] > 0   # 上升段，現價高於20日均線
+    # 本測試沒傳 xsect（橫斷面 PIT cache），rs_pct_60 查無資料時必須誠實回 None，不可捏造數字
+    assert feat["rs_pct_60"] is None
+
+
 # ── Phase B-5：出場優化（exit_analysis）─────────────────────────────────
 def test_net_return_成本後公式():
     # 進場 100、出場 110：毛報酬 10%，扣來回成本後淨報酬應略低於 10%
