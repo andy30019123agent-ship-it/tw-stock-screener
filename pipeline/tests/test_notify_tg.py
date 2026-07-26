@@ -205,3 +205,19 @@ def test_pipeline_failure_vs_zero_candidates_still_distinguished(tmp_path, monke
                                       "stocks": [_stock()]})
     assert "沒有個股通過門檻" in text_empty and "有效結論" in text_empty
     assert "管線" not in text_empty
+
+
+def test_每個分類都明說順序不是排名(tmp_path, monkeypatch):
+    """2026-07-26 主對話加：榜內順序沒有證據支撐，畫面必須講清楚它不是好壞排名。
+
+    背景（不可回歸）：實測支持的是「同日三分位的層級差異」（前 1/3 賺錢機率 51.9% vs
+    後 1/3 43.8%），沒有測出層級「之內」名次有區辨力——2026-07-25 實測「前 3 名 vs
+    第 4~8 名」配對差 −0.26%／t −0.22（測不出），第 2 名反而是全場最差（45.1%）。
+    所以只要畫面列出有順序的清單，就必須同時否認那是排名，否則等於用介面說謊。"""
+    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001", "9002", "9003"],
+               tiers=["both", "win", "return"])
+    stocks = [_stock(id="9001", name="股9001"), _stock(id="9002", name="股9002"),
+              _stock(id="9003", name="股9003")]
+    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
+    # 三個分類各出現一次否認排名的註記（雙優／勝率偏優／報酬偏優）
+    assert text.count("不是好壞排名") == 3, text

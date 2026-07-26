@@ -187,9 +187,16 @@ def _tier_section(tier, group):
     group：已經照 opportunities.json 原始順序、只含這個 tier 的候選（stock dict list）。
     只顯示 TIER_PREVIEW_N 筆——候選有上百檔時全列不可能，而且列出來也不代表「該買這幾檔」，
     純粹是「這個分類長什麼樣子」的舉例，所以標題必須同時講清楚「共 N 檔」跟「列前 M 檔」。
+
+    ⚠️ **刻意不照該榜自己的特徵排序**（例如勝率榜不照 turnover 由高到低排）：實測支持的是
+    「同日三分位的層級差異」（前 1/3 賺錢機率 51.9% vs 後 1/3 43.8%），**沒有**測出「turnover
+    越高越好」是單調的。照特徵排序等於用畫面宣稱一個沒量過的梯度——2026-07-25 已經踩過
+    一模一樣的坑（「前 3 名標最高信心」實測被推翻，第 2 名反而是全場最差、賺錢機率 45.1%）。
+    有證據的是「有沒有進這個層級」，不是「在層級裡排第幾」，所以標題下面必須明說順序不是排名。
     """
     shown = group[:TIER_PREVIEW_N]
-    lines = [f"{TIER_ICON[tier]} {TIER_LABEL[tier]}（共 {len(group)} 檔，這裡列前 {len(shown)} 檔）"]
+    lines = [f"{TIER_ICON[tier]} {TIER_LABEL[tier]}（共 {len(group)} 檔，這裡列前 {len(shown)} 檔）",
+             "（照候選清單原始順序，不是好壞排名）"]
     if not shown:
         lines.append("（目前沒有符合的候選）")
         return lines
