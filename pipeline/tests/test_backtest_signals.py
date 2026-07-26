@@ -19,6 +19,28 @@ def _seq_dates(n, start="2024-01-01"):
     return [(d0 + _dt.timedelta(days=i)).isoformat() for i in range(n)]
 
 
+def _make_rows(n, close=100.0, start="2024-01-01", rise=0.5, vol=500000):
+    """造 n 天穩定上升的日線資料（open=high=low=close，量固定在 500 張／日）。
+    2026-07-26（隔日開盤測試）：用單調上升序列是為了讓 warmup 後 ma5>ma10>ma20>ma60
+    （多頭排列 bull_aligned）恆成立、保證每個可評估日都會有訊號觸發——這樣測試才能
+    只觀察「進場價算對了沒」，不被「訊號到底有沒有成立」這個變數干擾。"""
+    dates = _seq_dates(n, start=start)
+    rows = []
+    for i, d in enumerate(dates):
+        c = round(close + i * rise, 4)
+        rows.append({"date": d, "open": c, "max": c, "min": c, "close": c,
+                     "Trading_Volume": vol, "Trading_money": 0})
+    return rows
+
+
+def _rows_to_hist(rows):
+    """把 `_make_rows` 的 row list 轉成 collect_events 吃的 price_hist[sid] 格式
+    {date: [open, max, min, close, Trading_Volume, Trading_money]}（對齊
+    history_store.to_price_rows 的欄位順序，這樣改動 row 的 open/close 後轉回去仍生效）。"""
+    return {r["date"]: [r["open"], r["max"], r["min"], r["close"],
+                        r["Trading_Volume"], r["Trading_money"]] for r in rows}
+
+
 def test_stats_to_weights_hand_calc():
     # 手算對照：糾結轉強成立 40 次，平均報酬 4%、平均超額 +1.5 個百分點
     #   → weight = min(5, max(1, round(1.5 × 2))) = 3
@@ -482,6 +504,32 @@ def test_collect_events_併入橫斷面訊號():
     assert "rs_strong_60" in fired_all
 
 
+def test_進場價用隔日開盤而非當日收盤():
+    """Andy 收到名單時管線已收盤（18:17 發榜），最快隔天開盤才買得到——回測必須用同一把尺，
+    不能用『訊號當日收盤』偷跑進場。實測用這把尺量出候選股隔夜跳空中位 +0.42%，用當日收盤
+    進場會讓每筆交易的績效虛高約 0.5pp（2026-07-26 口徑更正）。
+
+    造一檔：訊號日（i=70）收盤 135（100+70*0.5，見 _make_rows）、隔日開盤跳空到 110、
+    第 20 交易日收盤 121。i=70 落在 collect_events 的可評估範圍
+    [MIN_BARS-1, n-FORWARD) = [64, 80)（n=100）內，且上升序列保證多頭排列訊號恆成立。"""
+    n = 100
+    rows = _make_rows(n=n, close=100.0)
+    i_sig = 70
+    rows[i_sig + 1]["open"] = 110.0
+    rows[i_sig + 20]["close"] = 121.0
+    price_hist = {"9999": _rows_to_hist(rows)}
+    universe = [{"id": "9999", "name": "測試", "market": "上市", "industry": "IND00"}]
+    events, by_date = bt.collect_events(price_hist, {}, {}, universe)
+    ev = [e for e in events if e["i"] == i_sig]
+    assert ev, "訊號日應有事件（多頭排列訊號在單調上升序列中應恆成立）"
+    # 用隔日開盤 110 進場 → 121/110-1 = 10%；若誤用訊號日收盤 135 進場會是 121/135-1 ≈ -10.4%
+    assert abs(ev[0]["ret"] - 0.10) < 1e-6, f"實際 {ev[0]['ret']}"
+    # by_date 基準母體必須用同一口徑（同一個 ret 值），否則超額報酬會被算偏
+    di = rows[i_sig]["date"]
+    assert any(abs(r - 0.10) < 1e-6 for r in by_date.get(di, [])), \
+        f"by_date[{di}] 應含同一口徑算出的 0.10，實際 {by_date.get(di)}"
+
+
 # ── Phase B-5：出場優化（exit_analysis）─────────────────────────────────
 def test_net_return_成本後公式():
     # 進場 100、出場 110：毛報酬 10%，扣來回成本後淨報酬應略低於 10%
@@ -515,6 +563,24 @@ def test_exit_analysis_持有期比較與結構():
     assert rows["trail10"]["avg_holding_days"] == 40.0
     # 停利持有天數變動，沒有乾淨的同持有期基準 → 淨超額留 None（不硬用 20 日基準）
     assert rows["trail10"]["avg_net_excess"] is None
+
+
+def test_exit_analysis_進場價用隔日開盤而非收盤():
+    """跟 collect_events 用同一把尺（2026-07-26 口徑更正）：exit_analysis 的『次日進場』
+    也要用開盤價，不能用次日收盤——否則 signal_weights（勝率榜）跟 signal_exits（出場優化）
+    這兩份報表對同一批交易算出不同的進場成本，數字會對不起來。"""
+    dates = _seq_dates(120)
+    by = {d: [100 + i, 100 + i, 100 + i, 100 + i, 500000, 0] for i, d in enumerate(dates)}
+    entry_i = 65                      # i=64 的隔日（i+1），即實際進場那天
+    by[dates[entry_i]][0] = 130.0     # 進場日開盤跳空，跟當日收盤（165）不同
+    price_hist = {"A": by}
+    events = [{"date": dates[64], "sid": "A", "i": 64, "ret": 0.1,
+               "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]
+    res = bt.exit_analysis(events, price_hist, {})
+    rows = {s["key"]: s for s in res["strategies"]}
+    # 進場＝隔日開盤 130（不是隔日收盤 165）；持有 20 日 → 出場 close[85] = 185
+    expect_h20 = round(bt._net_return(130, 185) * 100, 2)
+    assert rows["h20"]["avg_net_return"] == expect_h20
 
 
 def test_exit_analysis_路徑不足略過():

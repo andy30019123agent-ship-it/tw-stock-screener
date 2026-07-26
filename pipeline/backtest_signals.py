@@ -374,7 +374,7 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
     by_date：{date: [該日所有可評估個股的 forward 報酬…]}，當「同日全市場平均」基準用——
              這是唯一能從現有資料算出的乾淨對照組（指數歷史只有 39 天，蓋不住 110 天回測窗）。
 
-    三個刻意的設計，都是為了讓數字可信：
+    四個刻意的設計，都是為了讓數字可信：
     1. **流動性用當時的量**：舊版拿「完整序列（含今天）」的 20 日均量決定整檔要不要回測，
        等於用未來資訊篩過去樣本——當年沒量、現在爆量的會被算進來，當年活躍、現在變殭屍的
        整檔被丟掉。改成每個歷史時點各自用「那天當下」的 20 日均量判斷。
@@ -383,6 +383,11 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
     3. **只用 pr[:i+1] 算指標**：這點舊版就做對了，保留。
     4. **排除已知價格斷點**：分割／現金減資的假漲跌（breaks 參數，來自 price_breaks.json）
        會生出 ±100% 以上的假報酬，跨過斷點的樣本連基準母體一起丟。傳 None 則自動載入。
+
+    **進場價＝隔日開盤**（2026-07-26 起）：`ret = adj_close[i+forward] / adj_open[i+1] - 1`。
+    管線每天 18:17（收盤後）才發榜，Andy 最快隔天開盤才買得到；用訊號當日收盤當進場價等於
+    偷看未來，會讓每筆交易的績效虛高（實測候選股隔夜跳空中位 +0.42%，全市場只有 +0.29%）。
+    `by_date` 的基準母體用同一個 `ret`，兩者口徑必須一致，否則超額報酬會被算偏。
     """
     import build_data as bd  # 延遲載入避免與 build_data 的循環匯入
     import price_breaks as pb
@@ -401,8 +406,12 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
         cr = hs.to_chip_rows(chip_hist.get(sid, {}))
         ev = hs.to_div_events(div_hist.get(sid))
 
-        # 還原權息後的收盤序列（跟 pr 同順序），用來算前瞻報酬
-        adj_close = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
+        # 還原權息後的收盤／開盤序列（跟 pr 同順序），用來算前瞻報酬。
+        # 2026-07-26：進場價從「訊號當日收盤」改成「隔日開盤」，故兩個序列都要——
+        # adj_open[i+1] 當進場價、adj_close[i+forward] 當出場價。理由見下方迴圈內註解。
+        _adj = bd.back_adjust_rows(pr, ev)
+        adj_close = [r["close"] for r in _adj]
+        adj_open = [r["open"] for r in _adj]
         last_fire = {}   # 訊號 → 最後一次採計的 i，做冷卻期
 
         # 已知價格斷點（分割／現金減資造成的假漲跌，TWT49U/exDailyQ 涵蓋不到）在這檔的位置。
@@ -414,7 +423,10 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
 
         for i in range(min_bars - 1, len(pr) - forward):
             di = pr[i]["date"]
-            base = adj_close[i]
+            # 進場價＝隔日開盤：管線 18:17（收盤後）才發榜，Andy 最快隔天開盤才買得到。
+            # 用訊號日收盤當進場價等於偷看——實測候選股隔夜跳空中位 +0.42%（全市場 +0.29%），
+            # 會讓每筆交易的績效虛高約 0.5pp。出場仍用 close[i+forward]，持有期正好 forward 天。
+            base = adj_open[i + 1]
             if not base:
                 continue
             if brk_idx:
@@ -1036,28 +1048,35 @@ def _net_return(entry, exit_price):
 def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
     """比較不同出場方式的「成本後」淨報酬（並行報表、不改 forward=20，Top5 引擎不動）。
 
-    進場價＝訊號次日還原收盤（保守、不前視）；比較固定持有 5/10/20/40 日 ＋「收盤自波段高點
-    回落 10%」停利。淨超額＝該股成本後淨報酬 − 同一進場日、同持有期的全市場毛報酬平均（基準不扣
-    成本，因為它只是評估基準、不是實際買進）。所有出場用同一批「進場後 40 日路徑完整」的事件，
-    確保各持有期公平可比。回 dict（給 signal_exits.json）。"""
+    進場價＝訊號次日還原開盤（2026-07-26 起，跟 collect_events 用同一把尺——管線收盤後才發榜，
+    Andy 最快隔天開盤才買得到，用次日收盤當進場價一樣是偷看未來）；比較固定持有 5/10/20/40 日
+    ＋「收盤自波段高點回落 10%」停利。淨超額＝該股成本後淨報酬 − 同一進場日、同持有期的全市場
+    毛報酬平均（基準不扣成本，因為它只是評估基準、不是實際買進；基準的進場基準價也一併改用
+    開盤，否則個股用開盤成本、大盤基準卻用收盤成本，兩把不同的尺算超額會系統性偏差）。所有出場
+    用同一批「進場後 40 日路徑完整」的事件，確保各持有期公平可比。回 dict（給 signal_exits.json）。"""
     import build_data as bd
-    # 每檔還原收盤序列（list 與 price_rows 排序對齊）＋日期→序列 index
+    # 每檔還原收盤／開盤序列（list 與 price_rows 排序對齊）＋日期→序列 index。
+    # 開盤只當「進場基準價」用（entry、bench 的 base、MAE 的分母）；出場與路徑（trail 停利、MAE
+    # 的高點）仍一律用收盤——只有進場當下 Andy 只買得到開盤價，之後每天看的是收盤。
     adj_by_sid = {}
     for sid, by in price_hist.items():
         pr = sorted(hs.to_price_rows(by), key=lambda r: r["date"])
         if not pr:
             continue
         ev = hs.to_div_events(div_hist.get(sid))
-        ac = [r["close"] for r in bd.back_adjust_rows(pr, ev)]
-        adj_by_sid[sid] = ([r["date"] for r in pr], ac)
+        _adj = bd.back_adjust_rows(pr, ev)
+        ac = [r["close"] for r in _adj]
+        ao = [r["open"] for r in _adj]
+        adj_by_sid[sid] = ([r["date"] for r in pr], ac, ao)
 
     max_h = max(holdings + [EXIT_TRAIL_CAP])
-    # 全市場基準：每個「進場日 → 持有 H 日」的毛報酬平均（母體＝所有有完整路徑的個股，非只有事件股）
+    # 全市場基準：每個「進場日 → 持有 H 日」的毛報酬平均（母體＝所有有完整路徑的個股，非只有事件股）。
+    # base 改用當日開盤（ao[j]），跟下面事件迴圈的 entry 同一口徑，超額才是同一把尺量出來的。
     bench = {h: {} for h in holdings}
-    for sid, (ds, ac) in adj_by_sid.items():
+    for sid, (ds, ac, ao) in adj_by_sid.items():
         n = len(ac)
         for j in range(n):
-            base = ac[j]
+            base = ao[j]
             if not base or base <= 0:
                 continue
             for h in holdings:
@@ -1077,11 +1096,11 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
         rec = adj_by_sid.get(sid)
         if rec is None or i is None:
             continue
-        ds, ac = rec
+        ds, ac, ao = rec
         entry_i = i + 1                              # 次日進場
         if entry_i + max_h >= len(ac):               # 需 40 日完整路徑，各持有期才公平可比
             continue
-        entry = ac[entry_i]
+        entry = ao[entry_i]                           # 進場價＝次日開盤（不是次日收盤）
         if not entry or entry <= 0:
             continue
         # 各固定持有期的出場價都要是有效正數，否則跳過（缺價會讓 _net_return 爆或算錯）
