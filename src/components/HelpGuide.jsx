@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen } from 'lucide-react'
+import { ArrowLeft, BookOpen, AlertTriangle } from 'lucide-react'
 
 // 使用說明書（Andy 2026-07-25 要求，選「做進網站」＋「寫給自己看（術語附白話）」）。
 //
@@ -242,7 +242,7 @@ export default function HelpGuide({ onBack }) {
           正數才代表扣完成本還贏過大盤。旁邊的記號要看：
         </p>
         <ul className="help-marks">
-          <li><b>⚠️</b>＝<b>樣本外驗證判定「過擬合」或效力大幅縮水</b>（在沒訓練過的日子撐不住）。</li>
+          <li><AlertTriangle size={14} strokeWidth={2} className="inline-warn-icon" />＝<b>樣本外驗證判定「過擬合」或效力大幅縮水</b>（在沒訓練過的日子撐不住）。</li>
           <li><b>?</b>＝樣本外<b>無法判斷</b>：可能是樣本太少，也可能是「從來沒有任何一段訓練期看好過它」（例：糾結轉強）。</li>
           <li><b>沒有記號</b>＝通過樣本外驗證。</li>
         </ul>

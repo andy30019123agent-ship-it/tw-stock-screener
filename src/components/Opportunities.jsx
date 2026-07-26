@@ -8,7 +8,16 @@ import OutcomeShape from './OutcomeShape'
 // ⚠️ 名次沒有證據（2026-07-25 實測：前 3 名 vs 第 4~8 名 t=-0.22，第 2 名反而最差）——
 // 每組清單一律照 JSON 給的原始順序顯示，不做任何「誰比較好」的二次排序。
 const TIER_META = {
-  both: { label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段' },
+  // 「雙優」是全站唯一的視覺主角（2026-07-26 單欄故事線核准方向第 2 條）：
+  // _reports/驗證_雙優分類_2026-07-26.md 實測它是三個分類裡唯一同時拿到最高賺錢機率、
+  // 最高上檔幅度、且中位數不是負的一組。lede 刻意不寫死那次測出的百分比——數字有效期只到
+  // 下次重新回測，精確數字交給下方「這些數字怎麼來的」一律讀 tier_stats.json 現算，這裡只講結論。
+  both: {
+    label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段',
+    // lede 刻意短——完整根據（實測賺錢機率／上檔幅度／中位數）放在下方「這些數字怎麼來的」，
+    // 這裡只給結論，不然首屏會被長文字擋住看不到卡片（2026-07-26 審計主要抱怨）。
+    lede: '三個分類裡最有根據的一組：兩個條件都排前段，唯一同時賺得勤又賺得多的一類（見下方「這些數字怎麼來的」）。',
+  },
   win: { label: '勝率偏優', Icon: Award, blurb: '成交金額排在候選池前段——歷史上這組單檔賺錢機率較高' },
   // ⚠️ 2026-07-26 實測（_reports/驗證_雙優分類_2026-07-26.md）：「只有乖離高」的賺錢機率 42.5%，
   // 比「兩個條件都不符合」的 42.6% 還低一點——乖離單獨看只增加賺賠「幅度」，不增加「頻率」。
@@ -124,22 +133,24 @@ function CandidateCard({ p, onClick }) {
 
 // 一個分類分區（雙優／勝率偏優／報酬偏優／其他候選）：標題講清楚共幾檔、列前幾檔，
 // 旁邊一律附「不是好壞排名」的提醒——這是 2026-07-25 實測推翻過的東西，不可回歸。
-function TierSection({ tierKey, label, Icon, blurb, list, previewN, onPick }) {
+function TierSection({ tierKey, label, Icon, blurb, lede, variant = 'secondary', list, previewN, onPick }) {
   const [expanded, setExpanded] = useState(false)
   if (!list.length) return null
   const shown = expanded ? list : list.slice(0, previewN)
   const hasMore = list.length > shown.length
   return (
-    <div className="opp-tier" data-tier={tierKey}>
+    <div className={`opp-tier opp-tier--${variant}`} data-tier={tierKey}>
       <div className="opp-tier-head">
         <span className="opp-tier-title">
-          {Icon && <Icon size={15} strokeWidth={1.75} />}{label}
+          {Icon && <Icon size={variant === 'primary' ? 17 : 15} strokeWidth={1.75} />}{label}
           <span className="opp-tier-count">
             共 {list.length} 檔{list.length > previewN && !expanded ? `，這裡列前 ${previewN} 檔` : '（已全部列出）'}
           </span>
         </span>
       </div>
-      {blurb && <p className="opp-tier-blurb">{blurb}</p>}
+      {lede
+        ? <p className="opp-tier-lede">{lede}</p>
+        : blurb && <p className="opp-tier-blurb">{blurb}</p>}
       <p className="opp-tier-note">照候選清單原始順序，不是好壞排名</p>
       <div className="opp-cards">
         {shown.map(p => <CandidateCard key={p.id} p={p} onClick={() => onPick(p)} />)}
@@ -174,6 +185,16 @@ function WinCell({ c, minS, active }) {
   )
 }
 
+// 趨勢符號：SVG 三角（取代 Unicode ↑↓→，MASTER 第 4 節第 6 點——表格內行情箭頭一律用 SVG）。
+function TrendGlyph({ t }) {
+  if (t === 'flat') return <span className="wq-trend-flat" aria-hidden="true">─</span>
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      {t === 'up' ? <polygon points="12 3 22 20 2 20" /> : <polygon points="12 21 2 4 22 4" />}
+    </svg>
+  )
+}
+
 // 趨勢箭頭：近半年 vs 歷史的平均超額（兩者都要夠樣本才判，否則不顯示，避免拿雜訊嚇人）。
 function trendOf(row) {
   const r = row['6m'], h = row['all']
@@ -194,9 +215,10 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
   const [sortWin, setSortWin] = useState('all')   // 目前聚焦／排序的時間窗欄
   const [showWeights, setShowWeights] = useState(false)
   const [showOther, setShowOther] = useState(false)   // 「其他候選（未達分類門檻）」收合區
-  // 手機預設收合（省捲動，Andy 2026-07-09 指定）；桌機不顯示收合鈕故恆展開。
-  // 斷點用 720 對齊「手機卡片版」的斷點（641~720 也是手機版，之前用 640 會在這區間誤展開）。
-  const [open, setOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 720 : true))
+  // 2026-07-26 單欄故事線改版：候選情報是全站主角，手機也預設展開——原本手機收合＋要點「展開」
+  // 才看得到第一檔股票，審計實測要多捲 1 屏＋多點 1 次，跟「故事線」的敘事順序互相矛盾。
+  // 收合鈕還留著（供看完想收起來的人用），只是初始狀態全斷點都是 open。
+  const [open, setOpen] = useState(true)
 
   // 點卡片開 K 線彈窗：優先用 screener.json 的完整資料（欄位齊全），
   // 抓不到（如尚未載入）才用 pick 本身的欄位墊底，讓彈窗至少開得起來。
@@ -223,15 +245,6 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 桌機（≥641px）恆展開：視窗放大到桌機時強制 open=true，避免「手機載入收合→拉大到桌機、
-  // 收合鈕被 CSS 藏起卻仍收合」導致桌機看不到候選情報。
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 721px)')
-    const sync = () => { if (mq.matches) setOpen(true) }
-    sync()
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
-  }, [])
 
   // ⚠️ 2026-07-25：原本這裡 `return null`＝抓不到就整塊消失，看起來像「今天沒選到股」。
   // 實際上 2026-07-25 晚間就是管線的引擎掛掉、`opportunities.json` 根本沒產出，
@@ -277,36 +290,41 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
   return (
     <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="候選情報">
       <div className="opp-head">
-        <div>
+        {/* 徽章／日期／收合鈕同一列（2026-07-26 改版）：原本收合鈕跟徽章分屬 flex 兩端、
+            中間文字區塊佔滿寬度時鈕會被擠到自己獨立一行，手機上白白多一段高度。 */}
+        <div className="opp-head-top">
           <span className="badge-pill"><Target size={14} strokeWidth={1.75} />候選情報 · 共 {poolN} 檔</span>
-          {/* 有入場門檻時要講清楚這批的來歷——「強勢股裡的技術面最佳」與「全市場技術面最佳」
-              是兩件事，數字一樣但意義不同，不說會讓人誤讀候選清單的範圍。 */}
-          <p className="opp-tagline">這不是購買組合，是候選情報。買哪幾檔、買不買，由你決定。</p>
-          <p className="opp-sub">
-            {opp.gate?.applied
-              ? <>先篩「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻，今日 {opp.gate.pool} 檔）</>
-              : opp.gate?.reason === 'rs_unavailable'
-                ? <><b className="opp-degraded">⚠️ 相對強弱資料今日不可用，「{opp.gate.label}」門檻未套用</b>（改為全市場）</>
-                : opp.gate?.reason === 'pool_too_small'
-                  ? <><b className="opp-degraded">⚠️ 今日符合「{opp.gate.label}」的候選僅 {opp.gate.pool} 檔（不足 {opp.gate.min_pool}），門檻未套用</b></>
-                  : '當日有訊號者'}
-            ，已過濾營收年減／低量 · 僅供參考，非投資建議
-          </p>
+          <span className="opp-date">{opp.date || '—'}</span>
+          <button className="opp-toggle" onClick={() => setOpen(v => !v)}
+            aria-expanded={open} aria-label={open ? '收合候選情報' : '展開候選情報'}>
+            {open ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
+            <span>{open ? '收合' : `展開 ${poolN} 檔`}</span>
+          </button>
         </div>
-        <span className="opp-date">{opp.date || '—'}</span>
-        <button className="opp-toggle" onClick={() => setOpen(v => !v)}
-          aria-expanded={open} aria-label={open ? '收合候選情報' : '展開候選情報'}>
-          {open ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
-          <span>{open ? '收合' : `展開 ${poolN} 檔`}</span>
-        </button>
+        {/* 有入場門檻時要講清楚這批的來歷——「強勢股裡的技術面最佳」與「全市場技術面最佳」
+            是兩件事，數字一樣但意義不同，不說會讓人誤讀候選清單的範圍。 */}
+        <p className="opp-tagline">這不是購買組合，是候選情報。買哪幾檔、買不買，由你決定。</p>
+        {/* 2026-07-26 精簡：「今日 N 檔」「僅供參考，非投資建議」跟上面 hero 的「今日候選」數字、
+            下面 banner／footer 的免責聲明重複，這裡只留「篩了什麼」這個不重複的資訊，
+            讓 hero 到第一檔候選卡片的距離不被複誦的字句拉長。門檻退化警語（真正的誠實內容）原樣保留。 */}
+        <p className="opp-sub">
+          {opp.gate?.applied
+            ? <>先篩「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻）</>
+            : opp.gate?.reason === 'rs_unavailable'
+              ? <b className="opp-degraded"><AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" />相對強弱資料今日不可用，「{opp.gate.label}」門檻未套用（改為全市場）</b>
+              : opp.gate?.reason === 'pool_too_small'
+                ? <b className="opp-degraded"><AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" />今日符合「{opp.gate.label}」的候選僅 {opp.gate.pool} 檔（不足 {opp.gate.min_pool}），門檻未套用</b>
+                : '當日有訊號者'}
+          ，已過濾營收年減／低量
+        </p>
       </div>
 
       {open && (<>
-      <HonestyCallout tierStats={tierStats} />
-
       {TIER_ORDER.map(key => (
         <TierSection key={key} tierKey={key} label={TIER_META[key].label} Icon={TIER_META[key].Icon}
-          blurb={TIER_META[key].blurb} list={tiered[key]} previewN={previewN} onPick={handlePick} />
+          blurb={TIER_META[key].blurb} lede={TIER_META[key].lede}
+          variant={key === 'both' ? 'primary' : 'secondary'}
+          list={tiered[key]} previewN={previewN} onPick={handlePick} />
       ))}
 
       {tiered.other.length > 0 && (
@@ -338,7 +356,11 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
         }
       })} />
 
-      {/* 條件層級歷史分佈（2026-07-26 重寫）：不是「這批會怎樣」，是「這個條件層級歷史上長怎樣」 */}
+      {/* 「這些數字怎麼來的」：單欄故事線最後一個證據節點——把候選分類背後的歷史統計攤開，
+          HonestyCallout（勝率/賺賠幅度頭條）與 OutcomeShape（條件層級歷史分佈）都放在這裡，
+          不再堵在最上面擋候選卡片。 */}
+      <h2 className="opp-section-title">這些數字怎麼來的</h2>
+      <HonestyCallout tierStats={tierStats} />
       <OutcomeShape tierStats={tierStats} />
 
       {board && (
@@ -396,7 +418,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
                             {row.label}
                             {t && <span className={`wq-trend wq-${t}`} title={
                               t === 'up' ? '近半年比歷史更強' : t === 'down' ? '近半年比歷史轉弱' : '近半年與歷史相當'
-                            }>{t === 'up' ? '↑' : t === 'down' ? '↓' : '→'}</span>}
+                            }><TrendGlyph t={t} /></span>}
                           </td>
                           {winCols.map(w => (
                             <WinCell key={w.key} c={row[w.key]} minS={minS} active={sortWin === w.key} />

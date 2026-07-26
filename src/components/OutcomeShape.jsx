@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Dices } from 'lucide-react'
+import { ChevronDown, ChevronRight, Dices, AlertTriangle } from 'lucide-react'
 
 // 條件層級分佈卡（2026-07-26 全面重寫）。
 //
@@ -53,10 +53,32 @@ function FeatureBlock({ meta, data }) {
       </div>
       {meta.caution && (
         <p className="os-warn os-feat-caution">
-          <b>⚠️ 這項方向不穩定</b>：2026-07-26 重算後與舊研究方向相反，只當事實數值看，
+          <AlertTriangle size={15} strokeWidth={2} className="inline-warn-icon" />
+          <b>這項方向不穩定</b>：2026-07-26 重算後與舊研究方向相反，只當事實數值看，
           <b>不代表「離前高越遠越好」或「越近越好」</b>，本站不會把它標成偏優。
         </p>
       )}
+      {/* 手機：直式卡片（每層一張，label:value 直接讀）；桌機／平板：表格（見下方 .os-scroll） */}
+      <div className="os-level-cards">
+        {LEVELS.map(([lvKey, lvLabel]) => {
+          const d = data[lvKey]
+          if (!d) return null
+          return (
+            <div className="os-level-card" key={lvKey}>
+              <div className="os-level-card-head">
+                <span className="os-level-name">{lvLabel}</span>
+                <span className="os-level-win">{Math.round(d.win_rate * 100)}%<small className="os-level-winlabel"> 賺錢機率</small></span>
+              </div>
+              <div className="os-level-rows">
+                <div className="os-level-row"><span>賺時平均</span><b className="good">{signedPct(d.avg_win_pct)}</b></div>
+                <div className="os-level-row"><span>賠時平均</span><b className="bad">{signedPct(d.avg_loss_pct)}</b></div>
+                <div className="os-level-row"><span>中位數</span><b className={d.median_pct > 0 ? 'good' : 'bad'}>{signedPct(d.median_pct)}</b></div>
+                <div className="os-level-row os-level-ci"><span>獨立樣本／90% CI</span><span>{d.blocks} 批 · [{d.ci90[0]}, {d.ci90[1]}]</span></div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
       <div className="os-scroll">
         <table className="os-table os-feat-table">
           <thead>
@@ -121,7 +143,8 @@ export default function OutcomeShape({ tierStats }) {
           ))}
 
           <p className="os-note">
-            <b>⚠️ 先看信賴區間，再看數字大小。</b>
+            <AlertTriangle size={15} strokeWidth={2} className="inline-warn-icon" />
+            <b>先看信賴區間，再看數字大小。</b>
             持有 20 交易日彼此重疊，{tierStats.date ? '長歷史' : '樣本'}換算下來每個層級只有約
             <b> {tierStats.features?.turnover?.high?.blocks ?? 19} 批</b>獨立進場，所以每一格都附了信賴區間。
             <b>兩層的信賴區間有重疊，不代表兩層一樣，也不代表哪層一定比較好</b>——那需要同一天配對比較才量得出來，

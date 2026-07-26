@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  SlidersHorizontal, Search, ChevronDown,
+  SlidersHorizontal, Search, ChevronDown, AlertTriangle,
   Rocket, BookOpen, Gem, Sparkles, Landmark, TrendingUp,
 } from 'lucide-react'
 import ComboBoard from './ComboBoard'
@@ -194,9 +194,9 @@ export default function ConditionPanel({
                       return (
                         <tr key={p.key}>
                           <td>{p.label}{q?.high_win_trap &&
-                            <span className="trap-flag" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了">⚠️</span>}
+                            <AlertTriangle size={13} strokeWidth={2} className="trap-flag" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了" />}
                             {!q?.high_win_trap && q?.loses_to_market &&
-                              <span className="trap-flag" title="扣掉交易成本後，這個訊號平均贏不過大盤——不如直接買大盤">⚠️</span>}</td>
+                              <AlertTriangle size={13} strokeWidth={2} className="trap-flag" title="扣掉交易成本後，這個訊號平均贏不過大盤——不如直接買大盤" />}</td>
                           <td className={ne > 0 ? 'good' : ne < 0 ? 'bad' : ''}>
                             {ne != null ? `${ne >= 0 ? '+' : ''}${ne}pp` : s ? '—' : '尚無回測'}</td>
                           <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
@@ -220,12 +220,13 @@ export default function ConditionPanel({
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
-                <b>⚠️</b> 代表扣成本後贏不過大盤。<b>小詩選股顯示的是 5 招母體</b>（勾「符合任一形態」實際會篩到的
+                <AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" /> 代表扣成本後贏不過大盤。<b>小詩選股顯示的是 5 招母體</b>（勾「符合任一形態」實際會篩到的
                 那一整批，成本後 −0.78pp）——不是最好的那一招（縮口帶量突破 +0.04pp）；
                 多頭排列／填息快僅供戰績參考、不進候選情報清單。
               </p>
               <p className="strategy-note strategy-skew">
-                ⚠️ <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
+                <AlertTriangle size={14} strokeWidth={2} className="inline-warn-icon" />
+                <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
                 贏大盤比例全部落在 37%～43%（沒有一個過半，2026-07-26 新口徑重算）。
                 意思是<b>大多數交易其實小輸大盤，整體正報酬靠少數幾檔大贏撐起來</b>。
                 這種形狀的策略要能成立，必須分散買足夠多檔、而且不能在賠錢時提早出場——只買一兩檔

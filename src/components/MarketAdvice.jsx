@@ -57,7 +57,7 @@ export default function MarketAdvice({ breadth, regime, onApply }) {
                 會斷成「縮口帶量突／破」（中文可在任何字元間斷行，2026-07-25 實測發現）。 */}
             <span className="ma-name"><span className="ma-label">{x.label}</span>
               {x.allWeather && <span className="ma-tag" title="紅黃綠三種市況都有正超額，空頭也站得住">全天候</span>}</span>
-            <span className="ma-exc good">+{x.cur.avg_excess}pp</span>
+            <span className="ma-exc good">+{x.cur.avg_excess}pp<small className="ma-excnote">未扣成本</small></span>
             {APPLY[x.k]
               ? <button className="ma-apply" onClick={() => onApply(APPLY[x.k])}><Check size={13} strokeWidth={2.5} />套用</button>
               : <span className="ma-info" title="相對強弱/產業訊號需全市場即時排名，網站只提供歷史戰績、無法即時篩選">僅戰績</span>}

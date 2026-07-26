@@ -75,6 +75,16 @@ function SortArrow() {
   )
 }
 
+// 表格內行情箭頭一律用 SVG 三角（MASTER 第 4 節第 6 點）：取代原本的 Unicode ↑ 字元
+// （字重/對齊會因系統字型飄動，且屬於「emoji/符號當 icon」需要改 SVG 的同一類問題）。
+function UpTriangle() {
+  return (
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="trend-arrow trend-up">
+      <polygon points="12 3 22 20 2 20" />
+    </svg>
+  )
+}
+
 export default function ResultTable({ stocks, sortKey, onSort, onPick, dense = true }) {
   // 可排序表頭：th 帶 aria-sort，內含可聚焦按鈕（pe 為升冪，其餘降冪）
   const col = (key, label) => (
@@ -191,7 +201,7 @@ export default function ResultTable({ stocks, sortKey, onSort, onPick, dense = t
                   <td className="cell-ma">
                     {s.bull_aligned ? <span className="ma-bull">多頭排列</span>
                       : <span className="ma-flat">—</span>}
-                    {s.ma_rising && <span className="ma-up">↑翻揚</span>}
+                    {s.ma_rising && <span className="ma-up"><UpTriangle />翻揚</span>}
                     <span className="disp">離散 {s.dispersion_pct}%</span>
                   </td>
                   <td className="cell-rs"><RS s={s} /></td>
