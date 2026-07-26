@@ -99,7 +99,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .hero-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 10px; }
 .hero-badge-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .hero-badge-row .help-link { margin-left: 0; }
-.hero-titles h1 { font-size: clamp(2rem, 5vw, 2.75rem); font-weight: 800; line-height: 1.2; letter-spacing: -.5px; }
+/* 2026-07-26 二次壓縮：手機端下限從 2rem 降到 1.75rem。標題在 390 寬本來就佔滿一整行，
+   再大只是佔高度，而首屏高度直接決定「第一檔候選要捲多久才看得到」。桌機維持 2.75rem。 */
+.hero-titles h1 { font-size: clamp(1.75rem, 5vw, 2.75rem); font-weight: 800; line-height: 1.2; letter-spacing: -.5px; }
 .hero-titles .subtitle { color: var(--ink-muted); font-size: 1rem; margin-top: 8px; }
 /* 資料日期 pill：2026-07-26 從 hero-right 獨立一列併進 .hero-stats 同一行，省一整段高度 */
 .updated-pill {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Filter, AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen } from 'lucide-react'
+import { AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import HelpGuide from './components/HelpGuide'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -137,13 +137,16 @@ export default function App() {
             {/* 使用說明入口跟徽章同一列（不是只放 footer）：手機第一眼就要看得到，否則等於沒做
                 ——站上概念不少，看不懂時人不會捲到頁尾找說明。原本塞在副標段落裡會因為 44px
                 觸控高度把整句擠成兩行，2026-07-26 改成跟徽章並排省一整行。 */}
+            {/* 2026-07-26 二次壓縮：原本這列有一個「全市場選股 · Screener」膠囊徽章，但它跟正下方
+                的 h1「台股全市場選股」講同一件事，屬於純裝飾。首屏每一個 px 都在跟「第一檔候選要
+                多久才看得到」競爭，而警語類內容一律不准砍（MASTER.md 核准第 3 條），所以能砍的
+                只有這種重複的裝飾。使用說明連結保留——它是功能入口，不是裝飾。 */}
             <div className="hero-badge-row">
-              <span className="badge-pill"><Filter size={14} strokeWidth={1.75} />全市場選股 · Screener</span>
               <a className="help-link" href="#help">
                 <BookOpen size={13} strokeWidth={2} />使用說明
               </a>
             </div>
-            <h1 style={{ marginTop: 10 }}>台股全市場選股</h1>
+            <h1 style={{ marginTop: 6 }}>台股全市場選股</h1>
             {/* 2026-07-26 單欄故事線改版：舊副標「糾結轉強 × 法人連買」是舊篩選器的訊號組合，
                 跟現在唯一的候選來源（候選情報／三分類）對不起來，改成描述候選情報本身。 */}
             {/* 「買哪幾檔由你決定」搬掉——候選情報自己的頭條句（下面 opp-tagline）已經講過同一件事，
