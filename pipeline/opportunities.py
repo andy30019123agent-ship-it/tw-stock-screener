@@ -56,6 +56,11 @@ TOP_N = 8
 MIN_VOL_LOTS = 500        # 20 日均量門檻（張）
 BIAS_FLAG_PCT = 15        # 20 日乖離 > 此值加「乖離大」風險旗標
 FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一致）
+
+# 台股來回交易成本：手續費 0.1425%×2（買賣各一次）＋證交稅 0.3%（賣出）＋滑價 0.1%×2 ＝ 0.785%。
+# 跟 backtest_signals.py 的 exit_analysis／_net_return（EXIT_FEE/EXIT_TAX/EXIT_SLIP，約 1052-1061 行）
+# 同一把尺——改一邊要改兩邊，不要在這裡另外定義獨立的成本數字。
+COST_PCT = bt.EXIT_FEE * 2 + bt.EXIT_TAX + bt.EXIT_SLIP * 2
 # picks 留檔天數。⚠️ 2026-07-25 從 90 改成 3650（約 10 年）：這份 picks_history.json 是
 # **系統實際推薦紀錄的唯一來源**，也是未來唯一能回答「這套選股真的有用嗎」的真實績效證據
 # （回測是模擬、這個是實績）。90 天上限會讓超過三個月的紀錄被永久刪掉、**之後補不回來**。
@@ -196,6 +201,18 @@ def adjusted_close_map(price_hist, div_hist, sid):
     return {r["date"]: r["close"] for r in adj}
 
 
+def adjusted_open_map(price_hist, div_hist, sid):
+    """某股 {交易日: 還原權息開盤}，成績單算「隔日開盤進場」用（跟 adjusted_close_map／
+    回測 collect_events 同一把尺）。"""
+    import build_data as bd
+    rows = hs.to_price_rows(price_hist.get(sid, {}))
+    if not rows:
+        return {}
+    ev = hs.to_div_events(div_hist.get(sid))
+    adj = bd.back_adjust_rows(sorted(rows, key=lambda r: r["date"]), ev)
+    return {r["date"]: r["open"] for r in adj}
+
+
 def update_picks_history(opp):
     """把今天的 picks 併入 picks_history.json（同日覆蓋、留最近 HISTORY_MAX 天）。回 entries list。"""
     hist = {}
@@ -228,23 +245,35 @@ def update_picks_history(opp):
     return entries
 
 
-def compute_scoreboard(entries, cal, adj_by_sid, forward=FORWARD):
-    """純函式：對「已滿 forward 交易日」的舊 picks 算實績。回 {win_rate, avg_ret, samples, ...}。"""
+def compute_scoreboard(entries, cal, adj_close_by_sid, adj_open_by_sid, forward=FORWARD, cost=None):
+    """純函式：對「已滿 forward 交易日」的舊 picks 算實績。回 {win_rate, avg_ret, samples, cost_pct, ...}。
+
+    口徑（2026-07-26 起，跟 backtest_signals.collect_events／exit_analysis 同一把尺）：
+    - 進場價＝pick 日**隔一個交易日**的還原開盤——管線 18:17（收盤後）才發榜，Andy 最快隔天
+      開盤才買得到，用 pick 當日收盤當進場價等於偷看未來。
+    - 出場價＝pick 日 + forward 個交易日的還原收盤（跟原本一致，持有期仍是 forward 天）。
+    - 淨報酬＝毛報酬 − 來回成本（COST_PCT，預設 0.785%）；勝率＝淨報酬 > 0 的比例。
+      全站「勝率」統一這把尺，不能有的地方看毛報酬、有的地方看淨報酬（會變成兩個不同定義的
+      「勝率」互相打架，誤導 Andy）。
+    找不到隔日開盤（例如當天停牌、資料缺）的樣本直接跳過，**不可用收盤價頂替**。
+    """
+    cost = COST_PCT if cost is None else cost
     pos = {d: i for i, d in enumerate(cal)}
     wins = cnt = 0
     ret_sum = 0.0
     for e in entries:
         d = e["date"]
         di = pos.get(d)
-        if di is None or di + forward >= len(cal):
-            continue                                  # 尚未滿 forward 交易日
-        d_future = cal[di + forward]
+        if di is None or di + forward >= len(cal) or di + 1 >= len(cal):
+            continue                                  # 尚未滿 forward 交易日，或連隔一日都排不出來
+        d_entry = cal[di + 1]
+        d_exit = cal[di + forward]
         for p in e["picks"]:
-            adj = adj_by_sid.get(p["id"]) or {}
-            base, fut = adj.get(d), adj.get(d_future)
+            base = (adj_open_by_sid.get(p["id"]) or {}).get(d_entry)
+            fut = (adj_close_by_sid.get(p["id"]) or {}).get(d_exit)
             if not base or fut is None:
-                continue
-            ret = fut / base - 1
+                continue                              # 隔日開盤／出場收盤缺值 → 跳過，不拿收盤頂替
+            ret = fut / base - 1 - cost
             cnt += 1
             ret_sum += ret
             if ret > 0:
@@ -255,6 +284,7 @@ def compute_scoreboard(entries, cal, adj_by_sid, forward=FORWARD):
         "samples": cnt,
         "win_rate": round(wins / cnt, 4) if cnt else None,
         "avg_ret": round(ret_sum / cnt * 100, 2) if cnt else None,
+        "cost_pct": round(cost * 100, 3),
     }
 
 
@@ -282,8 +312,9 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     entries = update_picks_history(opp)
     cal = trading_calendar(price_hist)
     ids = {p["id"] for e in entries for p in e["picks"]}
-    adj_by_sid = {sid: adjusted_close_map(price_hist, div_hist, sid) for sid in ids}
-    scoreboard = compute_scoreboard(entries, cal, adj_by_sid)
+    adj_close_by_sid = {sid: adjusted_close_map(price_hist, div_hist, sid) for sid in ids}
+    adj_open_by_sid = {sid: adjusted_open_map(price_hist, div_hist, sid) for sid in ids}
+    scoreboard = compute_scoreboard(entries, cal, adj_close_by_sid, adj_open_by_sid)
 
     _write_json(os.path.join(OUT_DIR, "opportunities.json"), opp)
     _write_json(os.path.join(OUT_DIR, "signal_weights.json"), weights)

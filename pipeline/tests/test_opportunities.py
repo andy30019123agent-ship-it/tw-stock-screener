@@ -117,30 +117,74 @@ def test_缺rs_pct_60用最低值墊底_不可用0():
 
 
 def test_compute_scoreboard_hand_calc():
-    # 交易日曆 25 天，pick 在 day0，滿 20 交易日後看 day20 報酬
+    """2026-07-26 改口徑：進場價＝pick 日隔一交易日的還原開盤、出場價＝pick 日 +20 交易日還原收盤，
+    報酬另扣來回成本 COST_PCT。取代舊版「進場價＝pick 當日收盤、不扣成本」的手算測試——
+    舊口徑不是 Andy 真的買得到的價格，也跟全站其他勝率的口徑（扣成本）不一致。"""
     cal = [f"2026-06-{d:02d}" for d in range(1, 26)]   # 25 天
-    d0, d20 = cal[0], cal[20]
-    entries = [{"date": d0, "picks": [
+    d_entry, d_exit = cal[1], cal[20]
+    entries = [{"date": cal[0], "picks": [
         {"id": "A"}, {"id": "B"}, {"id": "C"}]}]
-    adj = {
-        "A": {d0: 100.0, d20: 110.0},   # +10% → 勝
-        "B": {d0: 100.0, d20: 95.0},    # −5%  → 敗
-        "C": {d0: 100.0, d20: 100.0},   # 0%   → 不算勝（>0 才算）
+    adj_open = {"A": {d_entry: 100.0}, "B": {d_entry: 100.0}, "C": {d_entry: 100.0}}
+    adj_close = {
+        "A": {d_exit: 110.0},   # 毛 +10%
+        "B": {d_exit: 95.0},    # 毛 −5%
+        "C": {d_exit: 100.0},   # 毛 0%
     }
-    sb = opp.compute_scoreboard(entries, cal, adj, forward=20)
+    sb = opp.compute_scoreboard(entries, cal, adj_close, adj_open, forward=20)
+    cost = opp.COST_PCT
+    net = [110.0 / 100 - 1 - cost, 95.0 / 100 - 1 - cost, 100.0 / 100 - 1 - cost]
     assert sb["samples"] == 3
-    assert sb["win_rate"] == round(1 / 3, 4)          # 只有 A 勝
-    assert sb["avg_ret"] == round((0.10 - 0.05 + 0.0) / 3 * 100, 2)
+    assert sb["win_rate"] == round(sum(1 for r in net if r > 0) / 3, 4)   # 只有 A 扣成本後仍是正的
+    assert sb["avg_ret"] == round(sum(net) / 3 * 100, 2)
+    assert sb["cost_pct"] == round(cost * 100, 3)
+
+
+def test_compute_scoreboard_扣成本後口徑():
+    """毛報酬 +0.5% 扣掉來回成本 0.785% 後變負，勝率不該算贏——全站「勝率」是同一把尺
+    （Andy 2026-07-26 指出：成績單用毛報酬、其他地方用成本後報酬，兩個「勝率」互相矛盾）。"""
+    cal = [f"2026-06-{d:02d}" for d in range(1, 26)]
+    d_entry, d_exit = cal[1], cal[20]
+    entries = [{"date": cal[0], "picks": [{"id": "A"}]}]
+    adj_open = {"A": {d_entry: 100.0}}
+    adj_close = {"A": {d_exit: 100.5}}   # 毛報酬 +0.5%
+    sb = opp.compute_scoreboard(entries, cal, adj_close, adj_open, forward=20)
+    assert sb["samples"] == 1
+    assert sb["win_rate"] == 0.0, "扣完成本淨報酬是負的（0.5% − 0.785%），不該算贏"
+    assert sb["cost_pct"] == round(opp.COST_PCT * 100, 3)
 
 
 def test_scoreboard_ignores_immature_picks():
     # pick 距今不足 20 交易日 → 不計入樣本
     cal = [f"2026-06-{d:02d}" for d in range(1, 11)]   # 只有 10 天
     entries = [{"date": cal[0], "picks": [{"id": "A"}]}]
-    adj = {"A": {cal[0]: 100.0}}
-    sb = opp.compute_scoreboard(entries, cal, adj, forward=20)
+    adj_open = {"A": {cal[1]: 100.0}}
+    adj_close = {}
+    sb = opp.compute_scoreboard(entries, cal, adj_close, adj_open, forward=20)
     assert sb["samples"] == 0
     assert sb["win_rate"] is None
+
+
+def test_scoreboard_找不到隔日開盤時跳過不用收盤頂替():
+    """隔日開盤缺值（例如當天停牌）時必須跳過該筆，不可退回用收盤價頂替——
+    收盤價頂替等於偷看未來，違反「隔日開盤」口徑（計畫 Task 4）。"""
+    cal = [f"2026-06-{d:02d}" for d in range(1, 26)]
+    d_exit = cal[20]
+    entries = [{"date": cal[0], "picks": [{"id": "A"}]}]
+    adj_open = {}   # 沒有任何隔日開盤資料
+    adj_close = {"A": {cal[0]: 100.0, d_exit: 110.0}}   # 就算收盤價有 pick 當日的值也不可拿來頂替
+    sb = opp.compute_scoreboard(entries, cal, adj_close, adj_open, forward=20)
+    assert sb["samples"] == 0
+    assert sb["win_rate"] is None
+
+
+def test_adjusted_open_map_回傳還原開盤():
+    """新增 adjusted_open_map（跟既有 adjusted_close_map 對稱），供成績單算隔日開盤進場用。"""
+    price_hist = {"9999": {
+        "2026-06-01": [100.0, 105.0, 99.0, 102.0, 1000, 100000],
+        "2026-06-02": [103.0, 108.0, 102.0, 106.0, 1000, 100000],
+    }}
+    m = opp.adjusted_open_map(price_hist, {}, "9999")
+    assert m == {"2026-06-01": 100.0, "2026-06-02": 103.0}
 
 
 def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
@@ -161,9 +205,9 @@ def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
     monkeypatch.setattr(opp, "trading_calendar", lambda price_hist: [])
     monkeypatch.setattr(
         opp, "compute_scoreboard",
-        lambda entries, cal, adj, forward=opp.FORWARD: {
+        lambda entries, cal, adj_close, adj_open, forward=opp.FORWARD: {
             "updated": "x", "forward_days": forward, "samples": 0,
-            "win_rate": None, "avg_ret": None,
+            "win_rate": None, "avg_ret": None, "cost_pct": round(opp.COST_PCT * 100, 3),
         },
     )
     monkeypatch.setattr(opp, "_write_json", lambda path, obj: None)
