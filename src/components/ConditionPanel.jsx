@@ -194,9 +194,16 @@ export default function ConditionPanel({
                       return (
                         <tr key={p.key}>
                           <td>{p.label}{q?.high_win_trap &&
-                            <AlertTriangle size={13} strokeWidth={2} className="trap-flag" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了" />}
+                            // ⚠️ 2026-07-26 修正：title 直接放在 SVG 元素上不會出現 tooltip（Blink 只認
+                            // <title> 子元素，實測 svgEl.title 是 undefined）——用 <span title> 包住才會有
+                            // hover 提示，並補 aria-label 讓螢幕報讀器也讀得到（icon 本身沒有可見文字）。
+                            <span className="trap-flag-wrap" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了" aria-label="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了">
+                              <AlertTriangle size={13} strokeWidth={2} className="trap-flag" aria-hidden="true" />
+                            </span>}
                             {!q?.high_win_trap && q?.loses_to_market &&
-                              <AlertTriangle size={13} strokeWidth={2} className="trap-flag" title="扣掉交易成本後，這個訊號平均贏不過大盤——不如直接買大盤" />}</td>
+                              <span className="trap-flag-wrap" title="扣掉交易成本後，這個訊號平均贏不過大盤——不如直接買大盤" aria-label="扣掉交易成本後，這個訊號平均贏不過大盤——不如直接買大盤">
+                                <AlertTriangle size={13} strokeWidth={2} className="trap-flag" aria-hidden="true" />
+                              </span>}</td>
                           <td className={ne > 0 ? 'good' : ne < 0 ? 'bad' : ''}>
                             {ne != null ? `${ne >= 0 ? '+' : ''}${ne}pp` : s ? '—' : '尚無回測'}</td>
                           <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
@@ -363,7 +370,8 @@ export default function ConditionPanel({
           <span className="cond-section-label">風險濾網</span>
           <div className="cond-chips">
             <div className="num-field">
-              <label title="20 日平均成交額，太低的股不好進出。台股電子股 1 億以下算偏低">最低成交額（億）</label>
+              {/* 2026-07-26 修正：這站早就是全市場（上市＋上櫃），不是電子股，舊文案殘留 */}
+            <label title="20 日平均成交額，太低的股不好進出。全市場 1 億以下算偏低">最低成交額（億）</label>
               <input type="number" inputMode="decimal" min="0" step="0.5" value={c.minMoney}
                 onChange={e => set('minMoney', Math.max(0, Number(e.target.value) || 0))} />
             </div>

@@ -105,7 +105,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .hero-titles .subtitle { color: var(--ink-muted); font-size: 1rem; margin-top: 8px; }
 /* 資料日期 pill：2026-07-26 從 hero-right 獨立一列併進 .hero-stats 同一行，省一整段高度 */
 .updated-pill {
-  display: inline-flex; align-items: center; gap: 6px; font-size: .8125rem; color: var(--ink-body);
+  /* 資料日期是「這批數字何時算的」的誠實標註，2026-07-26 改版時從 .875rem 誤降到
+     .8125rem（13px），低於全站 14px 下限，這裡拉回來。 */
+  display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; color: var(--ink-body);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-pill);
   padding: 5px 12px; font-weight: 600;
 }
@@ -124,7 +126,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .hero-stats { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; }
 /* 資料日期在 hero-stats 這行改素面小字（不用膠囊框），縮小到跟數字同一行放得下的機率更高，
    放不下自動換行時高度也比膠囊版矮。 */
-.hero-stats .updated-pill { background: none; border: none; padding: 2px 0; font-size: .8125rem; }
+.hero-stats .updated-pill { background: none; border: none; padding: 2px 0; font-size: .875rem; }
 .hero-stat { display: inline-flex; align-items: baseline; gap: 6px; font-size: .9375rem; color: var(--ink-muted); }
 .hero-stat b {
   font-family: 'Manrope', sans-serif; font-weight: 800; letter-spacing: -.3px;
@@ -236,7 +238,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .opp-honesty b { color: var(--ink); }
 .opp-honesty .good { color: var(--up); }
 .opp-honesty .bad { color: var(--down); }
-.opp-ci-note { display: block; margin-top: 4px; color: var(--ink-muted); font-size: .8125rem; }
+/* 90% CI 註解＝誠實揭露內容的一部分（讓人知道頭條數字的信賴區間），不是可有可無的小字，
+   拉到全站 14px 下限（原本 .8125rem＝13px，比一般文案 .opp-tagline 16px 還小，本末倒置）。 */
+.opp-ci-note { display: block; margin-top: 4px; color: var(--ink-muted); font-size: .875rem; }
 
 /* 分類分區（雙優／勝率偏優／報酬偏優／其他候選） */
 .opp-tier { margin-bottom: 28px; }
@@ -248,7 +252,9 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .opp-tier-title svg { color: var(--primary-strong); }
 .opp-tier-count { font-size: .8125rem; font-weight: 500; color: var(--ink-muted); margin-left: 4px; }
 .opp-tier-blurb { font-size: .875rem; color: var(--ink-muted); margin-top: 4px; max-width: 64ch; }
-.opp-tier-note { font-size: .8125rem; color: var(--ink-muted); font-style: italic; margin: 2px 0 10px; }
+/* 「照候選清單原始順序，不是好壞排名」是誠實揭露內容（推翻過的錯誤認知：2026-07-25 實測
+   名次沒有區辨力），不該比一般文案還小——拉到 14px 下限（原本 .8125rem＝13px）。 */
+.opp-tier-note { font-size: .875rem; color: var(--ink-muted); font-style: italic; margin: 2px 0 10px; }
 .opp-tier-note-inline { font-style: italic; font-weight: 500; }
 .opp-more {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 12px; min-height: 44px; padding: 0 4px;
@@ -359,6 +365,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .wq-table thead .wq-sig { color: var(--ink-muted); }
 .wq-h { cursor: pointer; user-select: none; }
 .wq-h:hover, .wq-h.wq-active { color: var(--primary); }
+/* 表頭可點聚焦排序（role=button），觸控目標 ≥44px（2026-07-26 對抗審查：390 寬實測只有 39px）。
+   table-cell 對 min-height 的支援不穩定，改用加大上下 padding 撐高度；選擇器要比
+   `.wq-table th, .wq-table td`（class+元素＝specificity 較高）更具體，否則 padding 會被蓋掉。 */
+.wq-table th.wq-h { padding-top: 13px; padding-bottom: 13px; }
 .wq-caret { margin-left: 2px; font-size: .7rem; }
 .wq-cell { text-align: right; }
 .wq-cell.wq-active { background: color-mix(in srgb, var(--primary) 8%, transparent); }
@@ -439,7 +449,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-board { margin-top: 10px; }
 .strategy-board > summary {
   cursor: pointer; font-size: .875rem; font-weight: 700; color: var(--ink-muted);
-  padding: 8px 0; min-height: 40px; display: flex; align-items: center;
+  /* 觸控目標 ≥44px（2026-07-26 對抗審查：390 寬實測只有 40px） */
+  padding: 8px 0; min-height: 44px; display: flex; align-items: center;
 }
 .strategy-board > summary:hover { color: var(--primary); }
 .strategy-scroll { overflow-x: auto; }
@@ -468,7 +479,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .strategy-table tr.exit-control { background: color-mix(in srgb, var(--primary) 7%, transparent); }
 .strategy-table tr.exit-control td:first-child { font-weight: 700; }
 .strategy-table tr.exit-control small { color: var(--primary); font-weight: 600; margin-left: 2px; }
-.trap-flag { margin-left: 4px; cursor: help; color: var(--warn); vertical-align: -2px; flex: none; }
+/* trap-flag 改用 <span title> 包住 SVG（見 ConditionPanel.jsx 註解：title 放在 SVG 元素上
+   不會出現 tooltip，Blink 只認 <title> 子元素）——margin/對齊搬到外層 span 上。 */
+.trap-flag-wrap { display: inline-flex; align-items: center; margin-left: 4px; cursor: help; vertical-align: -2px; }
+.trap-flag { color: var(--warn); flex: none; }
 .regime-table td.regime-dim { opacity: .45; }
 .regime-table .regime-n { display: block; font-size: .7rem; color: var(--ink-muted); font-weight: 400; }
 .regime-table th:not(:first-child) { text-align: right; }
@@ -495,9 +509,11 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   background: color-mix(in srgb, var(--primary) 14%, transparent); padding: 1px 7px; border-radius: 999px; }
 .ma-exc { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
 .ma-exc.good { color: var(--up); }
-/* 「未扣成本」標註刻意跟數字一樣顯眼（不是縮到看不見的註腳）——這個 pp 數字是本頁少數
-   沒扣交易成本的地方，卡片本身也已經移出首屏，這裡再補一層「就在數字旁邊」的提醒。 */
-.ma-excnote { display: block; font-size: .6875rem; font-weight: 700; color: var(--ink-muted); white-space: nowrap; }
+/* 「未扣成本」標註：這個 pp 數字是本頁少數沒扣交易成本的地方，一定要讓人看得到才算誠實揭露。
+   ⚠️ 2026-07-26 對抗審查修正：上一版註解寫「刻意跟數字一樣顯眼」，但實際字級只有 .6875rem
+   （11px，比全站 14px 下限還小很多，跟旁邊 1rem 粗體紅字的 .ma-exc 完全不成比例）——
+   註解與事實不符，是「講了但沒做到」的假誠實。這裡改回 MASTER §2 的 14px 下限，說話算話。 */
+.ma-excnote { display: block; font-size: .875rem; font-weight: 700; color: var(--ink-muted); white-space: nowrap; }
 .ma-apply {
   display: inline-flex; align-items: center; gap: 3px; padding: 5px 14px; border-radius: 999px;
   border: none; background: var(--primary); color: var(--on-primary); font-size: .8125rem; font-weight: 700; cursor: pointer;
@@ -512,7 +528,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .combo-toggle {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   background: none; border: none; font-family: inherit; font-size: .9375rem; font-weight: 800;
-  color: var(--ink); padding: 6px 0; min-height: 40px;
+  /* 觸控目標 ≥44px（2026-07-26 對抗審查：390 寬實測只有 40px） */
+  color: var(--ink); padding: 6px 0; min-height: 44px;
 }
 .combo-toggle:hover { color: var(--primary); }
 .combo-intro { margin: 4px 0 10px; font-size: .8125rem; line-height: 1.6; color: var(--ink-muted); }
@@ -652,7 +669,10 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .num-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(255,77,141,.18); }
 .select-field select {
   font: inherit; font-size: .9375rem; color: var(--ink); background: var(--surface);
-  border: none; cursor: pointer; min-height: 24px;
+  border: none; cursor: pointer;
+  /* 觸控目標 ≥44px（2026-07-26 對抗審查：外層 .num-field 雖有 min-height:44px，
+     但真正可點的是 select 自己的框，量到只有 24px；select 本身也要撐到 44px）。 */
+  min-height: 44px;
 }
 
 .cond-footer { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid var(--border); }

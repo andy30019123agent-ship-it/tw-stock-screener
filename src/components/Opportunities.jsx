@@ -342,6 +342,14 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
         </div>
       )}
 
+      {/* 「這些數字怎麼來的」：核准的單欄故事線順序是「其他候選 → 這些數字怎麼來的 → 進階篩選」，
+          中間不該插別的東西。2026-07-26 對抗審查發現這裡被搬到 PositionPlan（個股觀察位表，
+          高達 3954px）之後，害這段誠實內容從第 14 屏才出現——挪回 PositionPlan 之前，
+          恢復核准的敘事順序（觀察位表是輔助工具，不該卡在敘事中間）。 */}
+      <h2 className="opp-section-title">這些數字怎麼來的</h2>
+      <HonestyCallout tierStats={tierStats} />
+      <OutcomeShape tierStats={tierStats} />
+
       {/* 個股觀察位（2026-07-25 加，2026-07-26 誠實化：拿掉購買組合語意，只留近 20 日前高與績效檢視日）。
           只帶「雙優／勝率偏優／報酬偏優」三類進觀察位表——候選池全開後常有百餘檔，「其他候選」
           全塞進表格會讓這張表長到失去用途；三類本身就是畫面上特別標出來的那批，適合放觀察位。
@@ -355,13 +363,6 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
           recent_high20: p.recent_high20 ?? full?.recent_high20 ?? null,   // 近 20 日前高（觀察位）要用
         }
       })} />
-
-      {/* 「這些數字怎麼來的」：單欄故事線最後一個證據節點——把候選分類背後的歷史統計攤開，
-          HonestyCallout（勝率/賺賠幅度頭條）與 OutcomeShape（條件層級歷史分佈）都放在這裡，
-          不再堵在最上面擋候選卡片。 */}
-      <h2 className="opp-section-title">這些數字怎麼來的</h2>
-      <HonestyCallout tierStats={tierStats} />
-      <OutcomeShape tierStats={tierStats} />
 
       {board && (
         <div className="opp-board">
