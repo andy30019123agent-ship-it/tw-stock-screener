@@ -1,4 +1,4 @@
-import { usablePair, verdictOf, pairSentence, pairShort, winDiffText, evDiffText, evVerdictOf, edgeSentence, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier } from '../tierVerdict.js'
+import { usablePair, verdictOf, pairSentence, pairShort, winDiffText, evDiffText, evVerdictOf, edgeSentence, edgeWinShort, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier } from '../tierVerdict.js'
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  ❌', msg) } }
 const P = (win, wci, ev, eci) => ({ win_pp: win, win_ci90: wci, ev_pp: ev, ev_ci90: eci })
@@ -50,5 +50,9 @@ ok(normalizeTier({ tier: 'xx' }).tier === null && normalizeTier(null).tier === n
 ok(/^1\.3$|^1\.2$/.test('1.3') && edgeSentence({ paired: { cat_edge_vs_rest: P(1.25, [0.25, 2.25], 0, null) } }).includes('多約 1.3 個百分點（誤差範圍 +0.3～+2.3）'), '四捨五入規則固定 floor(x*10+0.5)')
 const all = [edgeSentence(TS), edgeWinRateText(TS), gateNote({ applied: false, reason: 'pool_too_small' }, TS), biasNote(TS)].join('')
 ok(!/NaN|undefined|null|雙優|勝率偏優|報酬偏優|保證/.test(all), '輸出沒有 NaN／舊稱號／保證')
+ok(edgeWinShort({ paired: { cat_edge_vs_rest: P(5.97, [2.9, 8.6], 2.05, [0.6, 3.6]) } }) === '比同一天其他候選的賺錢機率多約 6.0 個百分點（誤差範圍 +2.9～+8.6）', '首屏短句 better')
+ok(/量不出差別（誤差範圍 −0\.8～\+3\.0）/.test(edgeWinShort({ paired: { cat_edge_vs_rest: P(1.2, [-0.8, 3.0], 0, null) } })), '首屏短句 nodiff')
+ok(/少約 2\.0 個百分點/.test(edgeWinShort({ paired: { cat_edge_vs_rest: P(-2, [-3, -1], 0, null) } })), '首屏短句 worse')
+ok(edgeWinShort({ stale: true, paired: { cat_edge_vs_rest: P(5.97, [2.9, 8.6], 0, null) } }) === null && edgeWinShort(null) === null, '首屏短句 stale／缺 → null')
 console.log(`tierVerdict: ${pass} pass, ${fail} fail`)
 if (fail) process.exit(1)

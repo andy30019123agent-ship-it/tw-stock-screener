@@ -158,7 +158,7 @@ export default function ConditionPanel({
                       毛超額，等於重演「畫面數字不是決策依據」那個 bug。 */}
                   {btnScore != null && <span className={`preset-score ${btnScore > 0 ? 'good' : btnScore < 0 ? 'bad' : ''}`}
                     title={st?._isBest
-                      ? `成本後超額。⚠️ 這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
+                      ? `成本後超額。注意：這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
                       : '成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的'}>
                     {btnScore >= 0 ? '+' : ''}{btnScore}<small>pp</small>
                     {st?._isBest && <em className="score-best" title="顯示的是最佳形態的成績">＊</em>}</span>}

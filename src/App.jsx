@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen } from 'lucide-react'
+import { AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen, TrendingDown } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import HelpGuide from './components/HelpGuide'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -45,6 +45,8 @@ export default function App() {
     return next
   })
   const [picked, setPicked] = useState(null)
+  // 大盤提醒：2026-11-13 可讀性改版收成一行摘要（含「請自行斟酌降低曝險」），點開看完整說明
+  const [mktOpen, setMktOpen] = useState(false)
   const [oppCount, setOppCount] = useState(null)
   const [panelOpen, setPanelOpen] = useState(false)   // 手機常駐工具列與篩選面板連動；桌機面板恆展開（CSS）
   // 「進階篩選」整組（舊版篩選器＋結果列表）2026-07-26 降級為次要工具，預設收合——
@@ -124,54 +126,39 @@ export default function App() {
   if (route === 'help') {
     return (
       <div className="app">
-        <HelpGuide tierStats={tierStats} exitSummary={exitSummary} onBack={() => { window.location.hash = '' }} />
+        <HelpGuide tierStats={tierStats} exitSummary={exitSummary} weights={weights} combos={combos}
+          exits={exits} regime={regime} marketCount={data?.count ?? null}
+          onBack={() => { window.location.hash = '' }} />
       </div>
     )
   }
 
   return (
     <div className="app">
-      <section className="hero" data-region="Hero / 標題與大數字統計">
+      {/* 2026-11-13 可讀性改版（Andy 核准方向 3「先看股票」）：hero 壓成「標題＋資料日」一小塊，
+          緊接著就是相對優勢候選。原本 hero 235px＋大盤 banner 158px＋說明 229px 把第一檔股票推到第 2 屏
+          （審計 A1）。數字不砍，只是併成一行；資料過期警示（下面 banner-warn）照舊整段顯示。 */}
+      <header className="hero" data-region="Hero / 標題與資料日">
         <span className="hero-blob b1" aria-hidden="true" />
         <span className="hero-blob b2" aria-hidden="true" />
-        <span className="hero-blob b3" aria-hidden="true" />
         <div className="hero-top">
-          <div className="hero-titles">
-            {/* 使用說明入口跟徽章同一列（不是只放 footer）：手機第一眼就要看得到，否則等於沒做
-                ——站上概念不少，看不懂時人不會捲到頁尾找說明。原本塞在副標段落裡會因為 44px
-                觸控高度把整句擠成兩行，2026-07-26 改成跟徽章並排省一整行。 */}
-            {/* 2026-07-26 二次壓縮：原本這列有一個「全市場選股 · Screener」膠囊徽章，但它跟正下方
-                的 h1「台股全市場選股」講同一件事，屬於純裝飾。首屏每一個 px 都在跟「第一檔候選要
-                多久才看得到」競爭，而警語類內容一律不准砍（MASTER.md 核准第 3 條），所以能砍的
-                只有這種重複的裝飾。使用說明連結保留——它是功能入口，不是裝飾。 */}
-            <div className="hero-badge-row">
-              <a className="help-link" href="#help">
-                <BookOpen size={13} strokeWidth={2} />使用說明
-              </a>
-            </div>
-            <h1 style={{ marginTop: 6 }}>台股全市場選股</h1>
-            {/* 2026-07-26 單欄故事線改版：舊副標「糾結轉強 × 法人連買」是舊篩選器的訊號組合，
-                跟現在唯一的候選來源（候選情報／三分類）對不起來，改成描述候選情報本身。 */}
-            {/* 「買哪幾檔由你決定」搬掉——候選情報自己的頭條句（下面 opp-tagline）已經講過同一件事，
-                這裡留短一點是為了保證單行，不要在 390 寬度上多包一行把候選卡片往下推。 */}
-            <p className="subtitle">全市場候選情報 · 上市＋上櫃</p>
-          </div>
+          <h1>台股全市場選股</h1>
+          {/* 使用說明入口：手機第一眼就要看得到（站上概念不少，看不懂時人不會捲到頁尾找說明） */}
+          <a className="help-btn" href="#help"><BookOpen size={16} strokeWidth={1.75} />使用說明</a>
         </div>
-        {/* 大數字統計列（2026-07-26 砍掉「符合條件」）：那是舊篩選器的結果，跟「今日候選」並排
-            會讓人分不清該看哪個（審計實測兩者差 40 倍）。全站候選來源只剩「今日候選」一個數字；
-            資料日期原本是 hero-right 獨立一整列 pill，併進同一行省掉一整段高度。 */}
         {data && (
-          <div className="hero-stats">
-            <span className="hero-stat"><b className="mono">{data.count}</b><small>檔</small>全市場掃描</span>
-            <span className="hero-stat-sep" aria-hidden="true" />
-            <span className="hero-stat"><b className="mono">{oppCount ?? '—'}</b><small>檔</small>今日候選</span>
-            <span className={`updated-pill ${stale ? 'stale' : ''}`}>
-              <span className={`live-dot ${stale ? 'stale' : ''}`} />
-              {data.data_date || '—'}
+          <p className="hero-meta">
+            <span className="hero-meta-seg">
+              <span className={`live-dot ${stale ? 'stale' : ''}`} aria-hidden="true" />
+              資料日 <b className="mono">{data.data_date || '—'}</b>
             </span>
-          </div>
+            <span className="hero-meta-sep">・</span>
+            <span className="hero-meta-seg">掃描 <b className="mono">{data.count}</b> 檔</span>
+            <span className="hero-meta-sep">・</span>
+            <span className="hero-meta-seg">候選 <b className="mono">{oppCount ?? '—'}</b> 檔</span>
+          </p>
         )}
-      </section>
+      </header>
 
       {error && (
         <div className="banner banner-error" role="alert">
@@ -191,20 +178,29 @@ export default function App() {
         </div>
       )}
 
-      {/* 「今天大盤怎樣」：市況轉弱時的警示放最前面，跟大盤偏強時的「本週市況建議」（挪到候選
-          清單之後）分工——這裡只講大盤好不好，訊號怎麼用留給後面。 */}
-      {data?.market_breadth && ['red', 'severe_red', 'yellow'].includes(data.market_breadth.status) && (
-        <div className={`banner ${data.market_breadth.status === 'yellow' ? 'banner-warn' : 'banner-error'}`} role="status">
-          <AlertTriangle size={18} strokeWidth={1.75} />
-          <span>
-            {data.market_breadth.status === 'severe_red' ? '大盤明顯走弱' :
-              data.market_breadth.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'}
-            ——全市場僅 <b>{Math.round(data.market_breadth.breadth20 * 100)}%</b> 的股票站上月線
-            （20 日報酬中位 {data.market_breadth.median_ret20_pct >= 0 ? '+' : ''}{data.market_breadth.median_ret20_pct}%）。
-            候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。（此為市場廣度代理、非大盤指數；僅供參考、不改選股）
-          </span>
-        </div>
-      )}
+      {/* 「今天大盤怎樣」：2026-11-13 收成一行摘要（Andy 核准第 1 條），摘要裡保留最重要的一句
+          「請自行斟酌降低曝險」；完整數字與「市場廣度代理、非大盤指數」在展開內容，
+          後者也同時寫在「這些數字怎麼來的 → 限制」（預設可見）。 */}
+      {data?.market_breadth && ['red', 'severe_red', 'yellow'].includes(data.market_breadth.status) && (() => {
+        const mb = data.market_breadth
+        const label = mb.status === 'severe_red' ? '大盤明顯走弱' : mb.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'
+        return (
+          <div className={`mkt ${mb.status === 'yellow' ? 'mkt-warn' : 'mkt-down'}`} role="status">
+            <button className="mkt-sum" onClick={() => setMktOpen(o => !o)} aria-expanded={mktOpen} aria-controls="mkt-detail">
+              <TrendingDown size={18} strokeWidth={1.75} aria-hidden="true" />
+              <span><b>{label}</b>：僅 {Math.round(mb.breadth20 * 100)}% 站上月線，請自行斟酌降低曝險</span>
+              <ChevronDown className={`chevron ${mktOpen ? 'up' : ''}`} size={18} strokeWidth={2} aria-hidden="true" />
+            </button>
+            {mktOpen && (
+              <p className="mkt-detail" id="mkt-detail">
+                {label}——全市場僅 <b>{Math.round(mb.breadth20 * 100)}%</b> 的股票站上月線
+                （20 日報酬中位 {mb.median_ret20_pct >= 0 ? '+' : ''}{mb.median_ret20_pct}%）。
+                候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。（此為市場廣度代理、非大盤指數；僅供參考、不改選股）
+              </p>
+            )}
+          </div>
+        )
+      })()}
 
       {!data && !error && (
         <div className="center-state">
@@ -329,9 +325,9 @@ export default function App() {
       </ErrorBoundary>
 
       <footer className="app-footer">
-        <a className="help-link" href="#help"><BookOpen size={13} strokeWidth={2} />使用說明書</a>
+        <a className="help-link" href="#help"><BookOpen size={16} strokeWidth={1.75} />使用說明書</a>
         <span className="footer-sep">·</span>
-        資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議
+        資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議；歷史回測未必代表未來
       </footer>
     </div>
   )

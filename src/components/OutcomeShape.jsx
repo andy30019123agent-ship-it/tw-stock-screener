@@ -100,7 +100,7 @@ function FeatureBlock({ meta, data }) {
                 <div className="os-level-row"><span>賺時平均</span><b className="good">{signedPct(d.avg_win_pct)}</b></div>
                 <div className="os-level-row"><span>賠時平均</span><b className="bad">{signedPct(d.avg_loss_pct)}</b></div>
                 <div className="os-level-row"><span>中位數</span><b className={isNum(d.median_pct) && d.median_pct > 0 ? 'good' : 'bad'}>{signedPct(d.median_pct)}</b></div>
-                <div className="os-level-row os-level-ci"><span>獨立樣本／90% CI</span><span>{d.blocks ?? '—'} 批 · {ciText(d.ci90)}</span></div>
+                <div className="os-level-row os-level-ci"><span>獨立樣本／誤差範圍</span><span>{d.blocks ?? '—'} 批 · {ciText(d.ci90)}</span></div>
               </div>
             </div>
           )
@@ -112,7 +112,7 @@ function FeatureBlock({ meta, data }) {
             <tr>
               <th>層級</th>
               <th title="成本後絕對報酬 > 0 的比例">賺錢機率</th>
-              <th title="以約當獨立批次為單位、400 次 moving-block bootstrap 算出的 90% 信賴區間——只說明這一層自己有多不確定，不能拿來跟別層比顯著性">獨立樣本／90% CI</th>
+              <th title="以約當獨立批次為單位、400 次 moving-block bootstrap 算出的 90% 誤差範圍——只說明這一層自己有多不確定，不能拿來跟別層比顯著性">獨立樣本／賺錢機率誤差範圍</th>
               <th>賺時平均</th>
               <th>賠時平均</th>
               <th>中位數</th>
@@ -186,11 +186,11 @@ export default function OutcomeShape({ tierStats }) {
 
           <p className="os-note">
             <AlertTriangle size={15} strokeWidth={2} className="inline-warn-icon" />
-            <b>先看信賴區間，再看數字大小。</b>
+            <b>先看誤差範圍，再看數字大小。</b>
             持有 20 交易日彼此重疊，{tierStats.date ? '長歷史' : '樣本'}換算下來每個層級只有約
-            <b> {tierStats.features?.turnover?.high?.blocks ?? 19} 批</b>獨立進場，所以每一格都附了信賴區間。
-            <b>兩層的信賴區間有重疊，不代表兩層一樣，也不代表哪層比較好</b>——那要看同一天配對比較，
-            結果寫在上面「這些數字怎麼來的」第一段；這張表本身只說明每一層自己有多不確定。
+            <b> {tierStats.features?.turnover?.high?.blocks ?? 19} 批</b>獨立進場，所以每一格都附了誤差範圍。
+            <b>兩層的誤差範圍有重疊，不代表兩層一樣，也不代表哪層比較好</b>——那要看同一天配對比較，
+            結果寫在上面「結論」那一層；這張表本身只說明每一層自己有多不確定。
           </p>
         </>)}
       </>)}
