@@ -11,9 +11,11 @@
 - token 由環境變數 TG_BOT_TOKEN 帶入（GitHub Secret），群組 id 預設叔叔名牌TG。
 
 2026-07-26（Andy 裁示「不用幫我配好購買組合，我自己會挑」）：快報從「①②③…固定檔數編號清單」
-改成「勝率偏優／報酬偏優／雙優」三分類摘要，不再有任何暗示購買順序或組合的字樣——
-候選現在有上百檔，全列不可能、硬選幾檔又會被讀成「這幾檔就是建議買的」，改成分類摘要
-＋「共 N 檔，列前 M 檔」的措辭，把「這只是舉例、不是清單」講清楚。
+改成分類摘要，不再有任何暗示購買順序或組合的字樣——候選現在有上百檔，全列不可能、硬選幾檔
+又會被讀成「這幾檔就是建議買的」，改成分類摘要＋「共 N 檔，列前 M 檔」的措辭。
+2026-11-13 分類簡化：原本三分類只有「成交金額高」站得住，改成只有一個分類「相對優勢」
+（成交金額在當日候選池前 1/3）＋「乖離高」純描述標籤；主訊息改講「同一天互相比」的差距
+（tier_stats.json 的 paired.cat_edge_vs_rest），單檔賺錢機率照實放旁邊。
 
 本機測試：
   python pipeline/notify_tg.py --dry-run          # 只印訊息不發、不動 state
@@ -21,12 +23,14 @@
 """
 import argparse
 import json
+import math
 import os
 import sys
 import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(__file__))
+from opportunities import normalize_tier, TIER_EDGE   # noqa: E402  分類相容與線上同一支
 
 CHAT_ID = os.environ.get("TG_CHAT_ID", "-5127072553")  # 群組「叔叔名牌TG」
 SITE = "https://andy30019123agent-ship-it.github.io/tw-stock-screener/"
@@ -41,10 +45,12 @@ def load_opportunity_picks(dd):
     同一天兩邊可能推薦完全不同的股票——使用者看到的是兩套互相矛盾的建議。以網站那份為準，
     快報就只負責「把同一份結論寫成人看得懂的訊息」。
 
-    回 (picks, reason)：
-      ([{"id": "2395", "tier": "win"}, ...], "ok")   正常
-      ([], "ok")                                     檔案正常但今天零檔 → **這是真實結論**
-      (None, "missing")                               檔案讀不到／日期對不上 → **這是管線故障**
+    回 (picks, reason, gate)：
+      ([{"id": "2395", "tier": "edge", "bias_high": False}, ...], "ok", gate)   正常
+      ([], "ok", gate)                               檔案正常但今天零檔 → **這是真實結論**
+      (None, "missing", None)                        檔案讀不到／日期對不上 → **這是管線故障**
+    tier／bias_high 一律經 opportunities.normalize_tier：舊檔（2026-11-13 以前）的三分類舊值
+    也能讀，不 crash。gate＝opportunities.json 的 gate（門檻有沒有套用）。
 
     ⚠️ 2026-07-25 改（Andy 裁示「候選不足就不用硬要呈現」）：原本回不到就退回自有排序湊數，
     結果是①快報與網站說不同的話②score>=4 在權重改版後幾乎不可能達到，於是實際行為變成
@@ -55,10 +61,14 @@ def load_opportunity_picks(dd):
         with open(OPP_PATH, encoding="utf-8") as f:
             opp = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None, "missing"
+        return None, "missing", None
     if dd and opp.get("date") and opp["date"] != dd:
-        return None, "missing"
-    return [{"id": p["id"], "tier": p.get("tier")} for p in (opp.get("picks") or [])], "ok"
+        return None, "missing", None
+    out = []
+    for p in (opp.get("picks") or []):
+        tier, bias_high = normalize_tier(p)
+        out.append({"id": p["id"], "tier": tier, "bias_high": bias_high})
+    return out, "ok", opp.get("gate")
 
 
 def data_date(stocks):
@@ -155,11 +165,10 @@ MARKET_STATUS_LABEL = {
     "red": "偏弱（空頭）", "severe_red": "明顯走弱（空頭）",
 }
 
-# 候選情報三分類標籤與圖示（tier 值來自 opportunities.py：win/both/return/None）。
-# ⚠️ 2026-11-13 候選池重播：「報酬偏優」跟未分類同日比量不出差別，標籤字面目前沒有證據支撐；
-# 改名屬產品決策，待 Andy 拍板（見 _reports/重算_候選池層級統計_2026-11-13.md）。
-TIER_LABEL = {"both": "雙優候選（勝率、報酬都偏優）", "win": "勝率偏優候選", "return": "報酬偏優候選"}
-TIER_ICON = {"both": "🎯", "win": "📈", "return": "💰"}
+# 候選情報分類（2026-11-13 起只剩一類）：tier 值來自 opportunities.py（"edge"／None）。
+EDGE_LABEL = "相對優勢候選"
+EDGE_ICON = "🎯"
+BIAS_TAG = "乖離高"   # 純描述標籤（當天候選池乖離前 1/3），不可包裝成加分
 
 # 每個分類段落最多列幾檔：手機閱讀考量，候選現在有上百檔、不可能全列。5 檔足夠給「大概
 # 長什麼樣子」的感覺，完整名單導去網站看。這是「畫面顯示筆數」不是「建議買幾檔」——
@@ -169,16 +178,19 @@ TIER_PREVIEW_N = 5
 # 條件層級歷史分佈（與網站同一份 JSON）。快報的提醒句數字一律從這裡讀，不再寫死。
 TIER_STATS_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "data", "tier_stats.json")
 
-# 固定提醒（2026-07-26 規格；2026-11-13 改成讀 JSON）：候選是「情報」不是「配好的組合」，
-# 且要講清楚就算是成交金額最高的那一層，單檔歷史賺錢機率是多少、優勢（若有）來自哪裡。
-# 🔴 2026-11-13：原本寫死「49%／賺時 +16%／賠時 −10%」——那是 2026-07-26 用**錯的母體**
-# （所有訊號事件，不是網站上的候選池）算的，而且寫死的數字下次重算就會跟網站不一致
-# （Codex 建議 5）。改成讀 tier_stats.json（候選池重播母體）現算；讀不到就只講不含數字的版本。
+# 固定提醒（2026-07-26 規格；2026-11-13 改成讀 JSON、主訊息改成同日配對差）：
+# 候選是「情報」不是「配好的組合」。數字一律讀 tier_stats.json（候選池重播母體），不寫死；
+# 讀不到或 stale 就只講不含數字的版本（與網站 src/lib/tierVerdict.js 同一套判斷）。
 DISCLAIMER_BASE = "⚠️ 這不是購買組合。"
+EV_NEAR_ZERO_PP = 0.5   # 期望值差的 CI 下限 >0 但 < 這個值 → 「略高，但接近量不出」（與網站同值）
 
 
 def _num(v):
-    return isinstance(v, (int, float)) and v == v
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf")
+
+
+def _ci(c):
+    return c if isinstance(c, (list, tuple)) and len(c) == 2 and _num(c[0]) and _num(c[1]) else None
 
 
 def load_tier_stats(path=None):
@@ -189,28 +201,111 @@ def load_tier_stats(path=None):
         return None
 
 
+def _usable_pair(tiers, key):
+    """與網站 tierVerdict.usablePair 同規則：stale／缺欄位 → None。"""
+    if not isinstance(tiers, dict) or tiers.get("stale"):
+        return None
+    p = (tiers.get("paired") or {}).get(key)
+    if not isinstance(p, dict) or not _num(p.get("win_pp")) or not _ci(p.get("win_ci90")):
+        return None
+    return p
+
+
+def _verdict(ci):
+    ci = _ci(ci)
+    if not ci:
+        return None
+    return "better" if ci[0] > 0 else "worse" if ci[1] < 0 else "nodiff"
+
+
+def _r1(v):
+    """|v| 四捨五入到 0.1，算式與網站 tierVerdict.js 的 r1 相同（floor(|x|×10+0.5)），兩邊才逐字一致。"""
+    return f"{math.floor(abs(v) * 10 + 0.5) / 10:.1f}"
+
+
+def _f1(v):
+    return _r1(v)
+
+
+def _n1(v):
+    r = _r1(v)
+    return ("−" if v < 0 and r != "0.0" else "") + r
+
+
+def _rng(c):
+    return f"{_n1(c[0])}～{_n1(c[1])}"
+
+
+def stale_note(tiers):
+    if isinstance(tiers, dict) and tiers.get("stale"):
+        return f"（⚠️ 統計已過期，上次成功重算 {tiers.get('date') or '—'}）"
+    return ""
+
+
 def tier_disclaimer(tiers):
-    """提醒句：讀 tier_stats.json 的成交金額高層（＝「勝率偏優」分類依據）。缺欄位就退回無數字版。"""
-    hi = (((tiers or {}).get("features") or {}).get("turnover") or {}).get("high") or {}
-    if not all(_num(hi.get(k)) for k in ("win_rate", "avg_win_pct", "avg_loss_pct", "ev_pct")):
-        return (DISCLAIMER_BASE + "條件層級的歷史數字今天讀不到，單檔賺錢機率請以網站「這些數字怎麼來的」為準。")
-    wr = hi["win_rate"] * 100
-    half = "不到一半" if wr < 50 else "略過一半" if wr < 55 else "過半"
-    ev = hi["ev_pct"]
-    ci_ev = hi.get("ci90_ev")
-    ev_lo = ci_ev[0] if isinstance(ci_ev, (list, tuple)) and len(ci_ev) == 2 and _num(ci_ev[0]) else None
-    # 只有期望值的 90% CI 下限 > 0 才講「優勢」；跨 0 就不宣稱（2026-11-13 驗收：高層 CI −3.3～+6.1）
-    if ev <= 0:
-        tail = "期望值是負的，代表扣完成本平均是虧的。"
-    elif ev_lo is not None and ev_lo > 0 and wr < 50:
-        tail = "這套的優勢在賺賠幅度，不是在勝率。"
+    """主訊息：相對優勢 vs 當日其餘候選的同日配對差＋相對優勢的單檔賺錢機率＋平均每筆差。
+    幅度宣稱規則（與網站同）：CI 下限 >0 才講「多」，且一律附誤差範圍；下限 <0.5pp 用保守說法。"""
+    if isinstance(tiers, dict) and tiers.get("stale"):
+        return (DISCLAIMER_BASE + "相對優勢跟其他候選的比較" + stale_note(tiers)
+                + "，今天先不引用數字，有分類也可能虧錢。")
+    p = _usable_pair(tiers, "cat_edge_vs_rest")
+    if not p:
+        return DISCLAIMER_BASE + "相對優勢跟其他候選的歷史比較今天讀不到，有分類也可能虧錢。"
+    v = _verdict(p["win_ci90"])
+    rng = _rng(p["win_ci90"])
+    if v == "better":
+        head = f"同一天的候選裡，相對優勢這群比其他候選的賺錢機率多約 {_f1(p['win_pp'])} 個百分點（誤差範圍 {rng}）"
+    elif v == "worse":
+        head = f"同一天的候選裡，相對優勢這群比其他候選的賺錢機率少約 {_f1(p['win_pp'])} 個百分點（誤差範圍 {rng}）"
     else:
-        tail = "平均看起來略正，但誤差範圍跨過 0，不能說有優勢。"
-    stale = "（⚠️ 這份數字已過期）" if tiers.get("stale") else ""
-    return (f"{DISCLAIMER_BASE}單檔就算落在成交金額最高的那一層，歷史賺錢機率也只有 "
-            f"{wr:.1f}%（{half}；{tiers.get('date') or '—'} 用歷史候選池重算{stale}），"
-            f"賺時約 {hi['avg_win_pct']:+.0f}%、賠時約 {hi['avg_loss_pct']:+.0f}%"
-            f"、期望值 {ev:+.1f}%。{tail}").replace("約 -", "約 −")
+        head = (f"同一天的候選裡，相對優勢這群跟其他候選的賺錢機率量不出差別"
+                f"（差 {'+' if p['win_pp'] >= 0 else '−'}{_f1(p['win_pp'])} 個百分點，誤差範圍 {rng}）")
+    eci = _ci(p.get("ev_ci90"))
+    ev = p.get("ev_pp")
+    if eci and _num(ev):
+        if eci[0] >= EV_NEAR_ZERO_PP:
+            head += f"，平均每筆也多約 {_f1(ev)} 個百分點（誤差範圍 {_rng(eci)}）"
+        elif eci[0] > 0:
+            head += f"，平均每筆略高約 {_f1(ev)} 個百分點，但接近量不出（誤差範圍 {_rng(eci)}）"
+        elif eci[1] < 0:
+            head += f"，平均每筆少約 {_f1(ev)} 個百分點（誤差範圍 {_rng(eci)}）"
+        else:
+            head += f"，平均每筆量不出差別（誤差範圍 {_rng(eci)}）"
+    edge = ((tiers.get("categories") or {}).get("edge") or {})
+    wr = edge.get("win_rate")
+    if _num(wr):
+        tail = (f"。但單檔賺錢機率只有 {wr * 100:.1f}%，不到一半" if wr < 0.5
+                else f"。單檔賺錢機率 {wr * 100:.1f}%，過半也不代表穩賺")
+    else:
+        tail = "。單檔賺錢機率請以網站為準"
+    when = f"（{tiers.get('date') or '—'} 用歷史候選池重算）"
+    return f"{DISCLAIMER_BASE}{head}{tail}{when}。"
+
+
+def gate_note(gate, tiers):
+    """門檻退回日的一句提醒（不切換整組統計數字）；門檻有套用回空字串。數字讀 by_gate.fallback。"""
+    if not isinstance(gate, dict) or gate.get("applied") is not False:
+        return ""
+    if gate.get("reason") != "pool_too_small":
+        return "⚠️ 今天強弱資料算不出來、強勢門檻沒套用，分類請保守看。"
+    base = "⚠️ 今天過強勢門檻的候選不足，門檻已放寬；"
+    t = tiers if isinstance(tiers, dict) else {}
+    cats = (((t.get("by_gate") or {}).get("fallback") or {}).get("categories") or {})
+    e, r = (cats.get("edge") or {}).get("win_rate"), (cats.get("rest") or {}).get("win_rate")
+    if t.get("stale") or not (_num(e) and _num(r)):
+        return base + "這種日子的歷史數字讀不到，分類請保守看。"
+    nums = f"（相對優勢賺錢機率 {e * 100:.1f}%、其他候選 {r * 100:.1f}%）"
+    if e < r:
+        return base + f"歷史上這種日子分類方向曾經相反{nums}。"
+    return base + f"歷史上這種日子分類的差距跟平常不一樣{nums}，請保守看。"
+
+
+def bias_note(tiers):
+    """「乖離高」標籤說明：只是描述；同日比量不出差別時照實講。"""
+    p = _usable_pair(tiers, "bias_high_vs_rest")
+    if p and _verdict(p["win_ci90"]) == "nodiff" and _verdict(p.get("ev_ci90")) in ("nodiff", None):
+        return f"「{BIAS_TAG}」只是描述（當天候選裡乖離前 1/3），量不出比較常賺或賺比較多。"
+    return f"「{BIAS_TAG}」只是描述（當天候選裡乖離前 1/3），不代表比較好。"
 
 
 def market_status_line(d):
@@ -225,7 +320,7 @@ def market_status_line(d):
     return f"市場狀態：{label}{detail}"
 
 
-def _tier_section(tier, group):
+def _tier_section(group, bias_by_id=None):
     """組一個分類段落：標題「共 N 檔，這裡列前 M 檔」＋每檔一行摘要（無序號，避免暗示買序）。
 
     group：已經照 opportunities.json 原始順序、只含這個 tier 的候選（stock dict list）。
@@ -239,8 +334,9 @@ def _tier_section(tier, group):
     一模一樣的坑（「前 3 名標最高信心」實測被推翻，第 2 名反而是全場最差、賺錢機率 45.1%）。
     有證據的是「有沒有進這個層級」，不是「在層級裡排第幾」，所以標題下面必須明說順序不是排名。
     """
+    bias_by_id = bias_by_id or {}
     shown = group[:TIER_PREVIEW_N]
-    lines = [f"{TIER_ICON[tier]} {TIER_LABEL[tier]}（共 {len(group)} 檔，這裡列前 {len(shown)} 檔）",
+    lines = [f"{EDGE_ICON} {EDGE_LABEL}（共 {len(group)} 檔，這裡列前 {len(shown)} 檔）",
              "（照候選清單原始順序，不是好壞排名）"]
     if not shown:
         lines.append("（目前沒有符合的候選）")
@@ -248,7 +344,8 @@ def _tier_section(tier, group):
     for s in shown:
         chg = s.get("change_pct", 0)
         sign = "+" if chg >= 0 else ""
-        lines.append(f"・{s['name']} {s['id']}　{sign}{chg:g}%")
+        tag = f"　［{BIAS_TAG}］" if bias_by_id.get(s["id"]) else ""
+        lines.append(f"・{s['name']} {s['id']}　{sign}{chg:g}%{tag}")
         rs = " · ".join(reasons(s))
         if rs:
             lines.append(rs)
@@ -268,11 +365,12 @@ def build_message(d):
     mmdd = "/".join(dd.split("-")[1:]) if dd else "—"
     # 候選一律以網站的「今日候選」為準（同一套回測權重），讓網站與 TG 說同一套話。
     by_id = {s["id"]: s for s in stocks}
-    opp_picks, opp_reason = load_opportunity_picks(dd)
+    opp_picks, opp_reason, gate = load_opportunity_picks(dd)
     # 🔴 2026-07-25（Andy 裁示「候選不足就不用硬要呈現」）：這裡原本有一條「湊數退路」，
     # 檔案缺席時改用自有排序硬選 10 檔。已移除——快報與網站必須說同一套話，
     # 名單產不出來就照實說「產不出來」，不要生一份來源不同的清單假裝正常。
     tier_by_id = {p["id"]: p.get("tier") for p in (opp_picks or [])}
+    bias_by_id = {p["id"]: p.get("bias_high") for p in (opp_picks or [])}
     ranked = [by_id[p["id"]] for p in (opp_picks or []) if p["id"] in by_id]
     # 檔案有、但裡面的代號在 screener 裡都找不到 → 也是資料異常，不是零檔
     if opp_picks and not ranked:
@@ -304,24 +402,28 @@ def build_message(d):
             lines.append(sep)
             lines.append("今天沒有個股通過門檻（名單正常產出、就是零檔）——這是有效結論，可以觀望。")
     else:
-        # 候選情報三分類（2026-07-26 起）：不再是固定檔數的「精選」編號清單——候選現在有
-        # 上百檔，Andy 拍板「不用幫我配好組合、我自己會挑」，所以只依 tier 分成三個段落給概況，
-        # 完整清單導去網站看。tier=="both" 只在「雙優」段落出現一次（見 _tier_section 的
-        # 呼叫方式：三段落用 tier 互斥切分，同一檔股票不會同時落在兩段）。
+        # 候選情報（2026-11-13 起只剩「相對優勢」一類）：完整清單導去網站看。
+        # 主訊息＝同日配對差（tier_disclaimer），門檻退回日加一句提醒（gate_note）。
         lines = [
             f"📊 台股選股快報 {mmdd}",
             f"資料正常｜掃描 {cnt} 檔有量個股，候選共 {len(ranked)} 檔",
         ]
         if mkt:
             lines.append(mkt)
-        both = [s for s in ranked if tier_by_id.get(s["id"]) == "both"]
-        win_only = [s for s in ranked if tier_by_id.get(s["id"]) == "win"]
-        ret_only = [s for s in ranked if tier_by_id.get(s["id"]) == "return"]
-        for tier, group in (("both", both), ("win", win_only), ("return", ret_only)):
-            lines.append(sep)
-            lines.extend(_tier_section(tier, group))
+        tiers = load_tier_stats()
         lines.append(sep)
-        lines.append(tier_disclaimer(load_tier_stats()))
+        lines.append(tier_disclaimer(tiers))
+        gn = gate_note(gate, tiers)
+        if gn:
+            lines.append(gn)
+        edge = [s for s in ranked if tier_by_id.get(s["id"]) == TIER_EDGE]
+        lines.append(sep)
+        lines.extend(_tier_section(edge, bias_by_id))
+        if any(bias_by_id.get(s["id"]) for s in edge[:TIER_PREVIEW_N]):
+            lines.append(bias_note(tiers))
+        rest_n = len(ranked) - len(edge)
+        if rest_n > 0:
+            lines.append(f"其他候選 {rest_n} 檔沒有分類稱號，完整清單請看網站。")
 
     lines.append(sep)
     lines.append(f"🔗 完整清單 {SITE}")

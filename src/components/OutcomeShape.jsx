@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Dices, AlertTriangle } from 'lucide-react'
+import { staleText } from '../lib/tierVerdict'
 
 // 條件層級分佈卡（2026-07-26 全面重寫）。
 //
@@ -24,11 +25,11 @@ import { ChevronDown, ChevronRight, Dices, AlertTriangle } from 'lucide-react'
 
 const FEATURES = [
   {
-    key: 'turnover', label: '成交金額', usedFor: '候選清單「勝率偏優」分類依據',
+    key: 'turnover', label: '成交金額', usedFor: '候選清單「相對優勢」分類依據（當天候選池前 1/3）',
     hint: '20 日均量 × 收盤價，當日候選池內切三分位',
   },
   {
-    key: 'bias20_pct', label: '20 日乖離', usedFor: '候選清單「報酬偏優」分類依據',
+    key: 'bias20_pct', label: '20 日乖離', usedFor: '「乖離高」標籤依據（純描述，不代表比較好）',
     hint: '現價偏離 20 日均線的百分比，當日候選池內切三分位',
   },
   {
@@ -110,7 +111,7 @@ function FeatureBlock({ meta, data }) {
             <tr>
               <th>層級</th>
               <th title="成本後絕對報酬 > 0 的比例">賺錢機率</th>
-              <th title="19 個約當獨立批次、400 次 moving-block bootstrap 算出的 90% 信賴區間——只說明這一層自己有多不確定，不能拿來跟別層比顯著性">獨立樣本／90% CI</th>
+              <th title="以約當獨立批次為單位、400 次 moving-block bootstrap 算出的 90% 信賴區間——只說明這一層自己有多不確定，不能拿來跟別層比顯著性">獨立樣本／90% CI</th>
               <th>賺時平均</th>
               <th>賠時平均</th>
               <th>中位數</th>
@@ -174,7 +175,7 @@ export default function OutcomeShape({ tierStats }) {
           {tierStats.stale && (
             <p className="os-warn">
               <AlertTriangle size={15} strokeWidth={2} className="inline-warn-icon" />
-              <b>這份統計最近一次重算失敗</b>，下面是上一次成功的數字，可能過期。
+              <b>{staleText(tierStats)}</b>：最近一次重算失敗，下面是上一次成功的數字，可能過時。
             </p>
           )}
 
@@ -187,8 +188,8 @@ export default function OutcomeShape({ tierStats }) {
             <b>先看信賴區間，再看數字大小。</b>
             持有 20 交易日彼此重疊，{tierStats.date ? '長歷史' : '樣本'}換算下來每個層級只有約
             <b> {tierStats.features?.turnover?.high?.blocks ?? 19} 批</b>獨立進場，所以每一格都附了信賴區間。
-            <b>兩層的信賴區間有重疊，不代表兩層一樣，也不代表哪層一定比較好</b>——那需要同一天配對比較才量得出來，
-            這裡還沒做，看到重疊時只能說「目前量不出誰比較好」。
+            <b>兩層的信賴區間有重疊，不代表兩層一樣，也不代表哪層比較好</b>——那要看同一天配對比較，
+            結果寫在上面「這些數字怎麼來的」第一段；這張表本身只說明每一層自己有多不確定。
           </p>
         </>)}
       </>)}

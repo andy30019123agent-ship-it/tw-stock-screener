@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """重算條件層級統計＋雙優驗證（正確母體），並輸出「舊母體 vs 新母體」對照。
 
+📌 分類已於 2026-11-13 簡化（只剩「相對優勢」一類＋「乖離高」描述標籤，見 opportunities.TIER_SCHEME）。
+本檔仍是「手動重算 tier_stats.json」的驅動腳本；其中雙優四格（both_tier_check.json、
+event_both_check）僅供歷史對照，網站已不再有「雙優」這個分類。
+
 🔴 2026-11-13 重寫：舊版（2026-07-26）把 collect_events 的**所有訊號事件**當母體分層——
 任一 raw signal 成立就收（含多頭排列等展示型訊號、均量 300 張起）。網站上被分類的卻是
 「最終候選池」（引擎訊號＋500 張＋強勢雙確認門檻＋營收濾網，百分位在池內排）。兩者不是
@@ -98,7 +102,8 @@ def main():
         "computed": new["computed"], "population": new["meta"]["population_label"],
         "candidate_pool": new["both_check"],
         "old_population_all_signal_events": old_both,
-        "note": "candidate_pool＝正確母體；old_population 只供對照（2026-07-26 誤用的母體，成本已改 _apply_cost）",
+        "note": "分類已於 2026-11-13 簡化（網站只剩「相對優勢」），此檔僅供歷史對照。"
+                "candidate_pool＝正確母體；old_population 只供對照（2026-07-26 誤用的母體，成本已改 _apply_cost）",
     }
     with open(os.path.join(HERE, "both_tier_check.json"), "w", encoding="utf-8") as f:
         json.dump(both_out, f, ensure_ascii=False, indent=1)
@@ -126,8 +131,8 @@ def main():
         print(f"--- 門檻{g}：{sub['meta']['days_total']} 天、候選 {sub['meta']['candidates_total']} 筆")
         for t in ts.TIERS:
             print(line(f"  turn {t}", sub["features"]["turnover"][t]))
-        for k in ("both", "win", "return", "unclassified"):
-            print(line(f"  {k}", sub["categories"][k]))
+        for k in ("edge", "rest", "bias_high", "not_bias_high"):
+            print(line(f"  {k}", sub["categories"].get(k)))
     print("同日配對差（pp）：")
     for k, v in new["paired"].items():
         print(f"  {k:24} 勝率 {v['win_pp']:+.2f} CI{v['win_ci90']}  每筆 {v['ev_pp']:+.2f} CI{v['ev_ci90']}"

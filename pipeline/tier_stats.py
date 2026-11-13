@@ -292,7 +292,8 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
     """條件層級統計（正確母體版）。輸出 schema 與 compute_tier_stats 相容（features.*.high/mid/low），
     另加：
       both_check：成交金額高 × 乖離高 的四格互斥（both／turn_only／bias_only／neither）
-      categories：線上 tier 分類本身（both／win／return／unclassified）的歷史表現
+      categories：線上分類本身的歷史表現（2026-11-13 起 edge＝相對優勢／rest＝其餘候選；
+                  bias_high／not_bias_high＝「乖離高」描述標籤有／沒有）
       all：當天有分類的候選池全體（基準）
       meta：母體定義、各種跳過的天數／筆數、沒重播的濾網
     規則：
@@ -320,7 +321,9 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
     tie_days = {f: 0 for f in FEATURES}
     missing = {f: 0 for f in FEATURES}
     both_entries = {k: [] for k in ("both", "turn_only", "bias_only", "neither")}
-    cat_entries = {k: [] for k in ("both", "win", "return", "unclassified")}
+    # 2026-11-13 分類簡化：線上只剩 tier="edge"（相對優勢）一類；分類直接讀 build_opportunities
+    # 給的 tier／bias_high（線上同一支函式），不在這裡另判一次。
+    cat_entries = {k: [] for k in ("edge", "rest", "bias_high", "not_bias_high")}
     all_entries = []
     meta = {"days_total": len(days), "days_small_pool": 0, "days_classified": 0,
             "days_gate_applied": 0, "days_both_check_skipped_tie": 0,
@@ -349,7 +352,8 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
                 continue
             entry = (date, net_fn(ret))
             all_entries.append(entry)
-            cat_entries[p.get("tier") or "unclassified"].append(entry)
+            cat_entries["edge" if p.get("tier") == op.TIER_EDGE else "rest"].append(entry)
+            cat_entries["bias_high" if p.get("bias_high") else "not_bias_high"].append(entry)
             lv = {f: op.feature_level(p["feat_pct"][f]) for f in FEATURES}
             for f in FEATURES:
                 if f in skip_feat:
@@ -386,6 +390,10 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
         "cost": "backtest_signals._apply_cost（乘除式）",
         "bootstrap": f"circular moving-block，block={block}，n_boot={n_boot}，截成恰好 n_days",
         "min_tier_pool": op.MIN_TIER_POOL, "max_tie_share": round(MAX_TIE_SHARE, 4),
+        "tier_scheme": op.TIER_SCHEME,
+        "tier_rule": {"edge": f"相對優勢＝成交金額在當日候選池內百分位 ≥ {op.TIER_HIGH_PCT}（前 1/3）",
+                      "bias_high": f"乖離高（純描述標籤）＝20 日乖離在當日候選池內百分位 ≥ {op.TIER_HIGH_PCT}",
+                      "rest": "其餘候選（不給分類稱號）"},
         "tier_cut": {"high": f"候選池內百分位 ≥ {op.TIER_HIGH_PCT}",
                      "mid": f"{op.TIER_MID_PCT} ≤ 百分位 < {op.TIER_HIGH_PCT}",
                      "low": f"百分位 < {op.TIER_MID_PCT}"},
@@ -424,11 +432,10 @@ def _paired_block(feat_entries, both_entries, cat_entries, block, n_boot, seed):
         "both_vs_neither": (both_entries["both"], both_entries["neither"]),
         "turn_only_vs_neither": (both_entries["turn_only"], both_entries["neither"]),
         "bias_only_vs_neither": (both_entries["bias_only"], both_entries["neither"]),
-        # 線上分類本身（網站上真的出現的四群）
-        "cat_both_vs_unclassified": (cat_entries["both"], cat_entries["unclassified"]),
-        "cat_win_vs_unclassified": (cat_entries["win"], cat_entries["unclassified"]),
-        "cat_return_vs_unclassified": (cat_entries["return"], cat_entries["unclassified"]),
-        "cat_both_vs_win": (cat_entries["both"], cat_entries["win"]),
+        # 線上分類本身（2026-11-13 起網站上的主訊息）：相對優勢 vs 當日其餘全部候選
+        "cat_edge_vs_rest": (cat_entries["edge"], cat_entries["rest"]),
+        # 「乖離高」描述標籤 vs 當日其餘候選（說明處要照實講量不量得出差別）
+        "bias_high_vs_rest": (cat_entries["bias_high"], cat_entries["not_bias_high"]),
     }
     out = {}
     for name, (a, b) in pairs.items():

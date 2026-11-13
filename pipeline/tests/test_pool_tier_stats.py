@@ -47,7 +47,10 @@ def test_重播走build_opportunities且分類與線上相同():
     # 12 檔、turnover 與報酬同序：前 1/3（百分位 ≥0.67 → 後 4 檔）全贏
     assert out["features"]["turnover"]["high"]["samples"] == 4
     assert out["features"]["turnover"]["high"]["win_rate"] == 1.0
-    assert out["categories"]["both"]["samples"] == 4      # turnover 與 bias 同序 → 前段都雙優
+    assert out["categories"]["edge"]["samples"] == 4      # 相對優勢＝成交金額前 1/3
+    assert out["categories"]["rest"]["samples"] == 8
+    assert out["categories"]["bias_high"]["samples"] == 4  # turnover 與 bias 同序
+    assert out["meta"]["tier_scheme"] == op.TIER_SCHEME
     assert out["meta"]["population"] == "candidate_pool_replay"
     assert out["meta"]["not_replayed"], "沒重播的濾網必須寫進 metadata"
 
@@ -94,11 +97,14 @@ def test_缺值永不達標且計數():
     rows = _day()
     for r in rows:
         r["rs_pct_60"] = None
-    rows[-1]["rs_pct_60"] = 0.5                    # 只有一檔有值
+    rows[-1]["rs_pct_60"] = 0.5                    # 只有兩檔有值
+    rows[-2]["rs_pct_60"] = 0.3
     out = ts.compute_pool_tier_stats({"2025-03-03": rows}, net_fn=ID, n_boot=20)
     rs = out["features"]["rs_pct_60"]
-    assert rs["missing_values"] == 11
-    assert sum(rs[t]["samples"] for t in ts.TIERS) == 1, "缺值不可被當成任何層級（只剩有值那檔）"
+    assert rs["missing_values"] == 10
+    assert sum(rs[t]["samples"] for t in ts.TIERS) == 2, "缺值不可被當成任何層級（只剩有值那兩檔）"
+    # 2026-11-13：缺值不參加排名 → 有值的兩檔之間排，低的那檔是 low（0.0）、高的是 high（1.0）
+    assert rs["low"]["samples"] == 1 and rs["high"]["samples"] == 1
 
 
 def test_量不出報酬的候選仍佔名次但不進統計():
@@ -208,3 +214,19 @@ def test_by_gate_門檻套用與退回分開算():
     assert out["by_gate"]["fallback"]["all"]["win_rate"] == 0.0
     assert out["by_gate"]["applied"]["all"]["samples"] + out["by_gate"]["fallback"]["all"]["samples"] \
         == out["all"]["samples"]
+
+
+def test_paired_相對優勢對其餘候選_同日配對():
+    """2026-11-13 新主訊息：相對優勢 vs 當日其餘全部候選（不是 vs 後 1/3）。
+    d1：前 4 檔全贏、其餘 8 檔全輸 → +100pp；d2：前 4 檔全輸、其餘 8 檔一半贏 → −50pp；平均 +25。"""
+    d1 = _day()
+    d2 = _day(rets=[(0.05 if i % 2 == 0 else -0.05) if i < 8 else -0.05 for i in range(12)])
+    out = ts.compute_pool_tier_stats({"2025-03-03": d1, "2025-03-04": d2}, net_fn=ID, n_boot=20)
+    p = out["paired"]["cat_edge_vs_rest"]
+    assert p["days"] == 2
+    assert p["win_pp"] == 25.0
+    assert p["first_half_win_pp"] == 100.0 and p["second_half_win_pp"] == -50.0
+    assert "turnover_high_vs_low" in out["paired"] and "bias_high_vs_rest" in out["paired"]
+    assert not any(k.startswith("cat_both") or k.startswith("cat_win") or k.startswith("cat_return")
+                   for k in out["paired"]), "舊三分類的配對不該再出現"
+    assert set(out["by_gate"]["applied"]["categories"]) == {"edge", "rest", "bias_high", "not_bias_high"}

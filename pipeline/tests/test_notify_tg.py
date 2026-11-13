@@ -15,7 +15,7 @@
 測試還是綠的，卻**完全沒測到編號**。現在改成寫一份真的 opportunities.json 再測。
 
 2026-07-26 再改：Andy 裁示「不用幫我配好購買組合，我自己會挑」。opportunities.json 的
-picks 不再截斷成固定檔數（今天實跑 142 檔），每檔多了 tier（win/both/return/None）。
+picks 不再截斷成固定檔數（今天實跑 142 檔），每檔多了 tier（2026-11-13 起 edge/None，舊檔可能有 win/both/return）。
 快報從「①②③…⑩ 編號單一清單」改成「勝率偏優／報酬偏優／雙優」三分類摘要，不再有任何
 暗示購買順序或組合的字樣（圈號 ①②③、「精選」、「Top」都不行）。
 `_num`/`CIRCLED`（圈號防爆）連同它的迴歸測試一起移除——不是「放寬斷言讓它綠」，而是
@@ -119,120 +119,127 @@ def test_uses_website_order_exactly(tmp_path, monkeypatch):
 
 
 def test_many_candidates_render_without_crash_and_group_by_tier(tmp_path, monkeypatch):
-    """142 檔的實際候選規模不可能全塞進手機訊息，這裡用 20 檔（涵蓋三個 tier + None）驗證：
-    ① 大量候選不會 crash（迴歸 2026-07-25 TOP_N 5→10 時圈號 IndexError 炸掉整條推播的教訓，
-       這是新設計下「候選檔數變動不能讓訊息組裝爆掉」這件事的守門測試）
-    ② tier 正確分流到三個段落，None 不進任何分類段落
-    ③ 每段落超過顯示上限時會被截斷（不是全部塞進去），且順序保留（截斷取「前幾筆」不是亂選）。
-    """
-    tiers = (["both"] * 3 + ["win"] * 8 + ["return"] * 6 + [None] * 3)   # 共 20 檔
+    """大量候選不會 crash（迴歸 2026-07-25 TOP_N 5→10 時圈號 IndexError 炸掉整條推播的教訓）；
+    2026-11-13 起只有「相對優勢」一段：edge 才列、超過顯示上限截斷且保留順序、None 不列。
+    同時混入舊三分類值（both/win/return）驗證歷史檔相容：both/win＝相對優勢、return＝無分類。"""
+    tiers = (["edge"] * 3 + ["win"] * 2 + ["both"] * 3 + ["return"] * 6 + [None] * 6)   # 共 20 檔
     ids = [str(9000 + i) for i in range(len(tiers))]
     _write_opp(tmp_path, monkeypatch, "2026-07-24", ids, tiers=tiers)
     stocks = [_stock(id=i, name=f"測試{i}", signal_ma=True) for i in ids]
     text, dd = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
     assert dd == "2026-07-24"
-
-    assert "共 3 檔" in text   # 雙優（3 檔，不截斷）
-    assert "共 8 檔" in text   # 勝率偏優（8 檔，超過顯示上限）
-    assert "共 6 檔" in text   # 報酬偏優（6 檔，超過顯示上限）
-
-    # 雙優 3 檔全顯示
-    for i in ids[0:3]:
+    assert "相對優勢候選（共 8 檔，這裡列前 5 檔）" in text
+    for i in ids[0:5]:
         assert f"測試{i}" in text
-    # 勝率偏優：只顯示前 5 筆（保留原始順序），第 6~8 筆不顯示
-    for i in ids[3:8]:
-        assert f"測試{i}" in text
-    for i in ids[8:11]:
-        assert f"測試{i}" not in text, "超過顯示上限的候選不該出現，不然『列前 M 檔』的措辭就是假的"
-    # None tier 的 3 檔不進任何分類段落
-    for i in ids[17:20]:
-        assert f"測試{i}" not in text
+    for i in ids[5:]:
+        assert f"測試{i}" not in text, "超過顯示上限或沒有分類的候選不該出現"
+    assert "其他候選 12 檔沒有分類稱號" in text
 
 
-# ── ③ 候選情報三分類（2026-07-26：拿掉「配好組合」語意，改成情報摘要）───────────────
+# ── ③ 候選情報分類（2026-11-13 起只有「相對優勢」＋「乖離高」描述標籤）───────────────
 
 def test_no_purchase_order_or_selection_wording(tmp_path, monkeypatch):
     """「精選」「建議買」「Top」和圈號 ①②③ 都在暗示『照這個順序/這個組合買』，
     Andy 拍板「不用幫我配好組合、我自己會挑」之後這些字樣一律不能出現。"""
     ids = ["9001", "9002", "9003"]
-    _write_opp(tmp_path, monkeypatch, "2026-07-24", ids, tiers=["both", "win", "return"])
+    _write_opp(tmp_path, monkeypatch, "2026-07-24", ids, tiers=["edge", "edge", None])
     stocks = [_stock(id=i, name=f"股{i}") for i in ids]
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
-    for bad in ("精選", "建議買", "Top", "①", "②", "③"):
-        assert bad not in text, f"不該出現「{bad}」——暗示照順序/組合買"
+    for bad in ("精選", "建議買", "Top", "①", "②", "③", "保證", "一定", "過半會賺"):
+        assert bad not in text, f"不該出現「{bad}」"
 
 
-def test_three_tier_category_headers_present(tmp_path, monkeypatch):
-    """訊息要能看出三個分類：雙優／勝率偏優／報酬偏優。"""
+def test_舊三分類稱號不再出現(tmp_path, monkeypatch):
+    """2026-11-13：沒證據的稱號留在訊息上＝替它背書。就算讀到舊檔的舊值也不可印出舊稱號。"""
     ids = ["9001", "9002", "9003"]
     _write_opp(tmp_path, monkeypatch, "2026-07-24", ids, tiers=["both", "win", "return"])
     stocks = [_stock(id=i, name=f"股{i}") for i in ids]
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
-    assert "雙優" in text
-    assert "勝率偏優" in text
-    assert "報酬偏優" in text
+    for bad in ("雙優", "勝率偏優", "報酬偏優"):
+        assert bad not in text
+    assert "相對優勢" in text
+    assert text.count("股9001") == 1, "同一檔只出現一次"
 
 
-def _write_tiers(tmp_path, monkeypatch, hi):
+def _write_tiers(tmp_path, monkeypatch, obj):
     p = tmp_path / "tier_stats.json"
-    p.write_text(json.dumps({"date": "2026-11-13", "features": {"turnover": {"high": hi}}}),
-                 encoding="utf-8")
+    p.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(nt, "TIER_STATS_PATH", str(p))
 
 
-def test_contains_fixed_disclaimer_verbatim(tmp_path, monkeypatch):
-    """固定提醒必須同時講兩件事，缺一就會誤導：
-    ① 這不是購買組合
-    ② 成交金額最高那層的單檔賺錢機率與賺賠幅度——**數字讀 tier_stats.json，不寫死**
+TS = {"date": "2026-11-13", "stale": False,
+      "categories": {"edge": {"win_rate": 0.471}, "rest": {"win_rate": 0.43}},
+      "paired": {"cat_edge_vs_rest": {"win_pp": 6.3, "win_ci90": [3.1, 9.4], "ev_pp": 1.9, "ev_ci90": [0.6, 3.3]},
+                 "bias_high_vs_rest": {"win_pp": 0.4, "win_ci90": [-1.8, 2.6], "ev_pp": 0.5, "ev_ci90": [-0.8, 1.7]}},
+      "by_gate": {"fallback": {"categories": {"edge": {"win_rate": 0.388}, "rest": {"win_rate": 0.427}}}}}
 
-    🔴 2026-11-13：原本寫死「49%／賺時 +16%／賠時 −10%」，那是錯的母體（所有訊號事件）算的。
-    這裡用假 JSON 的數字（47%／+15／−9）驗證提醒句真的是讀檔、不是舊字串。"""
-    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["win"])
-    _write_tiers(tmp_path, monkeypatch, {"win_rate": 0.4712, "avg_win_pct": 15.2,
-                                         "avg_loss_pct": -9.4, "ev_pct": 2.2,
-                                         "ci90_ev": [0.5, 4.0]})
-    stocks = [_stock(id="9001", name="股9001")]
-    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
+
+def test_主訊息是同日配對差且數字讀檔(tmp_path, monkeypatch):
+    """主訊息＝相對優勢 vs 當日其餘候選的同日配對差（不是高 vs 低、不是單層勝率）；
+    單檔賺錢機率照實放旁邊、不到一半要明講。數字一律讀 JSON，這裡用假數字驗證不是寫死。"""
+    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["edge"])
+    _write_tiers(tmp_path, monkeypatch, TS)
+    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock(id="9001")]})
     assert "這不是購買組合" in text
-    assert "47.1%（不到一半" in text
-    assert "賺時約 +15%" in text and "賠時約 −9%" in text
-    assert "不是在勝率" in text
+    assert "同一天的候選裡，相對優勢這群比其他候選的賺錢機率多約 6.3 個百分點（誤差範圍 3.1～9.4）" in text
+    assert "平均每筆也多約 1.9 個百分點（誤差範圍 0.6～3.3）" in text
+    assert "單檔賺錢機率只有 47.1%，不到一半" in text
     assert "49%" not in text and "52%" not in text, "寫死的舊數字不可復活"
 
 
-def test_disclaimer_讀不到層級統計時不印數字(tmp_path, monkeypatch):
-    """JSON 不在、或欄位是 null（零樣本層）都不能 crash，也不能印出寫死的舊數字。"""
+def test_幅度CI下限接近0用保守說法_跨0說量不出():
+    t = dict(TS, paired={"cat_edge_vs_rest": {"win_pp": 6.3, "win_ci90": [3.1, 9.4],
+                                              "ev_pp": 1.0, "ev_ci90": [0.2, 2.0]}})
+    s = nt.tier_disclaimer(t)
+    assert "略高約 1.0 個百分點，但接近量不出（誤差範圍 0.2～2.0）" in s and "也多約" not in s
+    t2 = dict(TS, paired={"cat_edge_vs_rest": {"win_pp": 1.2, "win_ci90": [-0.8, 3.0],
+                                               "ev_pp": 0.4, "ev_ci90": [-0.9, 1.5]}})
+    s2 = nt.tier_disclaimer(t2)
+    assert "量不出差別（差 +1.2 個百分點，誤差範圍 −0.8～3.0）" in s2
+    assert "平均每筆量不出差別（誤差範圍 −0.9～1.5）" in s2 and "多約" not in s2
+
+
+def test_單檔賺錢機率過半時照實講不寫死不到一半():
+    t = dict(TS, categories={"edge": {"win_rate": 0.512}})
+    s = nt.tier_disclaimer(t)
+    assert "51.2%" in s and "不到一半" not in s and "過半也不代表穩賺" in s
+
+
+def test_disclaimer_讀不到或缺欄位時不印數字(tmp_path, monkeypatch):
+    """JSON 不在、欄位缺、或 null 都不能 crash，也不能印出數字。"""
     monkeypatch.setattr(nt, "TIER_STATS_PATH", str(tmp_path / "nope.json"))
-    t1 = nt.tier_disclaimer(nt.load_tier_stats())
-    t2 = nt.tier_disclaimer({"features": {"turnover": {"high": {"win_rate": None}}}})
-    for t in (t1, t2):
-        assert "這不是購買組合" in t and "%" not in t
+    for t in (nt.load_tier_stats(), {}, {"paired": {}}, {"paired": {"cat_edge_vs_rest": None}},
+              {"paired": {"cat_edge_vs_rest": {"win_pp": None, "win_ci90": [1, 2]}}}, "壞資料"):
+        s = nt.tier_disclaimer(t)
+        assert "這不是購買組合" in s and "%" not in s and "個百分點" not in s
 
 
-def test_disclaimer_期望值為負時照實講():
-    t = nt.tier_disclaimer({"date": "2026-11-13", "features": {"turnover": {"high": {
-        "win_rate": 0.41, "avg_win_pct": 9.0, "avg_loss_pct": -8.0, "ev_pct": -1.2}}}})
-    assert "期望值是負的" in t and "優勢在賺賠幅度" not in t
+def test_stale_顯示過期與上次成功日期且不引用數字():
+    s = nt.tier_disclaimer(dict(TS, stale=True, date="2026-11-06"))
+    assert "統計已過期，上次成功重算 2026-11-06" in s and "個百分點" not in s and "%" not in s
 
 
-def test_disclaimer_期望值CI跨0不說優勢():
-    """驗收 2026-11-13：高層期望值 90% CI 跨 0，不可說「優勢在賺賠幅度」。"""
-    t = nt.tier_disclaimer({"date": "2026-11-13", "features": {"turnover": {"high": {
-        "win_rate": 0.46, "avg_win_pct": 16.0, "avg_loss_pct": -13.0, "ev_pct": 0.9,
-        "ci90_ev": [-3.3, 6.1]}}}})
-    assert "優勢在賺賠幅度" not in t and "不能說有優勢" in t
-    t2 = nt.tier_disclaimer({"features": {"turnover": {"high": {
-        "win_rate": 0.46, "avg_win_pct": 16.0, "avg_loss_pct": -13.0, "ev_pct": 0.9}}}})
-    assert "優勢在賺賠幅度" not in t2, "缺 CI 也不宣稱優勢"
+def test_門檻退回日加一句提醒_數字讀by_gate(tmp_path, monkeypatch):
+    _write_tiers(tmp_path, monkeypatch, TS)
+    opp_p = tmp_path / "opportunities.json"
+    opp_p.write_text(json.dumps({"date": "2026-07-24", "gate": {"applied": False, "reason": "pool_too_small"},
+                                 "picks": [{"id": "9001", "tier": "edge"}]}), encoding="utf-8")
+    monkeypatch.setattr(nt, "OPP_PATH", str(opp_p))
+    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock(id="9001")]})
+    assert "今天過強勢門檻的候選不足，門檻已放寬；歷史上這種日子分類方向曾經相反" in text
+    assert "相對優勢賺錢機率 38.8%、其他候選 42.7%" in text
+    # 門檻有套用 → 不加這句；by_gate 缺 → 不印數字、不 crash
+    assert nt.gate_note({"applied": True}, TS) == ""
+    assert "%" not in nt.gate_note({"applied": False, "reason": "pool_too_small"}, {})
+    assert nt.gate_note(None, TS) == ""
 
 
-def test_both_tier_listed_once_not_duplicated_across_sections(tmp_path, monkeypatch):
-    """tier=='both' 的候選只在雙優段落出現一次，不可以在勝率偏優、報酬偏優段落各再出現一次
-    ——同一檔股票在訊息裡出現兩次，手機讀起來會像是兩檔不同的推薦。"""
-    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["both"])
-    stocks = [_stock(id="9001", name="股9001雙優")]
-    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
-    assert text.count("股9001雙優") == 1
+def test_乖離高只是描述_量不出時照實講(tmp_path, monkeypatch):
+    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["both"])   # 舊值 both＝相對優勢＋乖離高
+    _write_tiers(tmp_path, monkeypatch, TS)
+    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock(id="9001")]})
+    assert "［乖離高］" in text
+    assert "「乖離高」只是描述（當天候選裡乖離前 1/3），量不出比較常賺或賺比較多。" in text
 
 
 def test_pipeline_failure_vs_zero_candidates_still_distinguished(tmp_path, monkeypatch):
@@ -251,17 +258,18 @@ def test_pipeline_failure_vs_zero_candidates_still_distinguished(tmp_path, monke
     assert "管線" not in text_empty
 
 
-def test_每個分類都明說順序不是排名(tmp_path, monkeypatch):
-    """2026-07-26 主對話加：榜內順序沒有證據支撐，畫面必須講清楚它不是好壞排名。
-
-    背景（不可回歸）：實測支持的是「同日三分位的層級差異」（前 1/3 賺錢機率 51.9% vs
-    後 1/3 43.8%），沒有測出層級「之內」名次有區辨力——2026-07-25 實測「前 3 名 vs
-    第 4~8 名」配對差 −0.26%／t −0.22（測不出），第 2 名反而是全場最差（45.1%）。
-    所以只要畫面列出有順序的清單，就必須同時否認那是排名，否則等於用介面說謊。"""
+def test_分類段落明說順序不是排名(tmp_path, monkeypatch):
+    """榜內順序沒有證據支撐，畫面必須講清楚它不是好壞排名（2026-07-25 實測「前 3 名 vs
+    第 4~8 名」配對差 −0.26%／t −0.22，第 2 名反而是全場最差）。"""
     _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001", "9002", "9003"],
-               tiers=["both", "win", "return"])
+               tiers=["edge", "edge", None])
     stocks = [_stock(id="9001", name="股9001"), _stock(id="9002", name="股9002"),
               _stock(id="9003", name="股9003")]
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
-    # 三個分類各出現一次否認排名的註記（雙優／勝率偏優／報酬偏優）
-    assert text.count("不是好壞排名") == 3, text
+    assert text.count("不是好壞排名") == 1, text
+
+
+def test_四捨五入與網站同規則():
+    """網站 tierVerdict.js 用 floor(|x|×10+0.5)；Python 預設是銀行家進位（1.25→1.2），會差 0.1。"""
+    s = nt.tier_disclaimer({"paired": {"cat_edge_vs_rest": {"win_pp": 1.25, "win_ci90": [0.25, 2.25]}}})
+    assert "多約 1.3 個百分點（誤差範圍 0.3～2.3）" in s

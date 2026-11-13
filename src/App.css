@@ -180,8 +180,8 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   .opp { padding: 14px; }
   .opp-head { margin-bottom: 12px; }
 }
-/* 分類分區：雙優＝主角，用色塊框把它從其他兩類裡跳出來；勝率偏優／報酬偏優是次要，
-   維持素面（不加框），份量自然比雙優輕，呼應「單欄故事線裡雙優是唯一主角」的核准方向。 */
+/* 分類分區：「相對優勢」＝主角（primary），用色塊框跳出來（2026-11-13 起只剩這一類；
+   secondary 樣式保留給未來或舊版分類，目前不使用）。 */
 .opp-tier--primary {
   background: color-mix(in srgb, var(--primary) 6%, var(--surface));
   border: 1.5px solid color-mix(in srgb, var(--primary) 35%, var(--border));
@@ -242,7 +242,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
    拉到全站 14px 下限（原本 .8125rem＝13px，比一般文案 .opp-tagline 16px 還小，本末倒置）。 */
 .opp-ci-note { display: block; margin-top: 4px; color: var(--ink-muted); font-size: .875rem; }
 
-/* 分類分區（雙優／勝率偏優／報酬偏優／其他候選） */
+/* 分類分區（相對優勢／其他候選） */
 .opp-tier { margin-bottom: 28px; }
 .opp-tier-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
 .opp-tier-title {
@@ -326,6 +326,12 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   background: rgba(255,194,75,.18); color: var(--on-accent);
 }
 .opp-muted { font-size: .875rem; color: var(--ink-muted); }
+/* 「乖離高」純描述標籤（2026-11-13）：中性色、不用 primary／漲跌色，免得看起來像加分 */
+.opp-tag {
+  display: inline-flex; align-items: center;
+  font-size: .875rem; font-weight: 500; padding: 4px 12px; border-radius: var(--r-pill);
+  background: transparent; color: var(--ink-muted); border: 1px dashed var(--border);
+}
 
 /* 成績單 */
 .opp-board {

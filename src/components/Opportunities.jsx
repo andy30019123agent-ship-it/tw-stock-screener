@@ -1,53 +1,36 @@
 import { useState, useEffect } from 'react'
-import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Sparkles, Award, Coins, Info } from 'lucide-react'
+import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Award, Info } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
-import { usablePair, verdictOf, pairShort, winDiffText, evDiffText } from '../lib/tierVerdict'
+import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier, evVerdictOf, ciTxt } from '../lib/tierVerdict'
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
-// 候選情報三分類（2026-07-26 誠實化）：tier 由後端 opportunities.py 依「當日候選池內百分位」算好，
-// 前端只負責分組顯示，不重新排序、不重新判斷。
+// 候選情報分類：tier 由後端 opportunities.py 依「當日候選池內百分位」算好，前端只負責分組顯示，
+// 不重新排序、不重新判斷（舊檔的舊值經 normalizeTier 相容）。
 // ⚠️ 名次沒有證據（2026-07-25 實測：前 3 名 vs 第 4~8 名 t=-0.22，第 2 名反而最差）——
 // 每組清單一律照 JSON 給的原始順序顯示，不做任何「誰比較好」的二次排序。
-// 🔴 2026-11-13：下面的說明原本依據 _reports/驗證_雙優分類_2026-07-26.md，那份用的是「所有訊號事件」
-// 這個錯的母體。改依 _reports/重算_候選池層級統計_2026-11-13.md（歷史候選池重播、同日配對比較）。
-// 精確數字由 TierHistory 讀 tier_stats.json 顯示，這裡只寫結論與量測日期。
-// 結論句（比較常賺／量不出差別）不寫死：由 tierVerdict 讀 tier_stats.json 的 paired 同日配對差與 CI 決定；
-// 缺欄位／null／stale 時退成不帶數字的中性句（2026-11-13 驗收後）。
-const NEUTRAL = '歷史上跟其他候選的比較數字暫時取不到，任何分類都不保證會賺。'
-const belowHalf = s => isNum(s?.win_rate) && s.win_rate < 0.5
+// 🔴 2026-11-13 分類簡化（_reports/重算_候選池層級統計_2026-11-13.md「分類簡化」一節）：
+// 只剩一個有證據的分類「相對優勢」（成交金額在當日候選池前 1/3）；原本另外兩個稱號量不出差別，
+// 留在介面上等於替它背書，已拿掉。「乖離高」降為純描述標籤，可掛在任何候選上。
+// 結論句不寫死：由 tierVerdict 讀 tier_stats.json 的 paired.cat_edge_vs_rest 決定；
+// 缺欄位／null／stale 時退成不帶數字的中性句。
+const NEUTRAL = '歷史上跟其他候選的比較數字暫時取不到，有分類也可能虧錢。'
 export function tierMeta(tierStats) {
-  const cats = tierStats?.categories || {}
-  const bothVsUn = pairShort(usablePair(tierStats, 'cat_both_vs_unclassified'), '未分類')
-  const bothVsWin = pairShort(usablePair(tierStats, 'cat_both_vs_win'), '勝率偏優')
-  const winVsUn = pairShort(usablePair(tierStats, 'cat_win_vs_unclassified'), '未分類')
-  const retPair = usablePair(tierStats, 'cat_return_vs_unclassified')
-  const retVsUn = pairShort(retPair, '未分類')
-  const retNoEvidence = retPair && verdictOf(retPair.win_ci90) === 'nodiff'
-    && (retPair.ev_ci90 == null || verdictOf(retPair.ev_ci90) === 'nodiff')
-  const when = tierStats?.date ? `${tierStats.date} ` : ''
+  const head = edgeSentence(tierStats)
+  const wr = edgeWinRateText(tierStats)
+  const when = tierStats?.date ? `（${tierStats.date} 用歷史候選池重算）` : ''
   return {
-    // 「雙優」是全站唯一的視覺主角（2026-07-26 單欄故事線核准方向第 2 條）。
-    both: {
-      label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段',
+    edge: {
+      label: '相對優勢', Icon: Award, blurb: '成交金額排在當天候選池前 1/3',
       // lede 刻意短——完整根據放在下方「這些數字怎麼來的」，不然首屏會被長文字擋住看不到卡片。
-      lede: bothVsUn
-        ? `成交金額與乖離都排在候選池前段。${when}${bothVsUn}${bothVsWin ? `；${bothVsWin}` : ''}${belowHalf(cats.both) ? '；單檔仍不到一半會賺' : ''}。`
-        : `成交金額與乖離都排在候選池前段。${NEUTRAL}`,
-    },
-    win: {
-      label: '勝率偏優', Icon: Award,
-      blurb: `成交金額排在候選池前段——${winVsUn ? `${when}${winVsUn}${belowHalf(cats.win) ? '，但單檔仍不到一半會賺' : ''}` : NEUTRAL}`,
-    },
-    // ⚠️ 這個分類的說明不可以在 CI 跨 0 時暗示它比較好；讀 paired 決定。
-    return: {
-      label: '報酬偏優', Icon: Coins,
-      blurb: `20 日乖離排在候選池前段、成交金額不在後段——${retVsUn ? `${when}${retVsUn}${retNoEvidence ? '，目前沒有證據說它比較好' : ''}` : NEUTRAL}`,
+      lede: head
+        ? `成交金額排在當天候選池前 1/3。${head}${wr ? `。${wr}` : ''}${when}。`
+        : `成交金額排在當天候選池前 1/3。${NEUTRAL}`,
     },
   }
 }
-const TIER_ORDER = ['both', 'win', 'return']
+const TIER_ORDER = ['edge']
 
 const fmtPct01 = v => (v == null ? '—' : `${Math.round(v * 100)}%`)
 
@@ -62,7 +45,8 @@ const FEAT_LABELS = {
 }
 
 // 「這套的優勢在賺賠幅度、不是勝率」——今天重算後的頭條數字，一律從 tier_stats.json 算，不寫死。
-// 用 turnover 這個特徵（真正拿來分「勝率偏優」的依據）算：高／低兩層的賺錢機率、以及高層的期望值。
+// 用 turnover 這個特徵（「相對優勢」分類的依據）算：高／低兩層的賺錢機率、以及高層的期望值。
+// 2026-11-13 起最前面先講主訊息（相對優勢 vs 當日其餘候選的同日配對差，edgeSentence）。
 export function HonestyCallout({ tierStats }) {
   const t = tierStats?.features?.turnover
   // 🔴 2026-07-26 Codex 複查：原本只檢查「三層物件存不存在」，但零樣本的層**物件存在、
@@ -81,6 +65,7 @@ export function HonestyCallout({ tierStats }) {
     )
   }
   const { high: hi, mid, low: lo } = t
+  const head = edgeSentence(tierStats)
   const hp = usablePair(tierStats, 'turnover_high_vs_low')
   const hpWin = winDiffText(hp), hpEv = evDiffText(hp)
   const pairedLine = hpWin ? `同一天比，高層比低層${hpWin}${hpEv ? `、${hpEv}` : ''}` : null
@@ -93,22 +78,28 @@ export function HonestyCallout({ tierStats }) {
     <p className="opp-honesty">
       <Info size={15} strokeWidth={1.75} />
       <span>
-        成交金額最高的三分之一，單檔歷史賺錢機率 <b>{winPct(hi)}%</b>；最低的三分之一 <b>{winPct(lo)}%</b>
+        {head && <><b>{head}</b>。</>}
+        單看成交金額最高的三分之一，單檔歷史賺錢機率 <b>{winPct(hi)}%</b>；最低的三分之一 <b>{winPct(lo)}%</b>
         {allBelowHalf
           ? <>——<b>三層都不到一半</b></>
           : <>（中段 {winPct(mid)}%）</>}
         。賺時平均 <b className="good">+{hi.avg_win_pct.toFixed(1)}%</b>、
         賠時平均 <b className="bad">−{Math.abs(hi.avg_loss_pct).toFixed(1)}%</b>，
         平均每筆 <b className={ev >= 0 ? 'good' : 'bad'}>{ev >= 0 ? '+' : ''}{ev.toFixed(2)}%</b>
-        {ev > 0
-          ? (Array.isArray(hi.ci90_ev) && isNum(hi.ci90_ev[0]) && hi.ci90_ev[0] > 0
-            ? '——優勢在賺賠幅度，不是在勝率。'
-            : '——平均看起來略正，但誤差範圍跨過 0，還不能說有優勢。')
-          : '——扣完成本平均沒有賺。'}
+        {(() => {
+          // 幅度宣稱規則（tierVerdict 檔頭）：CI 下限 ≥0.5 才講優勢、0~0.5 用保守說法，一律附誤差範圍
+          const okEvCi = Array.isArray(hi.ci90_ev) && isNum(hi.ci90_ev[0]) && isNum(hi.ci90_ev[1])
+          const r = okEvCi ? `（誤差範圍 ${ciTxt(hi.ci90_ev)}%）` : ''
+          if (ev <= 0) return `——扣完成本平均沒有賺${r}。`
+          const v = okEvCi ? evVerdictOf(hi.ci90_ev) : null
+          if (v === 'better') return `——平均每筆是正的${r}，優勢在賺賠幅度，不是在勝率。`
+          if (v === 'marginal') return `——平均每筆略正${r}，但接近量不出。`
+          return `——平均看起來略正，但誤差範圍跨過 0${r}，還不能說有優勢。`
+        })()}
         <small className="opp-ci-note">
           （{hi.blocks} 批獨立樣本，90% CI 高層 {hi.ci90[0]}–{hi.ci90[1]}% ／ 低層 {lo.ci90[0]}–{lo.ci90[1]}%；
           {pairedLine ? `${pairedLine}；` : ''}樣本＝歷史上每天重播候選流程後的候選池）
-          {tierStats.stale && <b className="bad">　⚠️ 這份統計最近一次重算失敗，數字可能過期</b>}
+          {tierStats.stale && <b className="bad">　⚠️ {staleText(tierStats)}，數字可能過時</b>}
         </small>
       </span>
     </p>
@@ -119,6 +110,7 @@ export function HonestyCallout({ tierStats }) {
 function CandidateCard({ p, onClick }) {
   const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
   const fp = p.feat_pct || {}
+  const { biasHigh } = normalizeTier(p)
   return (
     <div className="opp-card" onClick={onClick}>
       <div className="opp-card-top">
@@ -159,6 +151,8 @@ function CandidateCard({ p, onClick }) {
       </div>
 
       <div className="opp-flags">
+        {/* 「乖離高」＝純描述（當天候選池乖離前 1/3），不是加分、不用強調色 */}
+        {biasHigh && <span className="opp-tag" title="當天候選池裡 20 日乖離排前 1/3；只是描述，不代表比較好">乖離高</span>}
         {p.earnings_date && (
           <span className="opp-earn"><Calendar size={12} strokeWidth={1.75} />{p.earnings_date.slice(5)} 法說會</span>
         )}
@@ -173,7 +167,7 @@ function CandidateCard({ p, onClick }) {
   )
 }
 
-// 一個分類分區（雙優／勝率偏優／報酬偏優／其他候選）：標題講清楚共幾檔、列前幾檔，
+// 一個分類分區（相對優勢／其他候選）：標題講清楚共幾檔、列前幾檔，
 // 旁邊一律附「不是好壞排名」的提醒——這是 2026-07-25 實測推翻過的東西，不可回歸。
 // 這一類的歷史數字（2026-11-13 加）：讀 tier_stats.json 的 categories（逐日重播候選流程後的
 // 候選池、按線上同一套分類切），不寫死。任何欄位缺就整行不顯示，不印 NaN。
@@ -260,7 +254,7 @@ function trendOf(row) {
 }
 
 // 候選情報區塊：讀 opportunities.json（跨 repo 契約）＋ scoreboard.json ＋ signal_weights/windows.json。
-// 2026-07-26 誠實化：從「每天固定推 N 檔」改成「輸出全部合格候選＋三分類，交給 Andy 自己選」
+// 2026-07-26 誠實化：從「每天固定推 N 檔」改成「輸出全部合格候選＋分類，交給 Andy 自己選」
 // （Andy 拍板：不用幫我配好購買組合）。picks 不再截斷，檔數一律讀 opp.pool_n，不寫死。
 // 都採「抓不到就靜默省略該部分」，不讓這區拖垮既有選股頁。
 export default function Opportunities({ stocks, onPick, onCount, engineStatus, tierStats }) {
@@ -341,8 +335,11 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
 
   const poolN = opp.pool_n ?? opp.picks.length
   const previewN = opp.preview_n || 10
-  const tiered = { both: [], win: [], return: [], other: [] }
-  for (const p of opp.picks) (tiered[p.tier] || tiered.other).push(p)
+  const tiered = { edge: [], other: [] }
+  for (const p of opp.picks) (normalizeTier(p).tier === 'edge' ? tiered.edge : tiered.other).push(p)
+  const gNote = gateNote(opp.gate, tierStats)
+  const stale = staleText(tierStats)
+  const anyBias = opp.picks.some(p => normalizeTier(p).biasHigh)
 
   return (
     <section className={`opp ${open ? 'opp-open' : 'opp-collapsed'}`} data-region="候選情報">
@@ -374,24 +371,31 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
                 : '當日有訊號者'}
           ，已過濾營收年減／低量
         </p>
+        {gNote && (
+          <p className="opp-sub"><b className="opp-degraded"><AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" />{gNote}</b></p>
+        )}
+        {stale && (
+          <p className="opp-sub"><b className="opp-degraded"><AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" />{stale}，下面的分類說明先不引用數字</b></p>
+        )}
       </div>
 
       {open && (<>
       {TIER_ORDER.map(key => (
         <TierSection key={key} tierKey={key} label={meta[key].label} Icon={meta[key].Icon}
-          blurb={meta[key].blurb} lede={meta[key].lede} hist={tierStats?.categories?.[key]}
-          variant={key === 'both' ? 'primary' : 'secondary'}
+          blurb={meta[key].blurb} lede={meta[key].lede} hist={tierStats?.stale ? null : tierStats?.categories?.[key]}
+          variant="primary"
           list={tiered[key]} previewN={previewN} onPick={handlePick} />
       ))}
+      {anyBias && <p className="opp-tier-note">{biasNote(tierStats)}</p>}
 
       {tiered.other.length > 0 && (
         <div className="opp-tier opp-tier-other">
           <button className="opp-tier-other-toggle" onClick={() => setShowOther(v => !v)} aria-expanded={showOther}>
             {showOther ? <ChevronDown size={14} strokeWidth={2} /> : <ChevronRight size={14} strokeWidth={2} />}
-            其他候選（未達分類門檻）共 {tiered.other.length} 檔
+            其他候選（沒有分類稱號）共 {tiered.other.length} 檔
           </button>
           {showOther && (<>
-            <TierHistory s={tierStats?.categories?.unclassified} />
+            <TierHistory s={tierStats?.stale ? null : tierStats?.categories?.rest} />
             <p className="opp-tier-note">照候選清單原始順序，不是好壞排名</p>
             <div className="opp-cards">
               {tiered.other.map(p => <CandidateCard key={p.id} p={p} onClick={() => handlePick(p)} />)}
@@ -409,10 +413,10 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
       <OutcomeShape tierStats={tierStats} />
 
       {/* 個股觀察位（2026-07-25 加，2026-07-26 誠實化：拿掉購買組合語意，只留近 20 日前高與績效檢視日）。
-          只帶「雙優／勝率偏優／報酬偏優」三類進觀察位表——候選池全開後常有百餘檔，「其他候選」
-          全塞進表格會讓這張表長到失去用途；三類本身就是畫面上特別標出來的那批，適合放觀察位。
+          只帶「相對優勢」進觀察位表（2026-11-13 起只剩這一類）——候選池全開後常有百餘檔，「其他候選」
+          全塞進表格會讓這張表長到失去用途。
           picks 本身沒有產業，從 screener.json 併回來（集中度警示要用）。 */}
-      <PositionPlan dataDate={opp.date} picks={[...tiered.both, ...tiered.win, ...tiered.return].map(p => {
+      <PositionPlan dataDate={opp.date} picks={tiered.edge.map(p => {
         const full = stocks?.find(s => s.id === p.id)
         return {
           id: p.id, name: p.name,

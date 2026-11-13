@@ -9,7 +9,7 @@ import opportunities as opp
 # feat_pct／tier 於 2026-07-26 加入（候選情報三分類，取代固定 Top N 購買組合語意）。
 CONTRACT_KEYS = {"id", "name", "score", "reasons", "close", "support_ma20",
                  "recent_high20", "rs20", "rs_pct_60", "revenue_yoy", "earnings_date", "risk_flags",
-                 "feat_pct", "tier"}
+                 "feat_pct", "tier", "bias_high"}
 
 # 簡化權重表：糾結轉強 3 分、爆量突破 2 分、其餘預設 1
 WEIGHTS = {"signals": {
@@ -124,10 +124,10 @@ def _tier_stock(sid, turnover_close, bias20):
             "rs_pct_60": 0.5, "earnings_date": None, "signal_ma": True}
 
 
-def test_每檔候選都帶組內百分位與四種分類(monkeypatch):
-    """feat_pct 是「當日候選池內」的百分位、不是全市場排名。tier 分類規則（計畫 Task 5 逐字）：
-    win_flag=turnover 百分位≥0.67、ret_flag=bias20_pct 百分位≥0.67；兩者皆真→both；
-    只 win→win；只 ret 且 turnover 百分位≥0.33（勝率不在後段）→return；其餘 None。
+def test_每檔候選都帶組內百分位與相對優勢分類(monkeypatch):
+    """feat_pct 是「當日候選池內」的百分位、不是全市場排名。
+    2026-11-13 分類簡化：tier="edge"（相對優勢）⇔ turnover 百分位 ≥0.67，其餘 None；
+    bias_high（乖離高，純描述）⇔ bias20_pct 百分位 ≥0.67，跟 tier 互相獨立。
 
     6 檔的 turnover／bias20_pct 各自設計成單調遞增，組內百分位剛好落在 0/0.2/0.4/0.6/0.8/1.0，
     卡住 0.67／0.33 兩個門檻兩側，四種分類都會被踩到。
@@ -139,20 +139,18 @@ def test_每檔候選都帶組內百分位與四種分類(monkeypatch):
     stocks = [
         _tier_stock("T1", 10.0, 10.0),    # turnover pct 0.0, bias pct 0.2 → None
         _tier_stock("T2", 20.0, 20.0),    # turnover pct 0.2, bias pct 0.4 → None
-        _tier_stock("T3", 30.0, 30.0),    # turnover pct 0.4, bias pct 0.6 → None（ret 差一點點不到）
-        _tier_stock("T4", 40.0, 40.0),    # turnover pct 0.6, bias pct 0.8 → return（turnover 未達 win 但 ≥0.33）
-        _tier_stock("T5", 50.0, 50.0),    # turnover pct 0.8, bias pct 1.0 → both
-        _tier_stock("T6", 60.0, -10.0),   # turnover pct 1.0, bias pct 0.0 → win
+        _tier_stock("T3", 30.0, 30.0),    # turnover pct 0.4, bias pct 0.6 → None（乖離差一點點不到）
+        _tier_stock("T4", 40.0, 40.0),    # turnover pct 0.6, bias pct 0.8 → None＋乖離高
+        _tier_stock("T5", 50.0, 50.0),    # turnover pct 0.8, bias pct 1.0 → edge＋乖離高
+        _tier_stock("T6", 60.0, -10.0),   # turnover pct 1.0, bias pct 0.0 → edge
     ]
     rev = {s["id"]: {"yoy": 5.0} for s in stocks}
     o = opp.build_opportunities(stocks, WEIGHTS, rev, "2026-07-26")
+    assert o["tier_scheme"] == opp.TIER_SCHEME
     by_id = {p["id"]: p for p in o["picks"]}
-    assert by_id["T1"]["tier"] is None
-    assert by_id["T2"]["tier"] is None
-    assert by_id["T3"]["tier"] is None
-    assert by_id["T4"]["tier"] == "return"
-    assert by_id["T5"]["tier"] == "both"
-    assert by_id["T6"]["tier"] == "win"
+    assert [by_id[f"T{i}"]["tier"] for i in range(1, 7)] == [None, None, None, None, "edge", "edge"]
+    assert [by_id[f"T{i}"]["bias_high"] for i in range(1, 7)] == [False, False, False, True, True, False]
+    assert {p["tier"] for p in o["picks"]} <= {"edge", None}, "舊三分類值不可再產生"
     for p in o["picks"]:
         for k in ("turnover", "bias20_pct", "high20_gap", "rs_pct_60"):
             assert p["feat_pct"][k] is None or 0.0 <= p["feat_pct"][k] <= 1.0, \
@@ -172,8 +170,31 @@ def test_update_picks_history存全部候選與新欄位(monkeypatch, tmp_path):
     entries = opp.update_picks_history(opp_out)
     stored = next(e for e in entries if e["date"] == "2026-07-26")
     assert len(stored["picks"]) == len(opp_out["picks"]) == 2
+    assert stored["tier_scheme"] == opp.TIER_SCHEME, "要能分辨新舊分類版本，免得成績單混算"
     for p in stored["picks"]:
-        assert "feat_pct" in p and "tier" in p
+        assert "feat_pct" in p and "tier" in p and "bias_high" in p
+
+
+def test_normalize_tier_相容舊三分類值():
+    """picks_history／舊 opportunities.json 裡的 both/win/return 不可讓程式 crash，且要對應正確：
+    v1 的 both/win＝成交金額前 1/3＝新制的相對優勢。"""
+    assert opp.normalize_tier({"tier": "both"}) == ("edge", True)
+    assert opp.normalize_tier({"tier": "win"}) == ("edge", False)
+    assert opp.normalize_tier({"tier": "return"}) == (None, True)
+    assert opp.normalize_tier({"tier": None}) == (None, False)
+    assert opp.normalize_tier({}) == (None, False)
+    assert opp.normalize_tier({"tier": "edge", "bias_high": True}) == ("edge", True)
+    assert opp.normalize_tier({"tier": "???"}) == (None, False)
+
+
+def test_percentile_ranks_缺值不參加排名():
+    """2026-11-13：缺值不可被當成墊底一起排——那會把有值的股票往上推。"""
+    r = opp._percentile_ranks([None, 1.0, 2.0, 3.0])
+    assert r == [None, 0.0, 0.5, 1.0], r
+    assert opp._percentile_ranks([None, 5.0]) == [None, None], "有值的不足 2 檔＝沒有比較對象"
+    assert opp._percentile_ranks([None, None]) == [None, None]
+    assert opp._percentile_ranks([2.0, None, 2.0]) == [0.5, None, 0.5], "並列取平均名次"
+    assert opp._percentile_ranks([]) == []
 
 
 def test_缺rs_pct_60用最低值墊底_不可用0():
@@ -376,7 +397,7 @@ def _mk(sid, close=100.0, vol=600, bias=None, rs=0.9):
     }
 
 
-def test_單一候選不得被標成雙優(monkeypatch):
+def test_單一候選不得被分類(monkeypatch):
     """🔴 2026-07-26 Codex 複查抓到：只有一檔候選時，`_percentile_ranks` 原本回 [1.0]
     ——「跟自己比是第一名」是套套邏輯不是資訊，而且連缺值的特徵也一起拿滿分，
     結果系統會對一檔「bias/前高/RS 全部算不出來」的股票宣稱「兩個條件都排前段」。
@@ -401,10 +422,10 @@ def test_候選池太小一律不分類(monkeypatch):
 
 
 def test_候選池夠大時分類正常運作(monkeypatch):
-    """對照組：確認上面兩條的修法不是「把分類整個關掉」——池子夠大時仍要正常分出三類。"""
+    """對照組：確認上面兩條的修法不是「把分類整個關掉」——池子夠大時仍要正常分類。"""
     w = {"signals": {"sn_squeeze_breakout": {"weight": 1, "samples": 999}}}
     many = [_mk(f"91{i:02d}", close=100 + i, vol=500 + i * 100, bias=float(i)) for i in range(12)]
     out = opp.build_opportunities(many, w, {}, "2026-07-24")
     tiers = {p["tier"] for p in out["picks"]}
-    assert "both" in tiers, f"12 檔候選應分得出雙優，實際 {tiers}"
+    assert "edge" in tiers, f"12 檔候選應分得出相對優勢，實際 {tiers}"
     assert any(t is None for t in tiers), "也應該有不符合條件、不分類的"

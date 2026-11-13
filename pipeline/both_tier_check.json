@@ -1,5 +1,5 @@
 {
- "computed": "2026-11-13 11:33",
+ "computed": "2026-11-13 12:18",
  "population": "逐日重播 opportunities.build_opportunities 後的最終候選池（引擎訊號＋均量≥500 張＋強勢雙確認門檻（候選不足 20 檔時退回）；營收濾網未重播）",
  "candidate_pool": {
   "both": {
@@ -165,5 +165,5 @@
    ]
   }
  },
- "note": "candidate_pool＝正確母體；old_population 只供對照（2026-07-26 誤用的母體，成本已改 _apply_cost）"
+ "note": "分類已於 2026-11-13 簡化（網站只剩「相對優勢」），此檔僅供歷史對照。candidate_pool＝正確母體；old_population 只供對照（2026-07-26 誤用的母體，成本已改 _apply_cost）"
 }

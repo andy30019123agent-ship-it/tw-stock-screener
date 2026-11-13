@@ -210,7 +210,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 「今天有幾檔候選」＋「雙優這幾檔」＋「其他兩類」＋「這些數字怎麼來的」都在 Opportunities
+      {/* 「今天有幾檔候選」＋「相對優勢這幾檔」＋「其他候選」＋「這些數字怎麼來的」都在 Opportunities
           裡由上而下排好（2026-07-26 單欄故事線核准方向第 2 條）；候選情報現在預設展開、
           不用點「展開」才看得到第一檔股票。 */}
       <ErrorBoundary name="opportunities" label="候選情報">

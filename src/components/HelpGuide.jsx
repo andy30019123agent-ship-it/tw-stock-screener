@@ -1,5 +1,5 @@
 import { ArrowLeft, BookOpen, AlertTriangle } from 'lucide-react'
-import { usablePair, pairShort } from '../lib/tierVerdict'
+import { edgeSentence, edgeWinRateText, staleText, biasNote } from '../lib/tierVerdict'
 
 // 使用說明書（Andy 2026-07-25 要求，選「做進網站」＋「寫給自己看（術語附白話）」）。
 //
@@ -39,21 +39,16 @@ const wrTxt = s => (okNum(s?.win_rate) ? `${(s.win_rate * 100).toFixed(1)}%` : '
 const pctTxt = v => (okNum(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%` : '—')
 
 export default function HelpGuide({ onBack, tierStats }) {
-  const cat = tierStats?.categories || {}
   const turn = tierStats?.features?.turnover || {}
   const tsDate = tierStats?.date || '—'
-  // 「同一天比」的結論由 paired 的 CI 決定（下限>0 才說比較常賺，跨 0 說量不出差別）；缺資料／stale 走中性句。
-  const sentences = [
-    ['cat_both_vs_unclassified', '雙優', '未分類'], ['cat_win_vs_unclassified', '勝率偏優', '未分類'],
-    ['cat_return_vs_unclassified', '報酬偏優', '未分類'], ['cat_both_vs_win', '雙優', '勝率偏優'],
-  ].map(([k, a, b]) => {
-    const t = pairShort(usablePair(tierStats, k), b)
-    return t ? `${a}：${t.replace(`同一天比「${b}」：`, '')}` : null
-  })
-  const helpPairs = sentences.every(Boolean)
-    ? <>用「同一天比」量過（{tsDate}）——{sentences.map((t, i) => <span key={i}>{i ? '；' : ''}{['雙優比未分類', '勝率偏優比未分類', '報酬偏優比未分類', '雙優比勝率偏優'][i]}，{t.split('：')[1]}</span>)}。
-      這是看完資料才選的比較方式，還需要新資料再驗證。</>
-    : '各分類跟其他候選的同日比較數字暫時取不到，任何分類都不保證會賺。'
+  // 2026-11-13 分類簡化：主訊息＝「相對優勢 vs 當天其餘候選」的同日配對差（tierVerdict.edgeSentence，
+  // 與網站候選區、TG 快報同一句）；缺資料／stale 走中性句。
+  const head = edgeSentence(tierStats)
+  const wr = edgeWinRateText(tierStats)
+  const stale = staleText(tierStats)
+  const helpPairs = head
+    ? <>{head}{wr ? `。${wr}` : ''}（{tsDate} 用歷史候選池重算）。這是看完資料才選的比較方式，還需要新資料再驗證。</>
+    : <>相對優勢跟其他候選的同日比較數字暫時取不到{stale ? `（${stale}）` : ''}，有分類也可能虧錢。</>
   const medians = ['high', 'mid', 'low'].map(k => turn[k]?.median_pct).filter(okNum)
   return (
     <div className="help">
@@ -63,7 +58,7 @@ export default function HelpGuide({ onBack, tierStats }) {
         </button>
         <span className="badge-pill"><BookOpen size={14} strokeWidth={1.75} />使用說明書</span>
         <h1>這個網站怎麼用</h1>
-        <p className="subtitle">最後更新 2026-07-26 · 站上哪些數字扣過成本、哪些沒扣，第 4 章有對照表</p>
+        <p className="subtitle">最後更新 2026-11-13 · 站上哪些數字扣過成本、哪些沒扣，第 4 章有對照表</p>
       </header>
 
       <nav className="help-toc" aria-label="目錄">
@@ -89,15 +84,13 @@ export default function HelpGuide({ onBack, tierStats }) {
             平常沒特別標警示，就是「沒有特別要提醒你的事」。
           </li>
           <li>
-            <b>看三個分類的差別。</b>分類只看兩件事在「當天候選池」裡排第幾：成交金額、20 日乖離。
-            兩邊都排在前段的歸進「<b>雙優</b>」，<b>只列一次</b>。
+            <b>看「相對優勢」那一區。</b>只有一個分類：成交金額在「當天候選池」裡排前 1/3 的，
+            標成「<b>相對優勢</b>」；其他候選不給稱號。
             <span className="help-why">
-              歷史上每一天照同一套流程重選候選、再分類（{tsDate} 重算）：雙優單檔賺錢機率 <b>{wrTxt(cat.both)}</b>、
-              勝率偏優 <b>{wrTxt(cat.win)}</b>、報酬偏優 <b>{wrTxt(cat.return)}</b>、未分類 <b>{wrTxt(cat.unclassified)}</b>——
-              {['both', 'win', 'return', 'unclassified'].every(k => okNum(cat[k]?.win_rate) && cat[k].win_rate < 0.5)
-                ? <><b>四類都沒過半</b>——就算挑最好的那類，一半以上的交易還是虧的。</>
-                : '過半不代表穩賺，要連賺賠幅度一起看。'}
-              {helpPairs}
+              「相對」的意思是<b>跟同一天的其他候選比</b>，不是說它單檔大概率會賺。歷史上每一天照同一套流程重選候選、
+              再分類，結果是：{helpPairs}
+              卡片上的「<b>乖離高</b>」（當天候選池乖離前 1/3）只是描述，可能掛在任何候選上——{biasNote(tierStats).replace('「乖離高」只是描述（當天候選裡乖離前 1/3），', '')}
+              （2026-11-13 起分類簡化成這樣：其他分類稱號量不出差別，留在畫面上等於替它背書，所以拿掉了。）
             </span>
           </li>
           <li>
@@ -159,7 +152,8 @@ export default function HelpGuide({ onBack, tierStats }) {
           </li>
           <li>
             <b>→ 通過的全部列出來，不再砍成固定幾檔</b>，並依「成交金額」與「20 日乖離」在當天候選池裡的
-            百分位，標成<b>勝率偏優／報酬偏優／雙優</b>三類（兩項都不突出的就不標）。
+            百分位，成交金額排前 1/3 的標成<b>相對優勢</b>；20 日乖離排前 1/3 的另外掛一個「乖離高」描述標籤
+            （不代表比較好；另一個「乖離大」是離月線超過 15% 的風險提醒，兩個不一樣）。
             <span className="help-why">
               2026-07-26 改的：以前這裡會排序後取前 8 檔給你，那等於幫你配好一個組合。
               現在系統只負責告訴你「有哪些候選、各自落在什麼條件層級」，<b>買哪幾檔由你決定</b>。

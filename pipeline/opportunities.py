@@ -43,9 +43,19 @@ FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一�
 # 同一把尺——改一邊要改兩邊，不要在這裡另外定義獨立的成本數字。
 COST_PCT = bt.EXIT_FEE * 2 + bt.EXIT_TAX + bt.EXIT_SLIP * 2
 
-# 候選情報三分類的百分位門檻（Phase 1：只用單一已驗證特徵分類，不做合成分數，見計畫 Task 5）。
-TIER_HIGH_PCT = 0.67   # win_flag／ret_flag 門檻
-TIER_MID_PCT = 0.33    # return 分類另外要求 turnover 百分位不在後段
+# 候選池內百分位的高／中／低切點（feature_level 用）。
+TIER_HIGH_PCT = 0.67   # ≥ 此值＝前 1/3（「相對優勢」與「乖離高」都用這條）
+TIER_MID_PCT = 0.33
+# 🔴 2026-11-13 分類簡化（Andy 同意，依 _reports/重算_候選池層級統計_2026-11-13.md）：
+# 原本三分類 tier ∈ {"both","win","return"}（雙優／勝率偏優／報酬偏優），只有「成交金額高」
+# 站得住（同日比其餘候選常賺），乖離高那一支量不出差別、雙優比只金額高也量不出差別。
+# 新制只有一個分類：tier="edge"（相對優勢＝成交金額在當日候選池前 1/3），其餘 tier=None。
+# 乖離前 1/3 降為純描述標籤 bias_high（True/False），可掛在任何候選上、不代表比較好。
+# 舊值只會出現在 2026-11-13 以前的 picks_history.json／舊 opportunities.json，
+# 讀取端用 normalize_tier（下方）相容：both→edge＋乖離高、win→edge、return→無分類＋乖離高
+# （v1 的 both/win 恰好就是成交金額前 1/3，所以這個對應是精確的，不是近似）。
+TIER_SCHEME = "edge_v2"
+TIER_EDGE = "edge"
 # 🔴 2026-07-26 Codex 複查：候選少於這個數就不分類。n=1 時「跟自己比是第一名」、n=2 時只要
 # 數值不同較高者就自動 1.0——那不是「排前段」，是只有一兩個人。百分位要有意義，池子得夠大。
 # 10 是保守取值：三分位切點在 n=10 時每層約 3~4 檔，勉強能講「相對前段」。
@@ -57,10 +67,22 @@ MIN_TIER_POOL = 10
 HISTORY_MAX = 3650
 
 
+def normalize_tier(p):
+    """讀到任何版本的 pick → (tier, bias_high)。tier ∈ {"edge", None}。
+
+    相容 2026-11-13 以前的三分類舊值（見 TIER_SCHEME 註解）；未知值一律當無分類，不 crash。"""
+    t = p.get("tier")
+    if t in ("both", "win"):          # 歷史相容：v1 的雙優／勝率偏優＝成交金額前 1/3
+        return TIER_EDGE, t == "both" or bool(p.get("bias_high"))
+    if t == "return":                 # 歷史相容：v1 的報酬偏優＝乖離前 1/3、成交金額非前段
+        return None, True
+    return (TIER_EDGE if t == TIER_EDGE else None), bool(p.get("bias_high"))
+
+
 def feature_level(pct):
     """候選池內百分位 → 層級（high／mid／low）；缺值回 None（＝永不達標）。
 
-    線上分類（build_opportunities 的 win/return/both）與歷史層級統計
+    線上分類（build_opportunities 的 tier／bias_high）與歷史層級統計
     （tier_stats.compute_pool_tier_stats）**共用這一支**：兩邊對「前段／中段／後段」的切法
     只要分岔一次，網站上的分類就會對到另一套數字（2026-11-13 修母體錯配時順手收斂）。"""
     if pct is None:
@@ -77,36 +99,36 @@ GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < �
 
 
 def _percentile_ranks(values):
-    """把一組數值換算成組內百分位（0~1，同名次取平均、缺值視為最低墊底）。
+    """把一組數值換算成組內百分位（0~1，同名次取平均）；缺值不參加排名。
 
     用於 feat_pct：算的是「當日候選池內」的相對位置，不是全市場排名。
     回傳與輸入等長、對齊原始順序的 list。
 
-    🔴 2026-07-26 Codex 複查修正兩個會「無中生有」的行為：
-    ① **只有一筆候選時原本回 1.0**——「跟自己比是第一名」是套套邏輯，不是資訊。那會讓當天
-       唯一那檔股票的四個特徵全部拿到滿分、直接被標成「雙優」（實測重現過）。改回 None。
-    ② **缺值（None）原本會被當成最低值參與排名、拿到 0.0**——0.0 是「墊底」這個合法的判斷，
-       但我們其實不知道它的位置。缺值就該是缺值，改回 None，讓分類端明確地「永不達標」。
+    🔴 2026-07-26 Codex 複查修正：只有一筆時原本回 1.0（「跟自己比是第一名」），改回 None。
+    🔴 2026-11-13：缺值（None）**不參加排名**——原本缺值會被當成 -inf 墊底一起排，雖然自己回
+    None，卻把其他有值的股票往上推（例如 3 檔有值＋1 檔缺值，最低那檔會拿到 0.33 而不是 0.0）。
+    現在只在「有值的那幾檔」之間排名；缺值的百分位一律 None（分類端＝永不達標）。
+    有值的不足 2 檔時同上 ①：沒有比較對象，全部 None。
     """
     n = len(values)
     if n == 0:
         return []
-    if n == 1:
-        return [None]                      # ①：沒有比較對象＝算不出相對位置，不是滿分
-    safe = [v if v is not None else float("-inf") for v in values]
-    order = sorted(range(n), key=lambda i: safe[i])
-    ranks = [0.0] * n
+    idx = [i for i, v in enumerate(values) if v is not None]
+    m = len(idx)
+    out = [None] * n
+    if m < 2:
+        return out                         # 沒有比較對象＝算不出相對位置，不是滿分
+    order = sorted(idx, key=lambda i: values[i])
     i = 0
-    while i < n:
+    while i < m:
         j = i
-        while j + 1 < n and safe[order[j + 1]] == safe[order[i]]:
+        while j + 1 < m and values[order[j + 1]] == values[order[i]]:
             j += 1
-        pct = (i + j) / 2 / (n - 1)          # 並列取平均名次
+        pct = (i + j) / 2 / (m - 1)          # 並列取平均名次
         for k in range(i, j + 1):
-            ranks[order[k]] = pct
+            out[order[k]] = pct
         i = j + 1
-    # ②：缺值不給百分位（上面用 -inf 只是為了排序時有個確定位置，不代表它真的最低）
-    return [None if v is None else r for v, r in zip(values, ranks)]
+    return out
 
 
 def build_opportunities(results, weights, revenue, data_date):
@@ -212,7 +234,7 @@ def build_opportunities(results, weights, revenue, data_date):
             "rs_pct_60": r.get("rs_pct_60"),
         })
 
-    # 候選情報三分類（Phase 1：只用單一已驗證特徵，不做合成分數，見計畫 Task 5）。
+    # 候選情報分類（2026-11-13 起只剩「相對優勢」一類＋「乖離高」描述標籤，見 TIER_SCHEME）。
     # feat_pct 是「當日候選池內」的百分位，不是全市場排名——候選池每天大小不同，同一檔股票
     # 今天跟明天的 feat_pct 不能直接比較，只能比「跟今天其他候選比起來如何」。
     for key in ("turnover", "bias20_pct", "high20_gap", "rs_pct_60"):
@@ -229,19 +251,12 @@ def build_opportunities(results, weights, revenue, data_date):
         fp = p["feat_pct"]
         if not tier_on:
             p["tier"] = None
+            p["bias_high"] = False
             continue
         # 缺值永不達標——feature_level(None) 回 None，不等於任何層級
-        lv_turn = feature_level(fp["turnover"])
-        win_flag = lv_turn == "high"
-        ret_flag = feature_level(fp["bias20_pct"]) == "high"
-        if win_flag and ret_flag:
-            p["tier"] = "both"
-        elif win_flag:
-            p["tier"] = "win"
-        elif ret_flag and lv_turn in ("high", "mid"):
-            p["tier"] = "return"
-        else:
-            p["tier"] = None
+        p["tier"] = TIER_EDGE if feature_level(fp["turnover"]) == "high" else None
+        # 純描述標籤：乖離在當日候選池前 1/3。同日比量不出比較常賺或賺比較多，不可包裝成加分。
+        p["bias_high"] = feature_level(fp["bias20_pct"]) == "high"
 
     # ⚠️ 2026-07-25 排序依據從 rs20 改成 rs_pct_60（Andy 選 4️⃣）。實測（verify_top5_procedure.py）：
     #   rs20 排序：+2.47pp／中位 0.97／t 1.78——但**跟隨機排序比 t 只有 0.28、0/20 seed 顯著**，
@@ -256,6 +271,7 @@ def build_opportunities(results, weights, revenue, data_date):
         "picks": picks,             # 2026-07-26 起不截斷：全部合格候選都輸出，買哪幾檔由 Andy 自己決定
         "pool_n": len(picks),        # 當日候選池大小（給前端顯示「共 N 檔」）
         "preview_n": PREVIEW_N,      # 前端預設展開幾筆，不是建議買幾檔
+        "tier_scheme": TIER_SCHEME,  # 分類版本（2026-11-13 起 edge_v2；缺欄位＝舊三分類）
         # 前端/快報要能講清楚這批是「強勢股裡的技術面最佳」還是「全市場技術面最佳」
         "gate": {"signal": GATE_SIGNAL, "applied": gate_on, "pool": len(gated),
                  "reason": gate_reason, "min_pool": GATE_MIN_POOL,
@@ -313,6 +329,9 @@ def update_picks_history(opp):
         # 分類結果當天不存，日後補不回來。
         entries.append({
             "date": opp["date"],
+            # 分類版本：2026-11-13 以前的 entry 沒有這欄＝舊三分類（both/win/return）。
+            # 之後若要按分類算實績，必須按這欄分開，不可把兩種版本的 tier 混在一起統計。
+            "tier_scheme": opp.get("tier_scheme"),
             "gate": opp.get("gate"),                       # 門檻是否套用、候選池多大
             "picks": [{"id": p["id"], "name": p["name"],
                        "close": p["close"], "score": p["score"],
@@ -322,7 +341,8 @@ def update_picks_history(opp):
                        "risk_flags": p.get("risk_flags"),
                        "revenue_yoy": p.get("revenue_yoy"),
                        "feat_pct": p.get("feat_pct"),
-                       "tier": p.get("tier")} for p in opp["picks"]],
+                       "tier": p.get("tier"),
+                       "bias_high": p.get("bias_high")} for p in opp["picks"]],
         })
     entries.sort(key=lambda e: e["date"])
     entries = entries[-HISTORY_MAX:]
