@@ -577,8 +577,8 @@ def test_exit_analysis_持有期比較與結構():
     assert res["n_events"] == 1 and res["control"] == "h20"
     rows = {s["key"]: s for s in res["strategies"]}
     assert set(rows) == {"h5", "h10", "h20", "h40", "trail10"}
-    # 進場＝次日收盤 ac[65]=165；持有 20 日 → 出場 ac[85]=185
-    expect_h20 = round(bt._net_return(165, 185) * 100, 2)
+    # 進場＝次日開盤 ao[65]=165；持有 20 日（進場日算第 1 天）→ 出場 ac[84]=184
+    expect_h20 = round(bt._net_return(165, 184) * 100, 2)
     assert rows["h20"]["avg_net_return"] == expect_h20
     # 上漲行情：持有越久淨報酬越高
     assert rows["h5"]["avg_net_return"] < rows["h20"]["avg_net_return"] < rows["h40"]["avg_net_return"]
@@ -603,8 +603,8 @@ def test_exit_analysis_進場價用隔日開盤而非收盤():
                "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]
     res = bt.exit_analysis(events, price_hist, {})
     rows = {s["key"]: s for s in res["strategies"]}
-    # 進場＝隔日開盤 130（不是隔日收盤 165）；持有 20 日 → 出場 close[85] = 185
-    expect_h20 = round(bt._net_return(130, 185) * 100, 2)
+    # 進場＝隔日開盤 130（不是隔日收盤 165）；持有 20 日 → 出場 close[84] = 184
+    expect_h20 = round(bt._net_return(130, 184) * 100, 2)
     assert rows["h20"]["avg_net_return"] == expect_h20
 
 
@@ -613,9 +613,56 @@ def test_exit_analysis_路徑不足略過():
     dates = _seq_dates(90)
     by = {d: [100 + i, 100 + i, 100 + i, 100 + i, 500000, 0] for i, d in enumerate(dates)}
     events = [{"date": dates[64], "sid": "A", "i": 64, "ret": 0.1,
-               "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]  # 65+40=105 >= 90 → 略過
+               "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]  # 65+39=104 >= 90 → 略過
     res = bt.exit_analysis(events, {"A": by}, {})
     assert res["n_events"] == 0
+
+
+def test_exit_analysis_持有20日與collect_events同口徑():
+    """Codex 2026-07-26 必修 1：h20 必須跟 collect_events 的 ret 是同一筆交易
+    （隔日開盤進、第 20 個交易日收盤出＝close[i+20]），不能多抱一天。"""
+    dates = _seq_dates(120)
+    by = {d: [100 + i, 100 + i, 100 + i, 100 + i, 500000, 0] for i, d in enumerate(dates)}
+    i = 64
+    gross_collect = (100 + i + bt.FORWARD) / (100 + i + 1) - 1     # collect_events 口徑
+    events = [{"date": dates[i], "sid": "A", "i": i, "ret": gross_collect,
+               "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]
+    res = bt.exit_analysis(events, {"A": by}, {}, breaks=set())
+    rows = {s["key"]: s for s in res["strategies"]}
+    assert rows["h20"]["avg_net_return"] == round(bt._apply_cost(gross_collect) * 100, 2)
+    assert rows["h20"]["avg_holding_days"] == 20.0
+    assert rows["trail10"]["avg_holding_days"] == float(bt.EXIT_TRAIL_CAP)
+    assert res["spec_version"] == "phase-b-exit-v2"
+
+
+def test_exit_analysis_窗內斷點整筆排除():
+    """Codex 2026-07-26 必修 2：40 日窗內（含 20 日之後）有分割／減資斷點 → 事件整筆不收。"""
+    dates = _seq_dates(120)
+    by = {d: [100 + i, 100 + i, 100 + i, 100 + i, 500000, 0] for i, d in enumerate(dates)}
+    ev = [{"date": dates[64], "sid": "A", "i": 64, "ret": 0.1,
+           "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]
+    # 斷點在第 30 天（collect_events 只排除到 i+20，舊版這筆會混進 h40/trail）
+    assert bt.exit_analysis(ev, {"A": by}, {}, breaks={("A", dates[65 + 30])})["n_events"] == 0
+    # 斷點在最後一天 entry_i+39 仍要排除；落在窗外（entry_i+40）則照收
+    assert bt.exit_analysis(ev, {"A": by}, {}, breaks={("A", dates[65 + 39])})["n_events"] == 0
+    assert bt.exit_analysis(ev, {"A": by}, {}, breaks={("A", dates[65 + 40])})["n_events"] == 1
+
+
+def test_exit_analysis_benchmark_排除斷點():
+    """benchmark（全市場同進場日平均）也要排除跨斷點的窗：B 檔在 20 日窗內有 +300% 假跳動，
+    不排除的話 A 的 h20 淨超額會被拉成大負數。"""
+    dates = _seq_dates(120)
+    flat = {d: [100.0, 100.0, 100.0, 100.0, 500000, 0] for d in dates}
+    jump = {d: ([100.0] * 4 if i < 75 else [400.0] * 4) + [500000, 0] for i, d in enumerate(dates)}
+    ev = [{"date": dates[64], "sid": "A", "i": 64, "ret": 0.0,
+           "fired": ["signal_ma"], "raw_fired": ["signal_ma"]}]
+    ph = {"A": flat, "B": jump}
+    dirty = bt.exit_analysis(ev, ph, {}, breaks=set())
+    clean = bt.exit_analysis(ev, ph, {}, breaks={("B", dates[75])})
+    exc = lambda r: {s["key"]: s for s in r["strategies"]}["h20"]["avg_net_excess"]
+    assert exc(dirty) < -100                     # 假跳動污染基準
+    # 排除後基準只剩 A 自己（毛 0%）→ 淨超額＝純成本拖累
+    assert exc(clean) == round(bt._net_return(100, 100) * 100, 2)
 
 
 # ── Phase C：防騙指標（signal_quality）─────────────────────────────────
