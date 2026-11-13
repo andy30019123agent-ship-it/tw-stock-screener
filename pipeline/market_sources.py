@@ -8,6 +8,7 @@
 - TWSE  用 YYYYMMDD；TPEX 用 YYYY/MM/DD；回應日期多為民國 "115/06/01" 或 "1150601"。
 - ⚠️ TWSE STOCK_DAY_ALL 只回「最新交易日」（不吃過去 date）；回填上市歷史改用單股月表 STOCK_DAY。
 """
+import contextlib
 import csv
 import io
 import json
@@ -27,10 +28,30 @@ TPEX_OPENAPI = "https://www.tpex.org.tw/openapi/v1"
 
 
 # ── HTTP（curl 優先、urllib 後備、重試退避；跨環境最穩）────────────────
+# 逾時與重試次數放模組層級，讓「不能拖太久」的呼叫端（漏抓回補）用 http_limits 暫時調短；
+# 預設值維持原本（curl 40 秒、urllib 20 秒、3 輪），每日主流程與回填腳本的行為不變。
+CURL_MAX_TIME = 40
+URLLIB_TIMEOUT = 20
+HTTP_RETRIES = 3
+
+
+@contextlib.contextmanager
+def http_limits(curl_max_time, urllib_timeout, retries):
+    """暫時調短逾時／重試（離開 with 一定還原）。單一 URL 最壞耗時約
+    retries×(curl_max_time+urllib_timeout) + 1.5×(1+…+retries) 秒。"""
+    global CURL_MAX_TIME, URLLIB_TIMEOUT, HTTP_RETRIES
+    old = (CURL_MAX_TIME, URLLIB_TIMEOUT, HTTP_RETRIES)
+    CURL_MAX_TIME, URLLIB_TIMEOUT, HTTP_RETRIES = curl_max_time, urllib_timeout, retries
+    try:
+        yield
+    finally:
+        CURL_MAX_TIME, URLLIB_TIMEOUT, HTTP_RETRIES = old
+
+
 def _curl(url):
     out = subprocess.run(
-        ["curl", "-s", "--http1.1", "-4", "-L", "--max-time", "40", "-A", UA, url],
-        capture_output=True, text=True, timeout=50,
+        ["curl", "-s", "--http1.1", "-4", "-L", "--max-time", str(CURL_MAX_TIME), "-A", UA, url],
+        capture_output=True, text=True, timeout=CURL_MAX_TIME + 10,
     )
     if out.returncode != 0 or not out.stdout:
         raise RuntimeError(f"curl rc={out.returncode}")
@@ -39,11 +60,12 @@ def _curl(url):
 
 def _urllib(url):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=URLLIB_TIMEOUT) as r:
         return r.read().decode("utf-8")
 
 
-def get_text(url, retries=3):
+def get_text(url, retries=None):
+    retries = HTTP_RETRIES if retries is None else retries
     last = None
     for i in range(retries):
         for fn in (_curl, _urllib):
@@ -108,6 +130,31 @@ def _ohlc(date_iso, o, h, lo, c, vol, money):
             "Trading_Volume": int(_f(vol) or 0), "Trading_money": _f(money) or 0}
 
 
+def _date_mismatch(date_iso, *candidates):
+    """回應裡標的資料日期跟請求的不同 → 回那個日期字串；一致或回應沒標日期 → 回 None。
+    candidates 接 ISO 日期（None 會略過）。2026-11-13 實測：TWSE MI_INDEX 的個股表標題含
+    「115年11月11日」、TPEX dailyQuotes 的表有 date="115/11/11"（頂層 date 只是回聲請求參數，不採信）。"""
+    for c in candidates:
+        if c and c != date_iso:
+            return c
+    return None
+
+
+def _table_date_or_none(raw, source):
+    """把回應裡的民國日期欄解析成 ISO；解析不了（格式改版，例如 '115/11/11 (三)'）→ 印 warning、回 None
+    ＝「無法比對日期」，呼叫端照原本行為收資料。只放寬「解析不了」；解析得出來但日期不符仍由
+    _date_mismatch 擋。比對日期是新增的保護，不能因它自己壞掉而讓每日更新當掉。"""
+    if not raw:
+        return None
+    try:
+        iso = roc_to_iso(raw)
+    except (ValueError, TypeError):
+        iso = None
+    if iso is None:
+        print(f"::warning::{source} 日期欄格式無法解析（{raw!r}）→ 無法比對日期，照收資料（官方格式可能改版，請檢查）")
+    return iso
+
+
 # ── 上市 OHLCV ────────────────────────────────────────────────────────
 def fetch_listed_ohlc_latest():
     """最新交易日全上市個股 OHLCV（STOCK_DAY_ALL，CSV）。回 (date_iso, {sid: row})。"""
@@ -136,6 +183,12 @@ def fetch_listed_ohlc(date_iso):
         f = [str(x) for x in t.get("fields", [])]
         if not (f and f[0] == "證券代號" and any("收盤價" in x for x in f)):
             continue
+        # 表標題「115年11月11日 每日收盤行情(全部)」＝這張表實際的資料日；跟請求不同就整包不收
+        # （官方回了別天的資料卻被蓋上請求日期，比缺一天更難發現）。
+        bad = _date_mismatch(date_iso, roc_label_to_iso(str(t.get("title", "")).split(" ")[0]))
+        if bad:
+            print(f"  ⚠️ 上市 OHLCV 請求 {date_iso} 卻回 {bad} 的資料 → 不收")
+            return {}
         # 欄位：證券代號,證券名稱,成交股數,成交筆數,成交金額,開盤價,最高價,最低價,收盤價,…
         for r in t.get("data", []) or []:
             sid = str(r[0]).strip()
@@ -160,6 +213,23 @@ def fetch_taiex_close(date_iso):
     return None
 
 
+def fetch_trading_days_month(ym):
+    """某月份的「官方交易日清單＋當日加權指數收盤」（TWSE FMTQIK 市場成交資訊，一請求一個月）。
+    ym＝"YYYYMM"。回 {date_iso: 加權指數收盤}。
+
+    給漏抓回補（gap_backfill.py）當「應有交易日」基準：它跟每日抓個股的 STOCK_DAY_ALL 是
+    不同端點、不同時間抓，每日那條路漏掉的日子，這裡照樣列得出來。
+    ⚠️ 回空（{}）≠「那個月沒交易」——限流、夜間維護都會回空；呼叫端要把空當成「基準未知」。"""
+    d = get_json(f"{TWSE_AT}/FMTQIK?date={ym}01&response=json")
+    out = {}
+    # 欄位：日期,成交股數,成交金額,成交筆數,發行量加權股價指數,漲跌點數
+    for r in d.get("data", []) or []:
+        iso = roc_to_iso(r[0]) if r else None
+        if iso:
+            out[iso] = _f(r[4]) if len(r) > 4 else None
+    return out
+
+
 # 註：舊的「逐月抓單一上市股 OHLCV」（STOCK_DAY，fetch_listed_ohlc_month）已於 2026-07-25 移除
 # ——回填改走逐日全市場的 fetch_listed_ohlc(day)（backfill.py:50），逐檔 STOCK_DAY 還會被 TWSE 限流。
 
@@ -174,6 +244,11 @@ def fetch_otc_ohlc(date_iso):
     out = {}
     # fields：代號,名稱,收盤,漲跌,開盤,最高,最低,均價,成交股數,成交金額(元)
     for t in tables:
+        # 表的 date（民國 "115/11/11"）＝實際資料日；跟請求不同就整包不收（理由同 fetch_listed_ohlc）
+        bad = _date_mismatch(date_iso, _table_date_or_none(t.get("date"), "上櫃 OHLCV"))
+        if bad:
+            print(f"  ⚠️ 上櫃 OHLCV 請求 {date_iso} 卻回 {bad} 的資料 → 不收")
+            return {}
         for r in t.get("data", []) or []:
             sid = str(r[0]).strip()
             if not is_common_stock(sid):
@@ -248,6 +323,10 @@ def fetch_ex_dividend_events(start_iso, end_iso, sources_ok=None):
         sources_ok = {}
     sources_ok.setdefault("listed", False)
     sources_ok.setdefault("otc", False)
+    # 各市場回應的原始資料列數：TWSE 限流時會「回 JSON 但沒有資料」（backfill_dividends_bt.py 記過），
+    # 光看 listed/otc=True 分不出「真的沒除權息」跟「被限流回空」——呼叫端用列數 0 判斷要不要重查。
+    sources_ok["listed_rows"] = 0
+    sources_ok["otc_rows"] = 0
 
     def add(sid, date_iso, pre, ref):
         pre_f, ref_f = _f(pre), _f(ref)
@@ -259,6 +338,7 @@ def fetch_ex_dividend_events(start_iso, end_iso, sources_ok=None):
     try:
         sd, ed = start_iso.replace("-", ""), end_iso.replace("-", "")
         d = get_json(f"https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate={sd}&endDate={ed}&response=json")
+        sources_ok["listed_rows"] = len(d.get("data", []) or [])
         for r in d.get("data", []) or []:
             sid = str(r[1]).strip()
             if not is_common_stock(sid):
@@ -277,6 +357,7 @@ def fetch_ex_dividend_events(start_iso, end_iso, sources_ok=None):
         url = ("https://www.tpex.org.tw/web/stock/exright/dailyquo/exDailyQ_result.php"
                f"?l=zh-tw&d={sy}/{sm}/{sday}&ed={ey}/{em}/{eday}")
         d = get_json(url)
+        sources_ok["otc_rows"] = sum(len(t.get("data", []) or []) for t in d.get("tables", []) or [])
         for t in d.get("tables", []) or []:
             for r in t.get("data", []) or []:
                 sid = str(r[1]).strip()
