@@ -38,6 +38,11 @@ export function gapToHigh(close, high) {
   return { pct, atHigh: pct <= 0 }
 }
 
+// 「還差／距離」這類本身已帶方向的說法只印大小、不帶 +（「還差 +48.2%」讀起來像在漲）。
+export function gapText(gap, digits = 1) {
+  return gap && isNum(gap.pct) ? `${Math.abs(gap.pct).toFixed(digits)}%` : '—'
+}
+
 // 月線相對現價的位置
 export function maSide(close, ma20) {
   if (!(isNum(close) && close > 0 && isNum(ma20) && ma20 > 0)) return null

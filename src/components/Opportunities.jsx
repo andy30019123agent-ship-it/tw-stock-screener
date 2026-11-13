@@ -5,7 +5,7 @@ import OutcomeShape from './OutcomeShape'
 import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinShort, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier, evVerdictOf } from '../lib/tierVerdict'
 import { fmtRange } from '../lib/fmtRange'
 import { readView, writeView } from '../lib/viewPref'
-import { signed, rankFront, beatPct, gapToHigh, maSide, dirOf, commonReasons, reasonView } from '../lib/cardFacts'
+import { signed, rankFront, beatPct, gapToHigh, gapText, maSide, dirOf, commonReasons, reasonView } from '../lib/cardFacts'
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
@@ -100,7 +100,7 @@ function PickFacts({ p }) {
             <p className="opp-fact-v">
               {gap.atHigh
                 ? <>已在近 20 日高點</>
-                : <>離近 20 日前高還差 <b className="mono">{signed(gap.pct)}%</b>{isNum(fp.high20_gap) && <>，比今天 {Math.round(fp.high20_gap * 100)}% 的候選遠</>}</>}
+                : <>離近 20 日前高還差 <b className="mono">{gapText(gap)}</b>{isNum(fp.high20_gap) && <>，比今天 {Math.round(fp.high20_gap * 100)}% 的候選遠</>}</>}
             </p>
           </div>
         )}
@@ -108,7 +108,7 @@ function PickFacts({ p }) {
       {(side || (gap && !gap.atHigh)) && (
         <dl className="opp-obs">
           {side && <div><dt>月線</dt><dd className="mono">{p.support_ma20}<small>{side}</small></dd></div>}
-          {gap && !gap.atHigh && <div><dt>近 20 日前高</dt><dd className="mono">{p.recent_high20}<small>距 {signed(gap.pct)}%</small></dd></div>}
+          {gap && !gap.atHigh && <div><dt>近 20 日前高</dt><dd className="mono">{p.recent_high20}<small>距 {gapText(gap)}</small></dd></div>}
         </dl>
       )}
     </>

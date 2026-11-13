@@ -1,5 +1,5 @@
 import { readView, writeView, VIEW_KEY, DEFAULT_VIEW } from '../viewPref.js'
-import { signed, rankFront, beatPct, gapToHigh, maSide, dirOf, commonReasons, reasonView } from '../cardFacts.js'
+import { signed, rankFront, beatPct, gapToHigh, gapText, maSide, dirOf, commonReasons, reasonView } from '../cardFacts.js'
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  ❌', msg) } }
 
@@ -33,6 +33,8 @@ ok(beatPct(0.997) === '99.7' && beatPct(1.2) === '100.0' && beatPct(undefined) =
 const g = gapToHigh(100, 149.4)
 ok(g && Math.abs(g.pct - 49.4) < 1e-9 && g.atHigh === false, '離前高 +49.4%')
 ok(gapToHigh(100, 100).atHigh === true && gapToHigh(100, 90).atHigh === true, '前高不高於現價 → 已在高點')
+ok(gapText(g) === '49.4%' && !gapText(g).includes('+'), '還差 49.4%，不帶 + 號')
+ok(gapText(null) === '—', 'gapText 缺值 → —')
 ok(gapToHigh(0, 10) === null && gapToHigh(10, null) === null, '缺值 → null')
 ok(maSide(100, 110) === '在現價上方' && maSide(100, 90) === '在現價下方' && maSide(100, null) === null, 'maSide')
 ok(dirOf(1) === 'up' && dirOf(-0.1) === 'down' && dirOf(0) === 'flat' && dirOf(null) === 'flat', 'dirOf')

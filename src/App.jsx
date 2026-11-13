@@ -7,6 +7,7 @@ import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
 import MarketAdvice from './components/MarketAdvice'
+import { readDense, writeDense } from './lib/safeStorage'
 import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions } from './lib/filters'
 
 export default function App() {
@@ -35,13 +36,10 @@ export default function App() {
   const [exitSummary, setExitSummary] = useState(null) // exit_rules_summary.json：停損線代價對照表（抓不到＝表格不顯示）
   const [tierStats, setTierStats] = useState(null)   // tier_stats.json：候選情報條件層級的歷史分佈（Opportunities/OutcomeShape 用）
   // 手機卡片密度：精簡（預設，省滑）／完整；記住上次選擇
-  const [dense, setDense] = useState(() => {
-    if (typeof localStorage === 'undefined') return true
-    return localStorage.getItem('tw-screener:dense') !== 'full'
-  })
+  const [dense, setDense] = useState(() => readDense())
   const toggleDense = () => setDense(d => {
     const next = !d
-    try { localStorage.setItem('tw-screener:dense', next ? 'dense' : 'full') } catch { /* 隱私模式忽略 */ }
+    writeDense(next)   // 寫不進去（隱私模式）就算了，只是下次不記得
     return next
   })
   const [picked, setPicked] = useState(null)

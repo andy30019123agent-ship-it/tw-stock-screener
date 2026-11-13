@@ -4,6 +4,7 @@ import {
   Rocket, BookOpen, Gem, Sparkles, Landmark, TrendingUp,
 } from 'lucide-react'
 import ComboBoard from './ComboBoard'
+import { signalSummary } from '../lib/signalSummary'
 import { oosBadge, sigTier, TIER_MARK } from '../lib/oos'
 
 const isMobile = () =>
@@ -109,6 +110,7 @@ export default function ConditionPanel({
   weights = null, combos = null, exits = null, regime = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
+  const sigRange = signalSummary(weights)   // 各訊號「贏過大盤比例」最小～最大（與說明書同一個函式）
   // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
   const orderedPresets = PRESETS
     .map((p, i) => ({ p, i, s: presetScore(p.key, weights) }))
@@ -234,7 +236,9 @@ export default function ConditionPanel({
               <p className="strategy-note strategy-skew">
                 <AlertTriangle size={14} strokeWidth={2} className="inline-warn-icon" />
                 <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
-                贏大盤比例全部落在 37%～43%（沒有一個過半，2026-07-26 新口徑重算）。
+                {sigRange
+                  ? <>贏大盤比例全部落在 {Math.round(sigRange.min * 100)}%～{Math.round(sigRange.max * 100)}%{sigRange.anyHalf ? '' : '（沒有一個過半）'}。</>
+                  : <>贏大盤比例的回測數字暫時取不到。</>}
                 意思是<b>大多數交易其實小輸大盤，整體正報酬靠少數幾檔大贏撐起來</b>。
                 這種形狀的策略要能成立，必須分散買足夠多檔、而且不能在賠錢時提早出場——只買一兩檔
                 或半路放棄，很可能剛好錯過那幾檔、拿到的是中位數而不是平均數。
@@ -274,7 +278,7 @@ export default function ConditionPanel({
                 「相對強弱」＝拿個股近期漲幅跟全市場排名（不是跟大盤指數比）；「熱門產業」＝所屬產業近期輪動居前。
                 這些是<b>橫斷面（跨股票比較）</b>訊號。2026-07-25 起後端每天算好全市場排名，所以<b>都可以直接勾選篩股</b>；
                 其中<b>「強勢雙確認」已成為候選情報清單的入場門檻</b>（先篩出強勢股，再用技術訊號排名）——
-                它<b>不參與加權計分</b>，因為它有 21% 的股票符合，當加分項會淹掉真正有區辨力的窄訊號。
+                它<b>不參與加權計分</b>，因為符合它的股票太多，當加分項會淹掉真正有區辨力的窄訊號。
               </p>
             </details>
           )}

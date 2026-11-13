@@ -7,10 +7,7 @@ export const VIEW_KEY = 'tw-screener:opp-view'
 export const VIEWS = ['cards', 'list']
 export const DEFAULT_VIEW = 'cards'
 
-const getStore = storage => {
-  if (storage !== undefined) return storage
-  try { return typeof localStorage === 'undefined' ? null : localStorage } catch { return null }
-}
+import { getStore } from './safeStorage.js'
 
 export function readView(storage) {
   try {

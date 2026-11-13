@@ -1,5 +1,6 @@
 import { ArrowLeft, BookOpen, AlertTriangle } from 'lucide-react'
 import ExitDefense from './ExitDefense'
+import { okNum, signalSummary } from '../lib/signalSummary'
 import { edgeSentence, edgeWinRateText, staleText, biasNote } from '../lib/tierVerdict'
 
 // 使用說明書（Andy 2026-07-25 要求，選「做進網站」＋「寫給自己看（術語附白話）」）。
@@ -35,7 +36,6 @@ function Term({ word, children }) {
 // 條件層級數字一律讀 tier_stats.json（2026-11-13 起，母體＝歷史候選池重播）。讀不到印「—」。
 // 🔴 2026-11-13：這裡原本寫死 47.6%／42.5%／50.0%／48.6%／41.4%／−0.4%——全是 2026-07-26
 // 用「所有訊號事件」這個錯的母體算的，跟網站上被分類的候選不是同一群股票。
-const okNum = v => typeof v === 'number' && Number.isFinite(v)
 const wrTxt = s => (okNum(s?.win_rate) ? `${(s.win_rate * 100).toFixed(1)}%` : '—')
 const pctTxt = v => (okNum(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%` : '—')
 
@@ -43,12 +43,6 @@ const pctTxt = v => (okNum(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)
 // +3.77%、1400 多檔、乖離 −1.59%／+2.36% …）全部改讀資料檔；讀不到就略過那一句或印「—」，絕不印舊數字。
 // 研究結論本身（例如「2026-07-25 複驗後乖離方向是反的」）保留成帶日期的歷史敘述，但不再附舊數字。
 const pp2 = v => (okNum(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%` : '—')
-function signalSummary(weights) {
-  const list = Object.values(weights?.signals || {}).filter(x => x && x.samples > 0 && okNum(x.excess_win_rate))
-  if (!list.length) return null
-  const rates = list.map(x => x.excess_win_rate)
-  return { n: list.length, min: Math.min(...rates), max: Math.max(...rates), anyHalf: rates.some(r => r >= 0.5) }
-}
 function comboSummary(combos) {
   const list = Array.isArray(combos?.combos) ? combos.combos : null
   if (!list) return null
