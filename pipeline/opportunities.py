@@ -450,6 +450,16 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
         # 來源檔不見了就不能讓前端繼續顯示上一份（Codex 必修 7）：刪掉，前端走「暫時取不到」降級
         os.remove(pub_tiers)
 
+    # 出場研究精簡表（research_exit_rules.py 手動重跑產出、已進版控）：每天複製一份給前端「停損代價表」。
+    # 來源檔不在就刪掉服務用副本，前端走「暫時取不到」降級（同 tier_stats）。
+    exit_src = os.path.join(HERE, "exit_rules_summary.json")
+    pub_exit = os.path.join(OUT_DIR, "exit_rules_summary.json")
+    exit_sum = bt._load(exit_src)
+    if exit_sum:
+        _write_json(pub_exit, exit_sum)
+    elif os.path.exists(pub_exit):
+        os.remove(pub_exit)
+
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"][:PREVIEW_N]) or "（今日無符合標的）"
     more = f"…等共 {opp['pool_n']} 檔" if opp["pool_n"] > PREVIEW_N else ""
     print(f"   候選 {opp['pool_n']} 檔：{names}{more}")

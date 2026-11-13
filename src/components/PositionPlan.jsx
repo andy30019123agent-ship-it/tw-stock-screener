@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Target as TargetIcon, CalendarClock, Layers } from 'lucide-react'
+import ExitDefense from './ExitDefense'
 import { targetPrice, holdUntil, concentration, HOLD_DAYS } from '../lib/position'
 
 // 個股觀察位卡：**近 20 日前高（觀察位）、20 日績效檢視日**
@@ -9,12 +10,12 @@ import { targetPrice, holdUntil, concentration, HOLD_DAYS } from '../lib/positio
 // 原因：
 //   ・目標價 = 現價 ×(1+13.7%) 那個 13.7% 是「賺的時候」的平均幅度，忽略了虧損事件，
 //     不是這檔的預期報酬——已移除，只留 recent_high20 這個事實性的技術觀察位。
-//   ・出場價 −15% 的驗證腳本不在 repo 裡、無法重現，Phase 3 會用逐日 OHLC 重做，
-//     在那之前不掛結論性文案——整欄移除。
+//   ・出場價 −15% 原本的驗證腳本不在 repo 裡、無法重現——整欄移除。2026-11-13 出場研究做完（見
+//     _reports/研究_出場規則_2026-11-13.md），欄位仍不放回；改在下方收合區照實說明防守價並附各條停損線的代價表。
 //   ・買幾張／資金配置屬於「購買組合」，Andy 說會自己評估，不需要系統給。
 const pctOf = v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
 
-export default function PositionPlan({ picks, dataDate }) {
+export default function PositionPlan({ picks, dataDate, exitSummary }) {
   const conc = useMemo(() => concentration(picks || []), [picks])
   const until = holdUntil(dataDate)
   if (!picks?.length) return null
@@ -67,6 +68,12 @@ export default function PositionPlan({ picks, dataDate }) {
           這是回測結算的口徑，<b>不是建議賣出日</b>——買不買、抱多久由你決定。
         </span>
       </p>
+
+      {/* 防守價（−15% 與月線取較高者）的照實說明＋各條停損線的代價表：預設收合，不佔首屏。 */}
+      <details className="pp-exit">
+        <summary>想看「防守價／停損」怎麼看？（歷史上各條停損線的代價）</summary>
+        <ExitDefense exitSummary={exitSummary} />
+      </details>
     </section>
   )
 }

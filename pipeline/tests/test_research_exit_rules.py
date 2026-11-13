@@ -157,3 +157,17 @@ def test_續抱vs隔日賣_按筆與按日權重不同():
 def test_按筆CI_常數序列就是該值():
     ci = rx.circular_ratio_ci([6.0, 4.0, 2.0], [3, 2, 1], 2, n_boot=50)
     assert ci == [2.0, 2.0]
+
+
+def test_build_summary_欄位與取值():
+    summ = {}
+    for key, _ in rx.SUMMARY_ROWS:
+        summ[f"cap20_next_open_{key}"] = {"stop_rate": 0.5, "win": 0.4, "p5": -0.2, "worst": -0.3}
+    res = {"meta20": {"n": 100, "signal_days": 41, "first": "2025-01-16", "last": "2026-10-12"},
+           "summary": summ,
+           "miscut": {k: {"winners": 0.1} for k, _ in rx.SUMMARY_ROWS if k != "hold"}}
+    out = rx.build_summary(res, "2026-11-13")
+    assert out["batches"] == 2 and out["n"] == 100 and out["fill"] == "next_open"
+    assert out["rows"][0]["key"] == "hold" and len(out["rows"]) == 7
+    assert out["rows"][0]["stop_rate"] == 0.0 and out["rows"][0]["miscut_winners"] == 0.0
+    assert out["rows"][-1]["key"] == "site15ma" and out["rows"][-1]["miscut_winners"] == 0.1

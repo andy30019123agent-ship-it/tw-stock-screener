@@ -1,4 +1,5 @@
 import { ArrowLeft, BookOpen, AlertTriangle } from 'lucide-react'
+import ExitDefense from './ExitDefense'
 import { edgeSentence, edgeWinRateText, staleText, biasNote } from '../lib/tierVerdict'
 
 // 使用說明書（Andy 2026-07-25 要求，選「做進網站」＋「寫給自己看（術語附白話）」）。
@@ -38,7 +39,7 @@ const okNum = v => typeof v === 'number' && Number.isFinite(v)
 const wrTxt = s => (okNum(s?.win_rate) ? `${(s.win_rate * 100).toFixed(1)}%` : '—')
 const pctTxt = v => (okNum(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%` : '—')
 
-export default function HelpGuide({ onBack, tierStats }) {
+export default function HelpGuide({ onBack, tierStats, exitSummary }) {
   const turn = tierStats?.features?.turnover || {}
   const tsDate = tierStats?.date || '—'
   // 2026-11-13 分類簡化：主訊息＝「相對優勢 vs 當天其餘候選」的同日配對差（tierVerdict.edgeSentence，
@@ -118,12 +119,14 @@ export default function HelpGuide({ onBack, tierStats }) {
               越可能剛好錯過那幾檔、只留下小輸的那些。
             </li>
             <li>
-              <b>目前沒有經過驗證的停損建議。</b>看到「近 20 日前高（觀察位）」不要當成出場價——
-              那只是技術上的參考點，不是回測驗證過的停損規則。這塊要等第三段「出場研究」做完才會有，
-              在那之前這個網站不會假裝有答案。
+              <b>停損沒有「驗證過的最佳線」。</b>「近 20 日前高（觀察位）」不是出場價，只是技術上的參考點。
+              歷史資料分不出哪一條停損線比較好，所以網站不給停損建議，只在下面「防守價與停損的代價」把各條線的代價列給你自己挑。
             </li>
           </ul>
         </div>
+
+        <h3 className="help-sub" id="exit-cost">防守價與停損的代價</h3>
+        <ExitDefense exitSummary={exitSummary} />
 
         <p className="help-note">
           其他區塊（篩選條件、各種戰績表）是給你想深入研究時用的，日常看盤不用每次都打開。
@@ -322,7 +325,8 @@ export default function HelpGuide({ onBack, tierStats }) {
             <b>進場價用「訊號隔天開盤」計算</b>，跟你實際最快能買到的時間一致；但盤中追高、或隔幾天才買，結果就會跟回測不同。
           </li>
           <li>
-            <b>不含停損停利</b>。所有戰績都是「買進後固定持有 20 個交易日」。
+            <b>戰績不含停損停利</b>。所有戰績都是「買進後固定持有 20 個交易日」；
+            各條停損線的歷史代價另外列在第 1 章的「防守價與停損的代價」，兩者不要混著讀。
             出場分析顯示持有 40 天成本後表現更好，但那還沒經過樣本外驗證。
           </li>
           <li>
