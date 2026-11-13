@@ -181,8 +181,8 @@ def test_主訊息是同日配對差且數字讀檔(tmp_path, monkeypatch):
     _write_tiers(tmp_path, monkeypatch, TS)
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock(id="9001")]})
     assert "這不是購買組合" in text
-    assert "同一天的候選裡，相對優勢這群比其他候選的賺錢機率多約 6.3 個百分點（誤差範圍 3.1～9.4）" in text
-    assert "平均每筆也多約 1.9 個百分點（誤差範圍 0.6～3.3）" in text
+    assert "同一天的候選裡，相對優勢這群比其他候選的賺錢機率多約 6.3 個百分點（誤差範圍 +3.1～+9.4）" in text
+    assert "平均每筆也多約 1.9 個百分點（誤差範圍 +0.6～+3.3）" in text
     assert "單檔賺錢機率只有 47.1%，不到一半" in text
     assert "49%" not in text and "52%" not in text, "寫死的舊數字不可復活"
 
@@ -191,12 +191,12 @@ def test_幅度CI下限接近0用保守說法_跨0說量不出():
     t = dict(TS, paired={"cat_edge_vs_rest": {"win_pp": 6.3, "win_ci90": [3.1, 9.4],
                                               "ev_pp": 1.0, "ev_ci90": [0.2, 2.0]}})
     s = nt.tier_disclaimer(t)
-    assert "略高約 1.0 個百分點，但接近量不出（誤差範圍 0.2～2.0）" in s and "也多約" not in s
+    assert "略高約 1.0 個百分點，但接近量不出（誤差範圍 +0.2～+2.0）" in s and "也多約" not in s
     t2 = dict(TS, paired={"cat_edge_vs_rest": {"win_pp": 1.2, "win_ci90": [-0.8, 3.0],
                                                "ev_pp": 0.4, "ev_ci90": [-0.9, 1.5]}})
     s2 = nt.tier_disclaimer(t2)
-    assert "量不出差別（差 +1.2 個百分點，誤差範圍 −0.8～3.0）" in s2
-    assert "平均每筆量不出差別（誤差範圍 −0.9～1.5）" in s2 and "多約" not in s2
+    assert "量不出差別（差 +1.2 個百分點，誤差範圍 −0.8～+3.0）" in s2
+    assert "平均每筆量不出差別（誤差範圍 −0.9～+1.5）" in s2 and "多約" not in s2
 
 
 def test_單檔賺錢機率過半時照實講不寫死不到一半():
@@ -272,4 +272,4 @@ def test_分類段落明說順序不是排名(tmp_path, monkeypatch):
 def test_四捨五入與網站同規則():
     """網站 tierVerdict.js 用 floor(|x|×10+0.5)；Python 預設是銀行家進位（1.25→1.2），會差 0.1。"""
     s = nt.tier_disclaimer({"paired": {"cat_edge_vs_rest": {"win_pp": 1.25, "win_ci90": [0.25, 2.25]}}})
-    assert "多約 1.3 個百分點（誤差範圍 0.3～2.3）" in s
+    assert "多約 1.3 個百分點（誤差範圍 +0.3～+2.3）" in s

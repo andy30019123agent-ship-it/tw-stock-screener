@@ -39,7 +39,7 @@ export function evVerdictOf(ci) {
 // 用同一個算式網站與 TG（notify_tg._r1）才會逐字相同。
 const r1 = v => (Math.floor(Math.abs(v) * 10 + 0.5) / 10).toFixed(1)
 const pp = v => r1(v)
-const num1 = v => `${v < 0 && r1(v) !== '0.0' ? '−' : ''}${r1(v)}`
+const num1 = v => `${v < 0 && r1(v) !== '0.0' ? '−' : v > 0 && r1(v) !== '0.0' ? '+' : ''}${r1(v)}`
 export const ciTxt = c => `${num1(c[0])}～${num1(c[1])}`
 
 // 賺錢比例差的一句話；不可用回 null。

@@ -229,7 +229,7 @@ def _f1(v):
 
 def _n1(v):
     r = _r1(v)
-    return ("−" if v < 0 and r != "0.0" else "") + r
+    return ("−" if v < 0 and r != "0.0" else "+" if v > 0 and r != "0.0" else "") + r
 
 
 def _rng(c):

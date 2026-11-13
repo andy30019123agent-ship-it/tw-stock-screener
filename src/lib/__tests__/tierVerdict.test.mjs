@@ -30,12 +30,12 @@ const TS = {
   },
   by_gate: { fallback: { categories: { edge: { win_rate: 0.388 }, rest: { win_rate: 0.427 } } } },
 }
-ok(edgeSentence(TS) === '同一天的候選裡，相對優勢這群比其他候選的賺錢機率多約 6.3 個百分點（誤差範圍 3.1～9.4），平均每筆也多約 1.9 個百分點（誤差範圍 0.6～3.3）', '主訊息句（與 TG 逐字同）：' + edgeSentence(TS))
+ok(edgeSentence(TS) === '同一天的候選裡，相對優勢這群比其他候選的賺錢機率多約 6.3 個百分點（誤差範圍 +3.1～+9.4），平均每筆也多約 1.9 個百分點（誤差範圍 +0.6～+3.3）', '主訊息句（與 TG 逐字同）：' + edgeSentence(TS))
 ok(edgeWinRateText(TS) === '但單檔賺錢機率只有 47.1%，不到一半', '單檔不到一半')
 ok(/過半也不代表穩賺/.test(edgeWinRateText({ categories: { edge: { win_rate: 0.512 } } })) && !/不到一半/.test(edgeWinRateText({ categories: { edge: { win_rate: 0.512 } } })), '過半照實講')
 ok(evVerdictOf([0.2, 2]) === 'marginal' && evVerdictOf([0.5, 2]) === 'better', 'CI 下限 <0.5 → marginal')
-ok(/略高約 1\.0 個百分點，但接近量不出（誤差範圍 0\.2～2\.0）/.test(evDiffText(P(1, [1, 2], 1.0, [0.2, 2.0]))), '保守說法帶誤差範圍')
-ok(/量不出差別（差 \+1\.2 個百分點，誤差範圍 −0\.8～3\.0）/.test(edgeSentence({ paired: { cat_edge_vs_rest: P(1.2, [-0.8, 3.0], 0.4, [-0.9, 1.5]) } })), 'CI 跨 0 → 量不出、負號用 −')
+ok(/略高約 1\.0 個百分點，但接近量不出（誤差範圍 \+0\.2～\+2\.0）/.test(evDiffText(P(1, [1, 2], 1.0, [0.2, 2.0]))), '保守說法帶誤差範圍')
+ok(/量不出差別（差 \+1\.2 個百分點，誤差範圍 −0\.8～\+3\.0）/.test(edgeSentence({ paired: { cat_edge_vs_rest: P(1.2, [-0.8, 3.0], 0.4, [-0.9, 1.5]) } })), 'CI 跨 0 → 量不出、負號用 −')
 ok(edgeSentence({ ...TS, stale: true }) === null && edgeWinRateText({ ...TS, stale: true }) === null, 'stale → 不引用數字')
 ok(staleText({ ...TS, stale: true, date: '2026-11-06' }) === '統計已過期（上次成功重算 2026-11-06）' && staleText(TS) === null, 'stale 字樣帶上次成功日期')
 ok(edgeSentence({}) === null && edgeSentence(null) === null && edgeSentence({ paired: { cat_edge_vs_rest: { win_pp: null } } }) === null, '缺欄位 → null')
@@ -47,7 +47,7 @@ ok(normalizeTier({ tier: 'both' }).tier === 'edge' && normalizeTier({ tier: 'bot
 ok(normalizeTier({ tier: 'win' }).tier === 'edge' && !normalizeTier({ tier: 'win' }).biasHigh, '舊 win → 相對優勢')
 ok(normalizeTier({ tier: 'return' }).tier === null && normalizeTier({ tier: 'return' }).biasHigh, '舊 return → 無分類＋乖離排前段')
 ok(normalizeTier({ tier: 'xx' }).tier === null && normalizeTier(null).tier === null && normalizeTier({}).biasHigh === false, '未知值／null 不 crash')
-ok(/^1\.3$|^1\.2$/.test('1.3') && edgeSentence({ paired: { cat_edge_vs_rest: P(1.25, [0.25, 2.25], 0, null) } }).includes('多約 1.3 個百分點（誤差範圍 0.3～2.3）'), '四捨五入規則固定 floor(x*10+0.5)')
+ok(/^1\.3$|^1\.2$/.test('1.3') && edgeSentence({ paired: { cat_edge_vs_rest: P(1.25, [0.25, 2.25], 0, null) } }).includes('多約 1.3 個百分點（誤差範圍 +0.3～+2.3）'), '四捨五入規則固定 floor(x*10+0.5)')
 const all = [edgeSentence(TS), edgeWinRateText(TS), gateNote({ applied: false, reason: 'pool_too_small' }, TS), biasNote(TS)].join('')
 ok(!/NaN|undefined|null|雙優|勝率偏優|報酬偏優|保證/.test(all), '輸出沒有 NaN／舊稱號／保證')
 console.log(`tierVerdict: ${pass} pass, ${fail} fail`)

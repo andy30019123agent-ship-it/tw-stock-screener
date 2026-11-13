@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Award, Info } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
-import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier, evVerdictOf, ciTxt } from '../lib/tierVerdict'
+import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier, evVerdictOf } from '../lib/tierVerdict'
+import { fmtRange } from '../lib/fmtRange'
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
@@ -78,7 +79,7 @@ export function HonestyCallout({ tierStats }) {
     <p className="opp-honesty">
       <Info size={15} strokeWidth={1.75} />
       <span>
-        {head && <><b>{head}</b>。</>}
+        {head && <><b>{head}</b>。<small className="opp-ci-note">（這是每個交易日各算一次差距再平均；下面是全部筆數合起來算，兩者本來就不同。）</small></>}
         單看成交金額最高的三分之一，單檔歷史賺錢機率 <b>{winPct(hi)}%</b>；最低的三分之一 <b>{winPct(lo)}%</b>
         {allBelowHalf
           ? <>——<b>三層都不到一半</b></>
@@ -89,7 +90,7 @@ export function HonestyCallout({ tierStats }) {
         {(() => {
           // 幅度宣稱規則（tierVerdict 檔頭）：CI 下限 ≥0.5 才講優勢、0~0.5 用保守說法，一律附誤差範圍
           const okEvCi = Array.isArray(hi.ci90_ev) && isNum(hi.ci90_ev[0]) && isNum(hi.ci90_ev[1])
-          const r = okEvCi ? `（誤差範圍 ${ciTxt(hi.ci90_ev)}%）` : ''
+          const r = okEvCi ? `（誤差範圍 ${fmtRange(hi.ci90_ev)}）` : ''
           if (ev <= 0) return `——扣完成本平均沒有賺${r}。`
           const v = okEvCi ? evVerdictOf(hi.ci90_ev) : null
           if (v === 'better') return `——平均每筆是正的${r}，優勢在賺賠幅度，不是在勝率。`
@@ -97,7 +98,7 @@ export function HonestyCallout({ tierStats }) {
           return `——平均看起來略正，但誤差範圍跨過 0${r}，還不能說有優勢。`
         })()}
         <small className="opp-ci-note">
-          （{hi.blocks} 批獨立樣本，90% CI 高層 {hi.ci90[0]}–{hi.ci90[1]}% ／ 低層 {lo.ci90[0]}–{lo.ci90[1]}%；
+          （{hi.blocks} 批獨立樣本，90% CI 高層 {fmtRange(hi.ci90, { sign: false })} ／ 低層 {fmtRange(lo.ci90, { sign: false })}；
           {pairedLine ? `${pairedLine}；` : ''}樣本＝歷史上每天重播候選流程後的候選池）
           {tierStats.stale && <b className="bad">　⚠️ {staleText(tierStats)}，數字可能過時</b>}
         </small>
@@ -176,8 +177,8 @@ function TierHistory({ s }) {
   return (
     <p className="opp-tier-blurb">
       歷史（候選池重播 {s.samples} 筆、約 {s.blocks} 批獨立進場）：賺錢機率 <b>{(s.win_rate * 100).toFixed(1)}%</b>
-      （90% CI {s.ci90[0]}–{s.ci90[1]}%）、平均每筆 <b className={s.ev_pct >= 0 ? 'good' : 'bad'}>{s.ev_pct >= 0 ? '+' : ''}{s.ev_pct.toFixed(2)}%</b>
-      （90% CI {s.ci90_ev[0]}–{s.ci90_ev[1]}%）
+      （90% CI {fmtRange(s.ci90, { sign: false })}）、平均每筆 <b className={s.ev_pct >= 0 ? 'good' : 'bad'}>{s.ev_pct >= 0 ? '+' : ''}{s.ev_pct.toFixed(2)}%</b>
+      （90% CI {fmtRange(s.ci90_ev)}）
     </p>
   )
 }

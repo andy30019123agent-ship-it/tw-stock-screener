@@ -32,14 +32,19 @@ export default function ExitDefense({ exitSummary }) {
       {sum ? (
         <>
           <p className="exd-title"><b>各條停損線的代價</b>（買進後 {sum.holdDays} 天內，這不是建議，取捨由你決定）</p>
-          <div className="exd-scroll" role="region" aria-label="各條停損線的代價對照表" tabIndex={0}>
+          <p className="exd-legend">
+            <b>觸發</b>＝{sum.holdDays} 天內碰到停損線的比例；<b>誤砍</b>＝本來抱滿會賺、卻先被洗出場的比例；
+            <b>賺錢率</b>＝這樣操作最後賺錢的比例；<b>最慘 5%</b>＝最差那 5% 的筆數大約虧多少；<b>最慘單筆</b>＝歷史上最差的一筆。
+          </p>
+          {/* 桌機：表格；手機（≤640px）：每條規則一張卡，兩行數字，不需橫向捲動。兩者讀同一份資料。 */}
+          <div className="exd-scroll" role="region" aria-label="各條停損線的代價對照表">
             <table className="exd-table">
               <thead>
                 <tr>
                   <th>規則</th>
-                  <th>{sum.holdDays} 天內觸發率</th>
-                  <th>誤砍最後會賺的比例</th>
-                  <th>賺錢機率</th>
+                  <th>觸發</th>
+                  <th>誤砍</th>
+                  <th>賺錢率</th>
                   <th>最慘 5%</th>
                   <th>最慘單筆</th>
                 </tr>
@@ -58,6 +63,20 @@ export default function ExitDefense({ exitSummary }) {
               </tbody>
             </table>
           </div>
+          <ul className="exd-cards" aria-label="各條停損線的代價（手機版）">
+            {sum.rows.map(r => (
+              <li key={r.key || r.label} className={`exd-card${r.key === 'site15ma' ? ' exd-site' : ''}`}>
+                <div className="exd-card-name">{r.label}</div>
+                <dl className="exd-card-grid">
+                  <div><dt>觸發</dt><dd>{fmtPct(r.stop_rate)}</dd></div>
+                  <div><dt>誤砍</dt><dd>{fmtPct(r.miscut_winners)}</dd></div>
+                  <div><dt>賺錢率</dt><dd>{fmtPct(r.win_rate)}</dd></div>
+                  <div><dt>最慘 5%</dt><dd>{fmtPct(r.p5)}</dd></div>
+                  <div className="exd-span2"><dt>最慘單筆</dt><dd>{fmtPct(r.worst)}</dd></div>
+                </dl>
+              </li>
+            ))}
+          </ul>
           <p className="exd-foot">
             量測期間 {sum.first}～{sum.last}，{sum.n.toLocaleString('en-US')} 筆候選，但持有期互相重疊，
             約等於 {sum.batches} 批獨立樣本。成交用保守假設：盤中碰到停損價，隔天開盤才賣（跳空多低就賣多低，所以最慘單筆會比停損線深很多）。

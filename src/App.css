@@ -1319,7 +1319,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
 }
-.exd-table { width: 100%; min-width: 560px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.exd-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .exd-table th, .exd-table td { text-align: right; padding: 10px; border-bottom: 1px solid var(--border); }
 .exd-table th { font-size: .875rem; font-weight: 700; color: var(--ink-muted); line-height: 1.35; vertical-align: bottom; }
 .exd-table td { font-size: 1rem; color: var(--ink-body); white-space: nowrap; }
@@ -1329,6 +1329,21 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 7.5em; white-space: normal;
 }
 .exd-table tr.exd-site td { background: var(--surface-tint); }
+.exd-legend { margin: 0 0 8px; font-size: .9375rem; line-height: 1.7; color: var(--ink-muted); }
+.exd-legend b { color: var(--ink); }
+.exd .exd-cards { display: none; list-style: none; margin: 0; padding: 0; gap: 8px; }
+.exd-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); padding: 10px 12px; }
+.exd-card.exd-site { background: var(--surface-tint); border-color: var(--primary); }
+.exd-card-name { font-weight: 700; color: var(--ink); font-size: 1rem; line-height: 1.4; margin-bottom: 6px; }
+.exd-card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 8px; margin: 0; }
+.exd-card-grid div { min-width: 0; }
+.exd-card-grid dt { font-size: .8125rem; color: var(--ink-muted); line-height: 1.3; }
+.exd-card-grid dd { margin: 0; font-size: 1rem; font-weight: 700; color: var(--ink-body); font-variant-numeric: tabular-nums; }
+.exd-span2 { grid-column: span 2; }
+@media (max-width: 640px) {
+  .exd-scroll { display: none; }
+  .exd .exd-cards { display: grid; }
+}
 .exd-foot { margin: 10px 0 0; font-size: 1rem; line-height: 1.75; color: var(--ink-muted); }
 .pp-exit { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 4px; }
 .pp-exit > summary {

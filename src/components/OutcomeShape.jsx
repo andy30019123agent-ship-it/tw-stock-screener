@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Dices, AlertTriangle } from 'lucide-react'
 import { staleText } from '../lib/tierVerdict'
+import { fmtRange } from '../lib/fmtRange'
 
 // 條件層級分佈卡（2026-07-26 全面重寫）。
 //
@@ -47,7 +48,7 @@ const LEVELS = [['high', '高（前 1/3）'], ['mid', '中（中間 1/3）'], ['
 // 也不能讓 toFixed 丟 TypeError 把整個候選區換成錯誤卡。
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 const signedPct = v => (isNum(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—')
-const ciText = ci => (Array.isArray(ci) && isNum(ci[0]) && isNum(ci[1]) ? `[${ci[0]}, ${ci[1]}]` : '[—]')
+const ciText = ci => fmtRange(ci, { sign: false })
 
 function FeatureBlock({ meta, data }) {
   if (!data) return null
