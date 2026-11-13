@@ -110,6 +110,14 @@ export default function ConditionPanel({
   weights = null, combos = null, exits = null, regime = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
+  // 說明文字裡的戰績數字一律讀 signal_weights.json（不寫死，資料每週重算會變）；取不到就不顯示數字
+  const fmtPp = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}pp`
+  const isNum = v => typeof v === 'number' && Number.isFinite(v)
+  const shishiNet = isNum(weights?.signals?.signal_shishi?.net_excess) ? weights.signals.signal_shishi.net_excess : null
+  const bestSn = Object.entries(weights?.signals || {})
+    .filter(([k, v]) => k.startsWith('sn_') && v && v.samples > 0 && isNum(v.net_excess))
+    .map(([, v]) => v)
+    .sort((a, b) => b.net_excess - a.net_excess)[0] || null
   const sigRange = signalSummary(weights)   // 各訊號「贏過大盤比例」最小～最大（與說明書同一個函式）
   // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
   const orderedPresets = PRESETS
@@ -230,7 +238,7 @@ export default function ConditionPanel({
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
                 <AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" /> 代表扣成本後贏不過大盤。<b>小詩選股顯示的是 5 招母體</b>（勾「符合任一形態」實際會篩到的
-                那一整批，成本後 −0.78pp）——不是最好的那一招（縮口帶量突破 +0.04pp）；
+                那一整批{shishiNet != null ? `，成本後 ${fmtPp(shishiNet)}` : ''}）——不是最好的那一招{bestSn ? `（${bestSn.label} ${fmtPp(bestSn.net_excess)}）` : ''}；
                 多頭排列／填息快僅供戰績參考、不進候選情報清單。
               </p>
               <p className="strategy-note strategy-skew">
@@ -421,8 +429,8 @@ export default function ConditionPanel({
         <div className="cond-group">
           <span className="cond-section-label"><TrendingUp size={14} strokeWidth={1.75} />相對強弱／產業輪動</span>
           <p className="cond-group-note">
-            跟全市場比排名（不是跟大盤指數比）。<b>強勢雙確認</b>是目前回測最穩的訊號——去掉最極端
-            2% 的事件後平均超額仍為正，樣本外驗證也過關；其他訊號多半去掉最高 1% 就轉負。
+            跟全市場比排名（不是跟大盤指數比）。<b>強勢雙確認</b>在 2026-07-25 那次檢驗裡是最穩的訊號——去掉最極端
+            2% 的事件後平均超額仍為正，樣本外驗證也過關；其他訊號多半去掉最高 1% 就轉負（這項檢驗沒有每週重算）。
           </p>
           <div className="cond-checks">
             <Toggle label="強勢雙確認" hint="60日排前20% 且 120日排前30%"
