@@ -1113,7 +1113,7 @@ EXIT_TRAIL_DROP = 0.10             # 收盤自波段高點回落 ≥10% 出場�
 EXIT_FEE = 0.001425                 # 手續費（買賣各一次）
 EXIT_TAX = 0.003                    # 證交稅（賣出）
 EXIT_SLIP = 0.001                   # 每邊滑價 0.1%（另有 0.2% 壓力測試，只在說明標示）
-EXIT_SPEC = "phase-b-exit-v1"
+EXIT_SPEC = "phase-b-exit-v2"   # v2（2026-11-13）：持有期改 entry_i+h-1、斷點排除含 benchmark
 
 
 def _net_return(entry, exit_price):
@@ -1121,7 +1121,7 @@ def _net_return(entry, exit_price):
     return exit_price * (1 - EXIT_FEE - EXIT_TAX - EXIT_SLIP) / (entry * (1 + EXIT_FEE + EXIT_SLIP)) - 1
 
 
-def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
+def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS, breaks=None):
     """比較不同出場方式的「成本後」淨報酬（並行報表、不改 forward=20，Top5 引擎不動）。
 
     進場價＝訊號次日還原開盤（2026-07-26 起，跟 collect_events 用同一把尺——管線收盤後才發榜，
@@ -1129,8 +1129,19 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
     ＋「收盤自波段高點回落 10%」停利。淨超額＝該股成本後淨報酬 − 同一進場日、同持有期的全市場
     毛報酬平均（基準不扣成本，因為它只是評估基準、不是實際買進；基準的進場基準價也一併改用
     開盤，否則個股用開盤成本、大盤基準卻用收盤成本，兩把不同的尺算超額會系統性偏差）。所有出場
-    用同一批「進場後 40 日路徑完整」的事件，確保各持有期公平可比。回 dict（給 signal_exits.json）。"""
+    用同一批「進場後 40 日路徑完整」的事件，確保各持有期公平可比。回 dict（給 signal_exits.json）。
+
+    🔴 2026-11-13 修（Codex 2026-07-26 複查必修第 1、2 點）：
+    1. 持有期：進場日算第 1 天，持有 h 日＝出場 ac[entry_i+h-1]（＝collect_events 的 close[i+forward]）。
+       舊版用 ac[entry_i+h]，h20 實際抱了 21 天，跟全站「持有 20 日」口徑差一天。
+    2. 價格斷點（分割／減資假漲跌）：事件窗 [entry_i, entry_i+max_h-1] 內有斷點就整筆略過
+       （各持有期用同一批事件才可比）；全市場 benchmark 的每個 (進場日 j, 持有 h) 窗
+       [j, j+h-1] 內有斷點也不收。舊版事件只靠 collect_events 排除到 i+20、benchmark 完全沒排除。
+    breaks：{(sid, date)}；None＝自動讀 price_breaks.json（與 collect_events 同）。"""
     import build_data as bd
+    import price_breaks as pb
+    if breaks is None:
+        breaks = pb.load_breaks()
     # 每檔還原收盤／開盤序列（list 與 price_rows 排序對齊）＋日期→序列 index。
     # 開盤只當「進場基準價」用（entry、bench 的 base、MAE 的分母）；出場與路徑（trail 停利、MAE
     # 的高點）仍一律用收盤——只有進場當下 Andy 只買得到開盤價，之後每天看的是收盤。
@@ -1143,21 +1154,27 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
         _adj = bd.back_adjust_rows(pr, ev)
         ac = [r["close"] for r in _adj]
         ao = [r["open"] for r in _adj]
-        adj_by_sid[sid] = ([r["date"] for r in pr], ac, ao)
+        brk = sorted(j for j, r in enumerate(pr) if (sid, r["date"]) in breaks) if breaks else []
+        adj_by_sid[sid] = ([r["date"] for r in pr], ac, ao, brk)
+
+    def _crosses_break(brk, lo, hi):
+        """brk（已排序斷點 index）有沒有落在 [lo, hi]。"""
+        j = bisect.bisect_left(brk, lo)
+        return j < len(brk) and brk[j] <= hi
 
     max_h = max(holdings + [EXIT_TRAIL_CAP])
     # 全市場基準：每個「進場日 → 持有 H 日」的毛報酬平均（母體＝所有有完整路徑的個股，非只有事件股）。
     # base 改用當日開盤（ao[j]），跟下面事件迴圈的 entry 同一口徑，超額才是同一把尺量出來的。
     bench = {h: {} for h in holdings}
-    for sid, (ds, ac, ao) in adj_by_sid.items():
+    for sid, (ds, ac, ao, brk) in adj_by_sid.items():
         n = len(ac)
         for j in range(n):
             base = ao[j]
             if not base or base <= 0:
                 continue
             for h in holdings:
-                k = j + h
-                if k < n and ac[k]:
+                k = j + h - 1                        # 進場日算第 1 天
+                if k < n and ac[k] and not (brk and _crosses_break(brk, j, k)):
                     bench[h].setdefault(ds[j], []).append(ac[k] / base - 1)
     bench_mean = {h: {d: sum(v) / len(v) for d, v in m.items() if v} for h, m in bench.items()}
 
@@ -1172,25 +1189,28 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
         rec = adj_by_sid.get(sid)
         if rec is None or i is None:
             continue
-        ds, ac, ao = rec
-        entry_i = i + 1                              # 次日進場
-        if entry_i + max_h >= len(ac):               # 需 40 日完整路徑，各持有期才公平可比
+        ds, ac, ao, brk = rec
+        entry_i = i + 1                              # 次日進場（進場日算第 1 天）
+        last_i = entry_i + max_h - 1                 # 最長持有（40 日）的出場 index
+        if last_i >= len(ac):                        # 需 40 日完整路徑，各持有期才公平可比
             continue
+        if brk and _crosses_break(brk, entry_i, last_i):
+            continue                                 # 窗內有分割／減資斷點 → 假漲跌，整筆不收
         entry = ao[entry_i]                           # 進場價＝次日開盤（不是次日收盤）
         if not entry or entry <= 0:
             continue
         # 各固定持有期的出場價都要是有效正數，否則跳過（缺價會讓 _net_return 爆或算錯）
-        if any(not (ac[entry_i + h] and ac[entry_i + h] > 0) for h in holdings):
+        if any(not (ac[entry_i + h - 1] and ac[entry_i + h - 1] > 0) for h in holdings):
             continue
         entry_date = ds[entry_i]
         n_events += 1
         entry_dates.add(entry_date)
 
         for h in holdings:
-            exit_price = ac[entry_i + h]
+            exit_price = ac[entry_i + h - 1]          # 持有 h 日＝第 h 天收盤（entry_i 是第 1 天）
             net = _net_return(entry, exit_price)
             b = bench_mean[h].get(entry_date)
-            path = [ac[entry_i + d] for d in range(0, h + 1) if ac[entry_i + d]]
+            path = [ac[entry_i + d] for d in range(0, h) if ac[entry_i + d]]
             mae = min(p / entry - 1 for p in path) if path else 0.0
             a = acc[f"h{h}"]
             a["net"].append(net)
@@ -1199,10 +1219,10 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
             a["hold"].append(h)
             a["mae"].append(mae)
 
-        # 收盤回落停利：從進場走到高點回落 10%，或到 40 日上限
+        # 收盤回落停利：從進場走到高點回落 10%，或到 40 日上限（第 d+1 天收盤出場）
         run_max = entry
-        exit_i = entry_i + EXIT_TRAIL_CAP
-        for d in range(1, EXIT_TRAIL_CAP + 1):
+        exit_i = entry_i + EXIT_TRAIL_CAP - 1
+        for d in range(0, EXIT_TRAIL_CAP):
             c = ac[entry_i + d]
             if not c:
                 continue
@@ -1211,10 +1231,10 @@ def exit_analysis(events, price_hist, div_hist, holdings=EXIT_HOLDINGS):
             if c <= run_max * (1 - EXIT_TRAIL_DROP):
                 exit_i = entry_i + d
                 break
-        hold = exit_i - entry_i
+        hold = exit_i - entry_i + 1
         ex = ac[exit_i]
         if ex and ex > 0:                            # 出場價有效才計（缺價跳過這筆的 trail）
-            path = [ac[entry_i + d] for d in range(0, hold + 1) if ac[entry_i + d]]
+            path = [ac[entry_i + d] for d in range(0, hold) if ac[entry_i + d]]
             mae = min(p / entry - 1 for p in path) if path else 0.0
             t = acc["trail10"]
             t["net"].append(_net_return(entry, ex))
