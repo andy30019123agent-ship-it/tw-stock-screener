@@ -33,6 +33,10 @@ on:
         description: 'FinMind 补整日洞的日期（逗號分隔，如 2024-09-24）；留空＝只補個股零星缺格'
         required: false
         default: ''
+      backfill_dates:
+        description: '手動回補漏抓的交易日（如 2026-08-18:2026-08-20 或逗號分隔）；留空＝只自動檢查最近 20 個交易日'
+        required: false
+        default: ''
       force_recompute:
         description: '強制重算回測權重／戰績（略過每週快取閘門）；改過回測邏輯後要開，否則線上數字最多一週才會自動更新'
         type: boolean
@@ -84,8 +88,10 @@ jobs:
             python pipeline/finmind_fill.py
           fi
 
-      - name: 每日累積最新交易日（非 bootstrap）
+      - name: 每日累積最新交易日＋漏抓交易日回補（非 bootstrap）
         if: ${{ !inputs.bootstrap }}
+        env:
+          BACKFILL_DATES: ${{ inputs.backfill_dates }}   # 走 env 避免把輸入內插進 run（防注入）
         run: python pipeline/daily_update.py
 
       - name: 算指標、產出 screener.json + charts/
@@ -114,7 +120,7 @@ jobs:
           git add pipeline/history/price.json pipeline/history/chip.json pipeline/history/dividends.json \
                   pipeline/history/index.json pipeline/history/bt_price.json pipeline/history/price_breaks.json \
                   pipeline/holders_history.json pipeline/notify_state.json pipeline/universe.json \
-                  pipeline/fetch_state.json \
+                  pipeline/fetch_state.json pipeline/backfill_state.json \
                   pipeline/signal_weights.json pipeline/signal_windows.json pipeline/signal_combos.json pipeline/signal_exits.json pipeline/signal_regime.json pipeline/picks_history.json \
                   pipeline/scoreboard.json pipeline/revenue_cache.json \
                   pipeline/revenue_history.json

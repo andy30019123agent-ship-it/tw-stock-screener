@@ -3,11 +3,14 @@
 
 回填(backfill.py)建好初始歷史後，之後每天只需跑這支（最新一日、幾個請求）。
 排程在收盤後跑，資料已齊。歷史每天由 workflow commit 回 main 保存。
+之後接著跑 gap_backfill.safe_run：對照官方交易日清單補「過去漏抓的日子」（見 gap_backfill.py）。
 """
+import argparse
 import datetime as dt
 import json
 import os
 
+import gap_backfill
 import history_store as hs
 import market_sources as ms
 
@@ -27,7 +30,7 @@ def write_fetch_state(ok):
         json.dump(state, f, ensure_ascii=False)
 
 
-def main():
+def update_latest():
     # 抓最新交易日：TWSE 偶爾會擋 runner IP、收盤資料未出、或「連線逾時」→ 一律優雅跳過本次
     # 累積，用現有歷史繼續 build+部署，不讓整個流程崩掉；下次排程 TWSE 恢復後自動補上。
     # ⚠️ 逾時是「raise 例外」（非回空），一定要 try 起來——否則例外會在下面的空值檢查之前
@@ -92,6 +95,17 @@ def main():
 
     write_fetch_state(True)
     print(f"✅ 已累積 {date_iso}：price {len(price)} 檔、chip {len(chip)} 檔、dividends {len(div_hist)} 檔、index {len(index_hist)} 天")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--backfill-dates", default=os.environ.get("BACKFILL_DATES", ""),
+                    help="手動回補日期：2026-08-18:2026-08-20 或逗號分隔（workflow 走 env BACKFILL_DATES）")
+    args = ap.parse_args(argv)
+    update_latest()
+    # 漏抓交易日回補（2026-11-13）：不論上面成功或降級都跑——它補的是「過去」的洞，跟今天
+    # 抓不抓得到無關。safe_run 保證任何失敗都不往外丟，不會擋到後面的 build／部署／TG。
+    gap_backfill.safe_run(args.backfill_dates)
 
 
 if __name__ == "__main__":

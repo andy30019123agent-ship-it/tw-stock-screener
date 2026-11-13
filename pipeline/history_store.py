@@ -25,9 +25,18 @@ def load(path):
 
 
 def save(path, hist):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(hist, f, ensure_ascii=False, separators=(",", ":"))
+    """原子寫入：先寫同目錄暫存檔再 os.replace。歷史檔（尤其 bt_price.json 兩年長歷史）
+    是補不回來的資料，寫到一半被中斷（逾時、磁碟滿、例外）若直接截斷舊檔就救不回來；
+    os.replace 在同一個檔案系統內是原子的——要嘛整份新檔、要嘛舊檔原封不動。"""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = f"{path}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(hist, f, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def _prune(by_date, window):
@@ -75,6 +84,12 @@ def get_div_coverage(hist):
     """回 (coverage_start, coverage_end)；沒記錄過回 (None, None)。"""
     meta = (hist or {}).get(DIV_META_KEY) or {}
     return meta.get("coverage_start"), meta.get("coverage_end")
+
+
+def sort_by_date(by_date):
+    """回傳依日期鍵排序的新 dict。回補是把「過去某天」插進歷史，dict 的插入順序會變成
+    「那天排在最後」；讀取端雖然都會 sorted()，存檔前仍排好，讓檔案本身維持日期遞增。"""
+    return {k: by_date[k] for k in sorted(by_date)}
 
 
 def to_div_events(stock_hist):
