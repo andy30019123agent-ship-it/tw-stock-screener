@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """出場研究（2026-11-13）：候選股買了之後，看錯時大概跌多少該賣？
 
-研究腳本，不進每日管線、不寫任何網站／快報讀的檔。報告：_reports/研究_出場規則_2026-11-13.md
+研究腳本，不進每日管線；唯一例外：跑完會寫 pipeline/exit_rules_summary.json 給網站「停損代價表」讀（手動重跑才更新）。報告：_reports/研究_出場規則_2026-11-13.md
 
 母體：逐日重播線上 opportunities.build_opportunities 後的候選池（與 tier_stats.compute_pool_tier_stats
 同一套：collect_events(pool_rows=...) → tier_stats.replay_pool_days）。不是「所有訊號事件」。
@@ -359,6 +359,9 @@ def run(cands, ohlc):
         return "—" if not ci else f"{ci[0]:+.2f}～{ci[1]:+.2f}"
 
     label = {k: lab for k, _, _, lab in RULES}
+    _d20 = sorted(b[0]["date"] for b in sub_of[CONTROL_DAYS])
+    res["meta20"] = {"n": len(_d20), "signal_days": len(set(_d20)),
+                     "first": _d20[0] if _d20 else None, "last": _d20[-1] if _d20 else None}
     res["summary"], res["paired"] = {}, {}
     n_cmp = {"main": 0, "robust": 0, "hold_vs_sell": 0}   # 有算 CI、拿來下判定的配對比較列數（多重比較用）
     for cap in CAPS:
@@ -531,11 +534,46 @@ def run(cands, ohlc):
     return res, "\n".join(md)
 
 
+# 網站「各條停損線的代價」表要讀的精簡 JSON（前端 ExitCostTable）。數字直接取自 run() 的結果，
+# 與報告「時間上限 20 日｜隔日開盤成交」主表、「誤砍率」表同一份，不另算。
+SUMMARY_ROWS = (  # (summary key, 顯示名)
+    ("hold", "抱滿 20 天"), ("stop8", "−8%"), ("stop10", "−10%"), ("stop12", "−12%"),
+    ("stop15", "−15%"), ("stop20", "−20%"), ("site15ma", "網站預設（−15% 與月線取較高者）"),
+)
+
+
+def build_summary(res, as_of):
+    """從 run() 的 res 組出 exit_rules_summary.json 的內容（純函式，有單測）。
+    欄位皆為小數比例（0.502＝50.2%）；hold 沒有觸發／誤砍，給 0。"""
+    m = res["meta20"]
+    rows = []
+    for key, lab in SUMMARY_ROWS:
+        sm = res["summary"][f"cap{CONTROL_DAYS}_next_open_{key}"]
+        mc = res["miscut"].get(key)
+        rows.append({
+            "key": key, "label": lab,
+            "stop_rate": 0.0 if key == "hold" else sm["stop_rate"],
+            "miscut_winners": 0.0 if key == "hold" else mc["winners"],
+            "win_rate": sm["win"],
+            "p5": sm["p5"],
+            "worst": sm["worst"],
+        })
+    return {
+        "as_of": as_of, "source": "pipeline/research_exit_rules.py（報告 _reports/研究_出場規則_2026-11-13.md）",
+        "hold_days": CONTROL_DAYS, "fill": "next_open",
+        "n": m["n"], "signal_days": m["signal_days"], "batches": m["signal_days"] // BLOCK,
+        "first_date": m["first"], "last_date": m["last"],
+        "rows": rows,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--cache", help="候選清單快取（存在就讀、不存在就建完存檔）")
     ap.add_argument("--out", help="把數字表 Markdown 另存到此路徑")
     ap.add_argument("--json", help="把完整結果 JSON 另存到此路徑")
+    ap.add_argument("--summary", default=os.path.join(HERE, "exit_rules_summary.json"),
+                    help="網站表格用的精簡 JSON 輸出路徑（預設 pipeline/exit_rules_summary.json）")
     a = ap.parse_args()
     t0 = time.time()
     if a.cache and os.path.exists(a.cache):
@@ -556,6 +594,12 @@ def main():
     if a.json:
         with open(a.json, "w", encoding="utf-8") as f:
             json.dump(res, f, ensure_ascii=False, indent=1)
+    if a.summary:
+        as_of = time.strftime("%Y-%m-%d", time.gmtime(time.time() + 8 * 3600))   # 台北日期
+        with open(a.summary, "w", encoding="utf-8") as f:
+            json.dump(build_summary(res, as_of), f, ensure_ascii=False, indent=1)
+            f.write("\n")
+        print(f"精簡 JSON → {a.summary}", flush=True)
     print(f"\n完成（{time.time() - t0:.0f}s）", flush=True)
 
 

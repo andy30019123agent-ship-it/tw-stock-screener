@@ -257,7 +257,7 @@ function trendOf(row) {
 // 2026-07-26 誠實化：從「每天固定推 N 檔」改成「輸出全部合格候選＋分類，交給 Andy 自己選」
 // （Andy 拍板：不用幫我配好購買組合）。picks 不再截斷，檔數一律讀 opp.pool_n，不寫死。
 // 都採「抓不到就靜默省略該部分」，不讓這區拖垮既有選股頁。
-export default function Opportunities({ stocks, onPick, onCount, engineStatus, tierStats }) {
+export default function Opportunities({ stocks, onPick, onCount, engineStatus, tierStats, exitSummary }) {
   const meta = tierMeta(tierStats)
   const [opp, setOpp] = useState(null)
   const [board, setBoard] = useState(null)
@@ -416,7 +416,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
           只帶「相對優勢」進觀察位表（2026-11-13 起只剩這一類）——候選池全開後常有百餘檔，「其他候選」
           全塞進表格會讓這張表長到失去用途。
           picks 本身沒有產業，從 screener.json 併回來（集中度警示要用）。 */}
-      <PositionPlan dataDate={opp.date} picks={tiered.edge.map(p => {
+      <PositionPlan dataDate={opp.date} exitSummary={exitSummary} picks={tiered.edge.map(p => {
         const full = stocks?.find(s => s.id === p.id)
         return {
           id: p.id, name: p.name,

@@ -32,6 +32,7 @@ export default function App() {
   const [combos, setCombos] = useState(null)         // signal_combos.json：組合戰績排行榜
   const [exits, setExits] = useState(null)           // signal_exits.json：出場優化分析
   const [regime, setRegime] = useState(null)         // signal_regime.json：市況分層回測
+  const [exitSummary, setExitSummary] = useState(null) // exit_rules_summary.json：停損線代價對照表（抓不到＝表格不顯示）
   const [tierStats, setTierStats] = useState(null)   // tier_stats.json：候選情報條件層級的歷史分佈（Opportunities/OutcomeShape 用）
   // 手機卡片密度：精簡（預設，省滑）／完整；記住上次選擇
   const [dense, setDense] = useState(() => {
@@ -84,6 +85,8 @@ export default function App() {
     // 條件層級歷史分佈（同模式：抓不到就 null，Opportunities/OutcomeShape 各自優雅降級，不拖垮整頁）
     fetch(`${import.meta.env.BASE_URL}data/tier_stats.json`)
       .then(r => (r.ok ? r.json() : null)).then(setTierStats).catch(() => setTierStats(null))
+    fetch(`${import.meta.env.BASE_URL}data/exit_rules_summary.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setExitSummary).catch(() => setExitSummary(null))
   }, [])
 
   const filtered = useMemo(() => {
@@ -121,7 +124,7 @@ export default function App() {
   if (route === 'help') {
     return (
       <div className="app">
-        <HelpGuide tierStats={tierStats} onBack={() => { window.location.hash = '' }} />
+        <HelpGuide tierStats={tierStats} exitSummary={exitSummary} onBack={() => { window.location.hash = '' }} />
       </div>
     )
   }
@@ -215,7 +218,7 @@ export default function App() {
           不用點「展開」才看得到第一檔股票。 */}
       <ErrorBoundary name="opportunities" label="候選情報">
         <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount}
-          engineStatus={data?.engine_status} tierStats={tierStats} />
+          engineStatus={data?.engine_status} tierStats={tierStats} exitSummary={exitSummary} />
       </ErrorBoundary>
 
       {data && (
