@@ -169,5 +169,5 @@ def test_build_summary_欄位與取值():
     out = rx.build_summary(res, "2026-11-13")
     assert out["batches"] == 2 and out["n"] == 100 and out["fill"] == "next_open"
     assert out["rows"][0]["key"] == "hold" and len(out["rows"]) == 7
-    assert out["rows"][0]["stop_rate"] == 0.0 and out["rows"][0]["miscut_winners"] == 0.0
+    assert out["rows"][0]["stop_rate"] is None and out["rows"][0]["miscut_winners"] is None
     assert out["rows"][-1]["key"] == "site15ma" and out["rows"][-1]["miscut_winners"] == 0.1

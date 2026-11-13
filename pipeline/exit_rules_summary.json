@@ -12,8 +12,8 @@
   {
    "key": "hold",
    "label": "抱滿 20 天",
-   "stop_rate": 0.0,
-   "miscut_winners": 0.0,
+   "stop_rate": null,
+   "miscut_winners": null,
    "win_rate": 0.4460551867407307,
    "p5": -0.25679882649887653,
    "worst": -0.7017091939144349

@@ -16,7 +16,7 @@ export default function ExitDefense({ exitSummary }) {
         <li>
           <b>實際上多半是月線在當停損。</b>月線通常離現價比 15% 近得多，所以這條線比「−15%」這個字面看起來緊。
           {site && <>歷史上照這條線，約 <b>{fmtPct(site.stop_rate)}</b> 的候選在 {sum.holdDays} 天內會碰到，
-            其中本來抱滿會賺的有 <b>{fmtPct(site.miscut_winners)}</b> 被先洗出場。</>}
+            而在本來抱滿會賺的那群裡，有 <b>{fmtPct(site.miscut_winners)}</b> 先被洗出場。</>}
         </li>
         <li>
           <b>它的作用是壓低極端單筆虧損，不是提高報酬。</b>
@@ -33,7 +33,7 @@ export default function ExitDefense({ exitSummary }) {
         <>
           <p className="exd-title"><b>各條停損線的代價</b>（買進後 {sum.holdDays} 天內，這不是建議，取捨由你決定）</p>
           <p className="exd-legend">
-            <b>觸發</b>＝{sum.holdDays} 天內碰到停損線的比例；<b>誤砍</b>＝本來抱滿會賺、卻先被洗出場的比例；
+            <b>觸發</b>＝{sum.holdDays} 天內碰到停損線的比例；<b>誤砍</b>＝在本來抱滿會賺的那群裡，先被洗出場的比例；
             <b>賺錢率</b>＝這樣操作最後賺錢的比例；<b>最慘 5%</b>＝最差那 5% 的筆數大約虧多少；<b>最慘單筆</b>＝歷史上最差的一筆。
           </p>
           {/* 桌機：表格；手機（≤640px）：每條規則一張卡，兩行數字，不需橫向捲動。兩者讀同一份資料。 */}
@@ -80,7 +80,7 @@ export default function ExitDefense({ exitSummary }) {
           <p className="exd-foot">
             量測期間 {sum.first}～{sum.last}，{sum.n.toLocaleString('en-US')} 筆候選，但持有期互相重疊，
             約等於 {sum.batches} 批獨立樣本。成交用保守假設：盤中碰到停損價，隔天開盤才賣（跳空多低就賣多低，所以最慘單筆會比停損線深很多）。
-            資料不含下市的股票，也看不到跌停鎖死賣不掉的情況，<b>實際只會更差</b>。
+            資料不含下市的股票，也看不到跌停鎖死賣不掉的情況，<b>實際可能更差</b>。
             非投資建議，歷史不代表未來。
           </p>
         </>

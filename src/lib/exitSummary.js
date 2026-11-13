@@ -7,6 +7,7 @@ const isNum = v => typeof v === 'number' && Number.isFinite(v)
 const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
 
 const ROW_NUM_KEYS = ['stop_rate', 'miscut_winners', 'win_rate', 'p5', 'worst']
+const HOLD_NULLABLE = ['stop_rate', 'miscut_winners']
 
 export function normalizeExitSummary(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.rows)) return null
@@ -14,7 +15,11 @@ export function normalizeExitSummary(raw) {
   const rows = []
   for (const r of raw.rows) {
     if (!r || typeof r.label !== 'string' || !r.label) return null
-    for (const k of ROW_NUM_KEYS) if (!isNum(r[k])) return null
+    for (const k of ROW_NUM_KEYS) {
+      // 對照組（抱滿）沒有停損線：觸發／誤砍允許為 null，畫面顯示「—」
+      if (r.key === 'hold' && HOLD_NULLABLE.includes(k) && r[k] === null) continue
+      if (!isNum(r[k])) return null
+    }
     rows.push(r)
   }
   if (rows.length < 2) return null

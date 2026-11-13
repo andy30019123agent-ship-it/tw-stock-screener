@@ -544,7 +544,7 @@ SUMMARY_ROWS = (  # (summary key, 顯示名)
 
 def build_summary(res, as_of):
     """從 run() 的 res 組出 exit_rules_summary.json 的內容（純函式，有單測）。
-    欄位皆為小數比例（0.502＝50.2%）；hold 沒有觸發／誤砍，給 0。"""
+    欄位皆為小數比例（0.502＝50.2%）；hold（對照組）沒有停損線，觸發／誤砍給 None（畫面顯示「—」，不是 0%）。"""
     m = res["meta20"]
     rows = []
     for key, lab in SUMMARY_ROWS:
@@ -552,8 +552,8 @@ def build_summary(res, as_of):
         mc = res["miscut"].get(key)
         rows.append({
             "key": key, "label": lab,
-            "stop_rate": 0.0 if key == "hold" else sm["stop_rate"],
-            "miscut_winners": 0.0 if key == "hold" else mc["winners"],
+            "stop_rate": None if key == "hold" else sm["stop_rate"],
+            "miscut_winners": None if key == "hold" else mc["winners"],
             "win_rate": sm["win"],
             "p5": sm["p5"],
             "worst": sm["worst"],
