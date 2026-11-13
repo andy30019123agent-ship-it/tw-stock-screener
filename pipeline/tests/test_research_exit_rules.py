@@ -92,6 +92,68 @@ def test_斷點窗判斷():
 
 def test_規則清單事先固定():
     keys = [k for k, *_ in rx.RULES]
+    # 原 11 條不變；驗收後只追加網站預設一條（放最後）
     assert keys == ["hold", "stop5", "stop8", "stop10", "stop12", "stop15", "stop20",
-                    "trail8", "trail10", "trail15", "ma20"]
+                    "trail8", "trail10", "trail15", "ma20", "site15ma"]
     assert rx.CAPS == (20, 40)
+
+
+def test_網站預設_月線在現價下且高於85折_用月線():
+    c = [100.0] * 19 + [110.0]                   # 訊號日 i=19 收盤 110，MA20＝100.5
+    lvl = rx.site_stop_level(c, 19)
+    assert abs(lvl - (100 * 19 + 110) / 20) < 1e-12   # 93.5 < 100.5 < 110 → 用月線
+
+
+def test_網站預設_月線在現價之上_退回85折():
+    c = [100.0] * 19 + [90.0]                    # 收盤 90 在月線 99.5 之下 → 月線不是防守位
+    assert abs(rx.site_stop_level(c, 19) - 90 * 0.85) < 1e-12
+
+
+def test_網站預設_月線低於85折_用85折():
+    c = [50.0] * 19 + [200.0]                    # MA20＝57.5 < 170 → 用 170
+    assert abs(rx.site_stop_level(c, 19) - 170.0) < 1e-12
+
+
+def test_網站預設_以訊號日價位觸發_隔日開盤成交():
+    n = 60
+    c = [100.0] * n
+    o, h, l = list(c), list(c), list(c)
+    sig = 29
+    c[sig] = 105.0                               # 訊號日收盤 105，MA20＝100.25 → 防守價 100.25
+    e = sig + 1
+    for j in range(e, n):                        # 進場後價位 101（在防守價之上）
+        o[j] = h[j] = l[j] = c[j] = 101.0
+    l[e + 2] = 100.2                             # 第 3 天低點跌破 100.25 → 觸發（固定 −15% 不會觸發）
+    o[e + 3] = 99.0
+    r = rx.simulate_exit(o, h, l, c, e, "site", 0.15, 20)
+    assert r["stopped"] and r["trigger_day"] == 3 and abs(r["gross"] - (99.0 / 101.0 - 1)) < 1e-12
+    r_fixed = rx.simulate_exit(o, h, l, c, e, "fixed", 0.15, 20)
+    assert not r_fixed["stopped"]
+
+
+def _t(net, stopped=False, day=None):
+    return {"net": net, "stopped": stopped, "trigger_day": day}
+
+
+def test_續抱vs隔日賣_只取前5天觸發且差為續抱減賣出():
+    stop = [_t(-0.11, True, 2), _t(-0.12, True, 5), _t(-0.10, True, 6), _t(0.05)]
+    hold = [_t(0.03), _t(-0.20), _t(0.50), _t(0.05)]
+    dates = ["d1", "d1", "d2", "d3"]
+    r = rx.hold_vs_sell(stop, hold, dates, max_day=5, blocks=(20,))
+    assert r["n"] == 2 and r["days"] == 1          # 第 3 筆第 6 天才觸發、第 4 筆沒觸發 → 不算
+    # 差：+14pp、−8pp → 按筆平均 +3pp；同一天 → 按日也是 +3pp
+    assert abs(r["per_trade_pp"] - 3.0) < 1e-9 and abs(r["per_day_pp"] - 3.0) < 1e-9
+    assert r["hold_better"] == 0.5 and r["hold_win"] == 0.5 and r["sell_win"] == 0.0
+
+
+def test_續抱vs隔日賣_按筆與按日權重不同():
+    stop = [_t(-0.1, True, 1)] * 3 + [_t(-0.1, True, 1)]
+    hold = [_t(0.0)] * 3 + [_t(-0.3)]                # d1 三筆各 +10pp，d2 一筆 −20pp
+    r = rx.hold_vs_sell(stop, hold, ["d1", "d1", "d1", "d2"], blocks=(20,))
+    assert abs(r["per_trade_pp"] - 2.5) < 1e-9      # (30−20)/4
+    assert abs(r["per_day_pp"] - (-5.0)) < 1e-9     # (10 + −20)/2
+
+
+def test_按筆CI_常數序列就是該值():
+    ci = rx.circular_ratio_ci([6.0, 4.0, 2.0], [3, 2, 1], 2, n_boot=50)
+    assert ci == [2.0, 2.0]
