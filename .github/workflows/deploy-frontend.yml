@@ -1,0 +1,57 @@
+name: 只部署畫面（不重抓資料、不推播）
+
+# 用途：改了前端想馬上上線，又不想在非盤後時段跑整條資料管線
+# （夜間／盤中抓證交所會回空，站上會跳「資料可能未更新」的假警告）。
+# 做法：沿用線上（gh-pages）現有的 data/，只重新建置前端後整包發佈。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 與每日排程同一個群組：兩者排隊，不會同時發佈互相覆蓋
+concurrency:
+  group: daily-screener
+  cancel-in-progress: false
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取回線上現有資料（gh-pages 的 data/）
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: _live
+
+      - name: 把線上資料放進 public/data（不覆蓋 main 已有的檔）
+        run: |
+          if [ ! -f _live/data/screener.json ] || [ ! -f _live/data/opportunities.json ]; then
+            echo "::error::線上找不到 data/screener.json 或 opportunities.json，停止部署（避免發佈沒有資料的網站）"
+            exit 1
+          fi
+          mkdir -p public/data
+          cp -rn _live/data/. public/data/
+          rm -rf _live
+          echo "沿用線上資料：$(ls public/data | wc -l) 個項目"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: 發佈前檢查：建置結果裡要有資料
+        run: |
+          test -f dist/data/screener.json && test -f dist/data/opportunities.json \
+            || { echo "::error::dist 裡沒有資料檔，停止部署"; exit 1; }
+
+      - name: 部署到 GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
