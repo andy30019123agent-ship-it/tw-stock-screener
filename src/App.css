@@ -326,7 +326,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   background: rgba(255,194,75,.18); color: var(--on-accent);
 }
 .opp-muted { font-size: .875rem; color: var(--ink-muted); }
-/* 「乖離高」純描述標籤（2026-11-13）：中性色、不用 primary／漲跌色，免得看起來像加分 */
+/* 「乖離排前段」純描述標籤（2026-11-13）：中性色、不用 primary／漲跌色，免得看起來像加分 */
 .opp-tag {
   display: inline-flex; align-items: center;
   font-size: .875rem; font-weight: 500; padding: 4px 12px; border-radius: var(--r-pill);

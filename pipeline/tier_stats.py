@@ -291,9 +291,9 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
                             n_boot=DEFAULT_N_BOOT, seed=DEFAULT_SEED, replayed=None, _subsets=True):
     """條件層級統計（正確母體版）。輸出 schema 與 compute_tier_stats 相容（features.*.high/mid/low），
     另加：
-      both_check：成交金額高 × 乖離高 的四格互斥（both／turn_only／bias_only／neither）
+      both_check：成交金額高 × 乖離排前段 的四格互斥（both／turn_only／bias_only／neither）
       categories：線上分類本身的歷史表現（2026-11-13 起 edge＝相對優勢／rest＝其餘候選；
-                  bias_high／not_bias_high＝「乖離高」描述標籤有／沒有）
+                  bias_high／not_bias_high＝「乖離排前段」描述標籤有／沒有）
       all：當天有分類的候選池全體（基準）
       meta：母體定義、各種跳過的天數／筆數、沒重播的濾網
     規則：
@@ -370,8 +370,13 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
         if "turnover" in skip_feat or "bias20_pct" in skip_feat:
             meta["days_both_check_skipped_tie"] += 1
 
+    _memo = {}
+
     def summ(entries):
-        return _tier_summary(entries, block, n_boot, rng)
+        # 同一批樣本（例：成交金額高層＝相對優勢）只採用第一次 bootstrap 的結果，讓網站兩處 CI 一致；
+        # 仍照常消耗亂數，其餘各組的數字不變。
+        res = _tier_summary(entries, block, n_boot, rng)
+        return _memo.setdefault(tuple(entries), res)
 
     features_out = {}
     for f in FEATURES:
@@ -392,7 +397,7 @@ def compute_pool_tier_stats(pool_rows, weights=None, net_fn=None, block=DEFAULT_
         "min_tier_pool": op.MIN_TIER_POOL, "max_tie_share": round(MAX_TIE_SHARE, 4),
         "tier_scheme": op.TIER_SCHEME,
         "tier_rule": {"edge": f"相對優勢＝成交金額在當日候選池內百分位 ≥ {op.TIER_HIGH_PCT}（前 1/3）",
-                      "bias_high": f"乖離高（純描述標籤）＝20 日乖離在當日候選池內百分位 ≥ {op.TIER_HIGH_PCT}",
+                      "bias_high": f"乖離排前段（純描述標籤）＝20 日乖離在當日候選池內百分位 ≥ {op.TIER_HIGH_PCT}",
                       "rest": "其餘候選（不給分類稱號）"},
         "tier_cut": {"high": f"候選池內百分位 ≥ {op.TIER_HIGH_PCT}",
                      "mid": f"{op.TIER_MID_PCT} ≤ 百分位 < {op.TIER_HIGH_PCT}",
@@ -434,7 +439,7 @@ def _paired_block(feat_entries, both_entries, cat_entries, block, n_boot, seed):
         "bias_only_vs_neither": (both_entries["bias_only"], both_entries["neither"]),
         # 線上分類本身（2026-11-13 起網站上的主訊息）：相對優勢 vs 當日其餘全部候選
         "cat_edge_vs_rest": (cat_entries["edge"], cat_entries["rest"]),
-        # 「乖離高」描述標籤 vs 當日其餘候選（說明處要照實講量不量得出差別）
+        # 「乖離排前段」描述標籤 vs 當日其餘候選（說明處要照實講量不量得出差別）
         "bias_high_vs_rest": (cat_entries["bias_high"], cat_entries["not_bias_high"]),
     }
     out = {}

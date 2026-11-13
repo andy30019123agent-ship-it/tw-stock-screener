@@ -5,7 +5,7 @@
 // 禁止用「兩層各自的 CI 有沒有重疊」下結論（OutcomeShape.jsx 註解寫明的硬性限制）。
 //
 // 🔴 2026-11-13 分類簡化：網站只剩一個分類「相對優勢」（成交金額在當日候選池前 1/3），
-// 主訊息＝paired.cat_edge_vs_rest（相對優勢 vs 當日其餘全部候選）。「乖離高」是純描述標籤。
+// 主訊息＝paired.cat_edge_vs_rest（相對優勢 vs 當日其餘全部候選）。「乖離排前段」是純描述標籤。
 // 這裡的句子與 TG 快報（pipeline/notify_tg.py 的 tier_disclaimer／gate_note／bias_note）逐字同一套，
 // 改一邊要改另一邊。
 // 幅度宣稱（平均每筆多賺）規則：CI 下限 ≥ 0.5pp 才講「也多約 X」；0 < 下限 < 0.5 講「略高，但接近量不出」；
@@ -125,18 +125,18 @@ export function gateNote(gate, tierStats) {
     : `${base}歷史上這種日子分類的差距跟平常不一樣${nums}，請保守看。`
 }
 
-// 「乖離高」描述標籤的說明；與 notify_tg.bias_note 同句。
+// 「乖離排前段」描述標籤的說明；與 notify_tg.bias_note 同句。
 export function biasNote(tierStats) {
   const p = usablePair(tierStats, 'bias_high_vs_rest')
   const ev = p ? verdictOf(p.ev_ci90) : null
   if (p && verdictOf(p.win_ci90) === 'nodiff' && (ev === 'nodiff' || ev === null)) {
-    return '「乖離高」只是描述（當天候選裡乖離前 1/3），量不出比較常賺或賺比較多。'
+    return '「乖離排前段」只是描述（當天候選裡乖離前 1/3），量不出比較常賺或賺比較多。'
   }
-  return '「乖離高」只是描述（當天候選裡乖離前 1/3），不代表比較好。'
+  return '「乖離排前段」只是描述（當天候選裡乖離前 1/3），不代表比較好。'
 }
 
 // 任何版本的 pick → { tier: 'edge'|null, biasHigh: bool }。與 opportunities.normalize_tier 同一套對應：
-// 2026-11-13 以前的舊值 both/win（成交金額前 1/3）＝相對優勢、return＝無分類＋乖離高；未知值＝無分類。
+// 2026-11-13 以前的舊值 both/win（成交金額前 1/3）＝相對優勢、return＝無分類＋乖離排前段；未知值＝無分類。
 export function normalizeTier(p) {
   const t = p?.tier
   if (t === 'both' || t === 'win') return { tier: 'edge', biasHigh: t === 'both' || !!p.bias_high }

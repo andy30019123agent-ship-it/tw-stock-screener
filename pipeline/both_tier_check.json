@@ -1,5 +1,5 @@
 {
- "computed": "2026-11-13 12:18",
+ "computed": "2026-11-13 12:44",
  "population": "逐日重播 opportunities.build_opportunities 後的最終候選池（引擎訊號＋均量≥500 張＋強勢雙確認門檻（候選不足 20 檔時退回）；營收濾網未重播）",
  "candidate_pool": {
   "both": {

@@ -156,6 +156,7 @@ def build_candidates():
         gate = bool((opp.get("gate") or {}).get("applied"))
         for p in opp["picks"]:
             out.append({"date": date, "sid": p["id"], "tier": p.get("tier") or "unclassified",
+                        "bias_high": bool(p.get("bias_high")),
                         "gate": gate, "ret": ret_by_id.get(p["id"])})
     print(f"重播完成：{len(out)} 筆候選（{time.time() - t0:.0f}s）", flush=True)
     return out
@@ -401,8 +402,9 @@ def run(cands, ohlc):
     groups = [
         ("前半段", lambda cd: cd["date"] < split), ("後半段", lambda cd: cd["date"] >= split),
         ("門檻有套用", lambda cd: cd["gate"]), ("門檻退回", lambda cd: not cd["gate"]),
-        ("雙優", lambda cd: cd["tier"] == "both"), ("勝率偏優", lambda cd: cd["tier"] == "win"),
-        ("報酬偏優", lambda cd: cd["tier"] == "return"), ("未分類", lambda cd: cd["tier"] == "unclassified"),
+        ("相對優勢", lambda cd: cd["tier"] == "edge"), ("其他候選", lambda cd: cd["tier"] != "edge"),
+        ("乖離排前段（bias_high）", lambda cd: cd["bias_high"]),
+        ("非乖離排前段", lambda cd: not cd["bias_high"]),
     ]
     md.append(f"\n### 穩健性：時間上限 20 日、隔日開盤成交，規則 − 對照組，按子群拆開（前後半切點 {split}）\n")
     n_gate_off = len(set(b[0]["date"] for b in rows if not b[0]["gate"]))

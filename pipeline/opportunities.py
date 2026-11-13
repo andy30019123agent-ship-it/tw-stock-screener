@@ -44,15 +44,15 @@ FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一�
 COST_PCT = bt.EXIT_FEE * 2 + bt.EXIT_TAX + bt.EXIT_SLIP * 2
 
 # 候選池內百分位的高／中／低切點（feature_level 用）。
-TIER_HIGH_PCT = 0.67   # ≥ 此值＝前 1/3（「相對優勢」與「乖離高」都用這條）
+TIER_HIGH_PCT = 0.67   # ≥ 此值＝前 1/3（「相對優勢」與「乖離排前段」都用這條）
 TIER_MID_PCT = 0.33
 # 🔴 2026-11-13 分類簡化（Andy 同意，依 _reports/重算_候選池層級統計_2026-11-13.md）：
 # 原本三分類 tier ∈ {"both","win","return"}（雙優／勝率偏優／報酬偏優），只有「成交金額高」
-# 站得住（同日比其餘候選常賺），乖離高那一支量不出差別、雙優比只金額高也量不出差別。
+# 站得住（同日比其餘候選常賺），乖離排前段那一支量不出差別、雙優比只金額高也量不出差別。
 # 新制只有一個分類：tier="edge"（相對優勢＝成交金額在當日候選池前 1/3），其餘 tier=None。
 # 乖離前 1/3 降為純描述標籤 bias_high（True/False），可掛在任何候選上、不代表比較好。
 # 舊值只會出現在 2026-11-13 以前的 picks_history.json／舊 opportunities.json，
-# 讀取端用 normalize_tier（下方）相容：both→edge＋乖離高、win→edge、return→無分類＋乖離高
+# 讀取端用 normalize_tier（下方）相容：both→edge＋乖離排前段、win→edge、return→無分類＋乖離排前段
 # （v1 的 both/win 恰好就是成交金額前 1/3，所以這個對應是精確的，不是近似）。
 TIER_SCHEME = "edge_v2"
 TIER_EDGE = "edge"
@@ -234,7 +234,7 @@ def build_opportunities(results, weights, revenue, data_date):
             "rs_pct_60": r.get("rs_pct_60"),
         })
 
-    # 候選情報分類（2026-11-13 起只剩「相對優勢」一類＋「乖離高」描述標籤，見 TIER_SCHEME）。
+    # 候選情報分類（2026-11-13 起只剩「相對優勢」一類＋「乖離排前段」描述標籤，見 TIER_SCHEME）。
     # feat_pct 是「當日候選池內」的百分位，不是全市場排名——候選池每天大小不同，同一檔股票
     # 今天跟明天的 feat_pct 不能直接比較，只能比「跟今天其他候選比起來如何」。
     for key in ("turnover", "bias20_pct", "high20_gap", "rs_pct_60"):

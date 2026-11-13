@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """重算條件層級統計＋雙優驗證（正確母體），並輸出「舊母體 vs 新母體」對照。
 
-📌 分類已於 2026-11-13 簡化（只剩「相對優勢」一類＋「乖離高」描述標籤，見 opportunities.TIER_SCHEME）。
+📌 分類已於 2026-11-13 簡化（只剩「相對優勢」一類＋「乖離排前段」描述標籤，見 opportunities.TIER_SCHEME）。
 本檔仍是「手動重算 tier_stats.json」的驅動腳本；其中雙優四格（both_tier_check.json、
 event_both_check）僅供歷史對照，網站已不再有「雙優」這個分類。
 

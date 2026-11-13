@@ -136,7 +136,7 @@ def test_many_candidates_render_without_crash_and_group_by_tier(tmp_path, monkey
     assert "其他候選 12 檔沒有分類稱號" in text
 
 
-# ── ③ 候選情報分類（2026-11-13 起只有「相對優勢」＋「乖離高」描述標籤）───────────────
+# ── ③ 候選情報分類（2026-11-13 起只有「相對優勢」＋「乖離排前段」描述標籤）───────────────
 
 def test_no_purchase_order_or_selection_wording(tmp_path, monkeypatch):
     """「精選」「建議買」「Top」和圈號 ①②③ 都在暗示『照這個順序/這個組合買』，
@@ -234,12 +234,12 @@ def test_門檻退回日加一句提醒_數字讀by_gate(tmp_path, monkeypatch):
     assert nt.gate_note(None, TS) == ""
 
 
-def test_乖離高只是描述_量不出時照實講(tmp_path, monkeypatch):
-    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["both"])   # 舊值 both＝相對優勢＋乖離高
+def test_乖離排前段只是描述_量不出時照實講(tmp_path, monkeypatch):
+    _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["both"])   # 舊值 both＝相對優勢＋乖離排前段
     _write_tiers(tmp_path, monkeypatch, TS)
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock(id="9001")]})
-    assert "［乖離高］" in text
-    assert "「乖離高」只是描述（當天候選裡乖離前 1/3），量不出比較常賺或賺比較多。" in text
+    assert "［乖離排前段］" in text
+    assert "「乖離排前段」只是描述（當天候選裡乖離前 1/3），量不出比較常賺或賺比較多。" in text
 
 
 def test_pipeline_failure_vs_zero_candidates_still_distinguished(tmp_path, monkeypatch):

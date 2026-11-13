@@ -127,7 +127,7 @@ def _tier_stock(sid, turnover_close, bias20):
 def test_每檔候選都帶組內百分位與相對優勢分類(monkeypatch):
     """feat_pct 是「當日候選池內」的百分位、不是全市場排名。
     2026-11-13 分類簡化：tier="edge"（相對優勢）⇔ turnover 百分位 ≥0.67，其餘 None；
-    bias_high（乖離高，純描述）⇔ bias20_pct 百分位 ≥0.67，跟 tier 互相獨立。
+    bias_high（乖離排前段，純描述）⇔ bias20_pct 百分位 ≥0.67，跟 tier 互相獨立。
 
     6 檔的 turnover／bias20_pct 各自設計成單調遞增，組內百分位剛好落在 0/0.2/0.4/0.6/0.8/1.0，
     卡住 0.67／0.33 兩個門檻兩側，四種分類都會被踩到。
@@ -140,8 +140,8 @@ def test_每檔候選都帶組內百分位與相對優勢分類(monkeypatch):
         _tier_stock("T1", 10.0, 10.0),    # turnover pct 0.0, bias pct 0.2 → None
         _tier_stock("T2", 20.0, 20.0),    # turnover pct 0.2, bias pct 0.4 → None
         _tier_stock("T3", 30.0, 30.0),    # turnover pct 0.4, bias pct 0.6 → None（乖離差一點點不到）
-        _tier_stock("T4", 40.0, 40.0),    # turnover pct 0.6, bias pct 0.8 → None＋乖離高
-        _tier_stock("T5", 50.0, 50.0),    # turnover pct 0.8, bias pct 1.0 → edge＋乖離高
+        _tier_stock("T4", 40.0, 40.0),    # turnover pct 0.6, bias pct 0.8 → None＋乖離排前段
+        _tier_stock("T5", 50.0, 50.0),    # turnover pct 0.8, bias pct 1.0 → edge＋乖離排前段
         _tier_stock("T6", 60.0, -10.0),   # turnover pct 1.0, bias pct 0.0 → edge
     ]
     rev = {s["id"]: {"yoy": 5.0} for s in stocks}

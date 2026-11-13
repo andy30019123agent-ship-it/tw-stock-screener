@@ -12,7 +12,7 @@ const isNum = v => typeof v === 'number' && Number.isFinite(v)
 // 每組清單一律照 JSON 給的原始順序顯示，不做任何「誰比較好」的二次排序。
 // 🔴 2026-11-13 分類簡化（_reports/重算_候選池層級統計_2026-11-13.md「分類簡化」一節）：
 // 只剩一個有證據的分類「相對優勢」（成交金額在當日候選池前 1/3）；原本另外兩個稱號量不出差別，
-// 留在介面上等於替它背書，已拿掉。「乖離高」降為純描述標籤，可掛在任何候選上。
+// 留在介面上等於替它背書，已拿掉。「乖離排前段」降為純描述標籤，可掛在任何候選上。
 // 結論句不寫死：由 tierVerdict 讀 tier_stats.json 的 paired.cat_edge_vs_rest 決定；
 // 缺欄位／null／stale 時退成不帶數字的中性句。
 const NEUTRAL = '歷史上跟其他候選的比較數字暫時取不到，有分類也可能虧錢。'
@@ -151,8 +151,8 @@ function CandidateCard({ p, onClick }) {
       </div>
 
       <div className="opp-flags">
-        {/* 「乖離高」＝純描述（當天候選池乖離前 1/3），不是加分、不用強調色 */}
-        {biasHigh && <span className="opp-tag" title="當天候選池裡 20 日乖離排前 1/3；只是描述，不代表比較好">乖離高</span>}
+        {/* 「乖離排前段」＝純描述（當天候選池乖離前 1/3），不是加分、不用強調色 */}
+        {biasHigh && <span className="opp-tag" title="當天候選池裡 20 日乖離排前 1/3；只是描述，不代表比較好">乖離排前段</span>}
         {p.earnings_date && (
           <span className="opp-earn"><Calendar size={12} strokeWidth={1.75} />{p.earnings_date.slice(5)} 法說會</span>
         )}

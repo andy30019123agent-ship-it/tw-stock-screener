@@ -230,3 +230,10 @@ def test_paired_相對優勢對其餘候選_同日配對():
     assert not any(k.startswith("cat_both") or k.startswith("cat_win") or k.startswith("cat_return")
                    for k in out["paired"]), "舊三分類的配對不該再出現"
     assert set(out["by_gate"]["applied"]["categories"]) == {"edge", "rest", "bias_high", "not_bias_high"}
+
+
+def test_同一批樣本_兩處CI一致_相對優勢等於成交金額高層():
+    """網站相對優勢區與「這些數字怎麼來的」卡是同一批樣本，CI 必須一樣（共用同一次 bootstrap）。"""
+    days = {f"2025-03-{3 + i:02d}": _day() for i in range(5)}
+    out = ts.compute_pool_tier_stats(days, net_fn=ID, n_boot=200, _subsets=False)
+    assert out["categories"]["edge"] == out["features"]["turnover"]["high"]
