@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Target as TargetIcon, CalendarClock, Layers } from 'lucide-react'
 import ExitDefense from './ExitDefense'
-import { targetPrice, holdUntil, concentration, HOLD_DAYS } from '../lib/position'
+import { holdUntil, concentration, HOLD_DAYS } from '../lib/position'
 
 // 個股觀察位卡：**近 20 日前高（觀察位）、20 日績效檢視日**
 //
@@ -13,7 +13,9 @@ import { targetPrice, holdUntil, concentration, HOLD_DAYS } from '../lib/positio
 //   ・出場價 −15% 原本的驗證腳本不在 repo 裡、無法重現——整欄移除。2026-11-13 出場研究做完（見
 //     _reports/研究_出場規則_2026-11-13.md），欄位仍不放回；改在下方收合區照實說明防守價並附各條停損線的代價表。
 //   ・買幾張／資金配置屬於「購買組合」，Andy 說會自己評估，不需要系統給。
-const pctOf = v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
+// 2026-11-13 可讀性改版（審計 A2）：「近 20 日前高（觀察位）」46 列表格在手機上切掉關鍵欄、又長 4 屏，
+// 改成每張候選卡上直接寫「近 20 日前高 X，距 +Y%」（同一個 recent_high20、同一個 targetPrice 定義），
+// 這裡只留集中度警示、20 日績效檢視日、防守價代價表。
 
 export default function PositionPlan({ picks, dataDate, exitSummary }) {
   const conc = useMemo(() => concentration(picks || []), [picks])
@@ -23,7 +25,7 @@ export default function PositionPlan({ picks, dataDate, exitSummary }) {
   return (
     <section className="pp" data-region="個股觀察位">
       <header className="pp-head">
-        <span className="badge-pill"><TargetIcon size={14} strokeWidth={1.75} />近 20 日前高（觀察位）</span>
+        <span className="badge-pill"><TargetIcon size={14} strokeWidth={1.75} />持有口徑與停損代價</span>
       </header>
 
       {conc.warn && (
@@ -36,30 +38,6 @@ export default function PositionPlan({ picks, dataDate, exitSummary }) {
           </span>
         </p>
       )}
-
-      <div className="pp-scroll">
-        <table className="pp-table">
-          <thead><tr>
-            <th>個股</th>
-            <th>現價</th>
-            <th title="近 20 日內的最高價——單純的技術觀察位，不是預期報酬，也不是投資建議">近 20 日前高（觀察位）</th>
-          </tr></thead>
-          <tbody>
-            {picks.map(p => {
-              const t = targetPrice(p)
-              return (
-                <tr key={p.id}>
-                  <td className="pp-name">{p.id} {p.name}</td>
-                  <td>{p.close ?? '—'}</td>
-                  <td className="pp-target">
-                    {t ? <>{t.high}<small>距現價 {pctOf(t.upsidePct)}</small></> : '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
 
       <p className="pp-note">
         <CalendarClock size={14} strokeWidth={2} />

@@ -4,6 +4,7 @@ import {
   Rocket, BookOpen, Gem, Sparkles, Landmark, TrendingUp,
 } from 'lucide-react'
 import ComboBoard from './ComboBoard'
+import { signalSummary } from '../lib/signalSummary'
 import { oosBadge, sigTier, TIER_MARK } from '../lib/oos'
 
 const isMobile = () =>
@@ -109,6 +110,15 @@ export default function ConditionPanel({
   weights = null, combos = null, exits = null, regime = null, open: openProp, onOpenChange, id,
 }) {
   const c = conditions
+  // 說明文字裡的戰績數字一律讀 signal_weights.json（不寫死，資料每週重算會變）；取不到就不顯示數字
+  const fmtPp = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}pp`
+  const isNum = v => typeof v === 'number' && Number.isFinite(v)
+  const shishiNet = isNum(weights?.signals?.signal_shishi?.net_excess) ? weights.signals.signal_shishi.net_excess : null
+  const bestSn = Object.entries(weights?.signals || {})
+    .filter(([k, v]) => k.startsWith('sn_') && v && v.samples > 0 && isNum(v.net_excess))
+    .map(([, v]) => v)
+    .sort((a, b) => b.net_excess - a.net_excess)[0] || null
+  const sigRange = signalSummary(weights)   // 各訊號「贏過大盤比例」最小～最大（與說明書同一個函式）
   // 快速套用依「平均超額報酬」由高到低排（資料驅動；同分或無資料維持原順序）
   const orderedPresets = PRESETS
     .map((p, i) => ({ p, i, s: presetScore(p.key, weights) }))
@@ -158,7 +168,7 @@ export default function ConditionPanel({
                       毛超額，等於重演「畫面數字不是決策依據」那個 bug。 */}
                   {btnScore != null && <span className={`preset-score ${btnScore > 0 ? 'good' : btnScore < 0 ? 'bad' : ''}`}
                     title={st?._isBest
-                      ? `成本後超額。⚠️ 這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
+                      ? `成本後超額。注意：這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
                       : '成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的'}>
                     {btnScore >= 0 ? '+' : ''}{btnScore}<small>pp</small>
                     {st?._isBest && <em className="score-best" title="顯示的是最佳形態的成績">＊</em>}</span>}
@@ -228,13 +238,15 @@ export default function ConditionPanel({
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
                 <AlertTriangle size={13} strokeWidth={2} className="inline-warn-icon" /> 代表扣成本後贏不過大盤。<b>小詩選股顯示的是 5 招母體</b>（勾「符合任一形態」實際會篩到的
-                那一整批，成本後 −0.78pp）——不是最好的那一招（縮口帶量突破 +0.04pp）；
+                那一整批{shishiNet != null ? `，成本後 ${fmtPp(shishiNet)}` : ''}）——不是最好的那一招{bestSn ? `（${bestSn.label} ${fmtPp(bestSn.net_excess)}）` : ''}；
                 多頭排列／填息快僅供戰績參考、不進候選情報清單。
               </p>
               <p className="strategy-note strategy-skew">
                 <AlertTriangle size={14} strokeWidth={2} className="inline-warn-icon" />
                 <b>務必看「中位數」和「贏大盤」這兩欄</b>：全樣本實測顯示每個訊號的中位數超額都是負的、
-                贏大盤比例全部落在 37%～43%（沒有一個過半，2026-07-26 新口徑重算）。
+                {sigRange
+                  ? <>贏大盤比例全部落在 {Math.round(sigRange.min * 100)}%～{Math.round(sigRange.max * 100)}%{sigRange.anyHalf ? '' : '（沒有一個過半）'}。</>
+                  : <>贏大盤比例的回測數字暫時取不到。</>}
                 意思是<b>大多數交易其實小輸大盤，整體正報酬靠少數幾檔大贏撐起來</b>。
                 這種形狀的策略要能成立，必須分散買足夠多檔、而且不能在賠錢時提早出場——只買一兩檔
                 或半路放棄，很可能剛好錯過那幾檔、拿到的是中位數而不是平均數。
@@ -274,7 +286,7 @@ export default function ConditionPanel({
                 「相對強弱」＝拿個股近期漲幅跟全市場排名（不是跟大盤指數比）；「熱門產業」＝所屬產業近期輪動居前。
                 這些是<b>橫斷面（跨股票比較）</b>訊號。2026-07-25 起後端每天算好全市場排名，所以<b>都可以直接勾選篩股</b>；
                 其中<b>「強勢雙確認」已成為候選情報清單的入場門檻</b>（先篩出強勢股，再用技術訊號排名）——
-                它<b>不參與加權計分</b>，因為它有 21% 的股票符合，當加分項會淹掉真正有區辨力的窄訊號。
+                它<b>不參與加權計分</b>，因為符合它的股票太多，當加分項會淹掉真正有區辨力的窄訊號。
               </p>
             </details>
           )}
@@ -417,8 +429,8 @@ export default function ConditionPanel({
         <div className="cond-group">
           <span className="cond-section-label"><TrendingUp size={14} strokeWidth={1.75} />相對強弱／產業輪動</span>
           <p className="cond-group-note">
-            跟全市場比排名（不是跟大盤指數比）。<b>強勢雙確認</b>是目前回測最穩的訊號——去掉最極端
-            2% 的事件後平均超額仍為正，樣本外驗證也過關；其他訊號多半去掉最高 1% 就轉負。
+            跟全市場比排名（不是跟大盤指數比）。<b>強勢雙確認</b>在 2026-07-25 那次檢驗裡是最穩的訊號——去掉最極端
+            2% 的事件後平均超額仍為正，樣本外驗證也過關；其他訊號多半去掉最高 1% 就轉負（這項檢驗沒有每週重算）。
           </p>
           <div className="cond-checks">
             <Toggle label="強勢雙確認" hint="60日排前20% 且 120日排前30%"

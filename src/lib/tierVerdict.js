@@ -96,6 +96,18 @@ export function edgeSentence(tierStats) {
   return e ? `${head}，${e}` : head
 }
 
+// 首屏短句（2026-11-13 可讀性改版）：只講「賺錢機率差」＋誤差範圍，給候選區最上面那一句用；
+// 平均每筆的差距與完整句留在「這些數字怎麼來的」（edgeSentence）。不可用（缺／stale）回 null。
+export function edgeWinShort(tierStats) {
+  const p = usablePair(tierStats, 'cat_edge_vs_rest')
+  if (!p) return null
+  const v = verdictOf(p.win_ci90)
+  const r = `（誤差範圍 ${ciTxt(p.win_ci90)}）`
+  if (v === 'better') return `比同一天其他候選的賺錢機率多約 ${pp(p.win_pp)} 個百分點${r}`
+  if (v === 'worse') return `比同一天其他候選的賺錢機率少約 ${pp(p.win_pp)} 個百分點${r}`
+  return `跟同一天其他候選的賺錢機率量不出差別${r}`
+}
+
 // 相對優勢的單檔賺錢機率一句話（照實講是否不到一半，文字由數字決定）；不可用回 null。
 export function edgeWinRateText(tierStats) {
   if (!tierStats || tierStats.stale) return null

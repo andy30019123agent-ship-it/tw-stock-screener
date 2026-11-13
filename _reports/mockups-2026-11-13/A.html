@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>方向 A 原地修好</title><style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F3F7;--surface:#FFFFFF;--surface-tint:#FDEEF4;--surface-deep:#2B0A20;
+  --ink:#3D1130;--ink-body:#5A3B50;--ink-muted:#7E6274;--on-deep:#F7F3F7;
+  --border:#ECDCE7;--border-strong:#DCC3D3;
+  --primary:#FF4D8D;--primary-strong:#E63677;--on-primary:#2B0A20;--primary-tint:#FFD6E5;
+  --accent:#FFC24B;--on-accent:#3D1130;--ring:#FF4D8D;
+  --up:#D0303C;--up-bg:#FBE9EA;--down:#0F8A5F;--down-bg:#E7F4EE;--flat:#8A7A85;
+  --warn:#7A5200;--warn-bg:#FBF0D8;--warn-border:#E8CE94;
+  --deco-pink:#FFB1CC;--deco-lavender:#E7C6F5;--deco-apricot:#FFD9A6;--deco-mist:#F2E3ED;
+  --r-sm:10px;--r-md:16px;--r-lg:24px;--r-xl:32px;--r-pill:999px;
+  --shadow-sm:0 1px 2px rgba(61,17,48,.06);--shadow-md:0 6px 16px rgba(61,17,48,.08);--shadow-lg:0 16px 40px rgba(61,17,48,.12);
+}
+html{scroll-behavior:auto}
+body{font-family:'Noto Sans TC',system-ui,sans-serif;background:var(--bg);color:var(--ink-body);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.mono,.num{font-family:'Manrope','Noto Sans TC',sans-serif;font-variant-numeric:tabular-nums}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px}
+.ico{flex:none;vertical-align:middle}
+.tri{flex:none}
+b,strong{font-weight:700;color:var(--ink)}
+h1,h2,h3{color:var(--ink);line-height:1.25}
+h2{font-size:20px;font-weight:800;font-family:'Manrope','Noto Sans TC',sans-serif}
+.muted{color:var(--ink-muted)}
+.small{font-size:14px;line-height:1.6}
+.up{color:var(--up)} .dn{color:var(--down)}
+.chg{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-family:'Manrope','Noto Sans TC',sans-serif;font-variant-numeric:tabular-nums;font-size:19px;line-height:1.3;white-space:nowrap}
+.r20{display:inline-flex;align-items:center;gap:2px}
+.r20 .tri{margin-right:2px}
+.badge-pill{display:inline-flex;align-items:center;gap:8px;background:var(--primary-tint);color:var(--ink);border-radius:var(--r-pill);padding:4px 12px;font-size:14px;font-weight:500}
+.btn2{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:8px 20px;border-radius:var(--r-pill);border:1px solid var(--border-strong);background:var(--surface);color:var(--ink);font-weight:700;font-size:16px;width:100%;font-family:inherit}
+.fold{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:12px 20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);color:var(--ink);font-weight:700}
+.fold .ico{color:var(--ink-muted)}
+.fold small{display:block;font-size:14px;font-weight:400;color:var(--ink-muted)}
+.honest{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:1.6;color:var(--ink-body)}
+.honest .ico{margin-top:3px;color:var(--ink)}
+.warnline{display:flex;gap:8px;align-items:flex-start;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn);border-radius:var(--r-md);padding:12px 16px;font-size:14px;line-height:1.6}
+.warnline b{color:var(--warn)}
+.warnline .ico{margin-top:3px}
+.tag{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:2px 12px;border-radius:var(--r-pill);font-size:14px;background:var(--bg);color:var(--ink-body);border:1px solid var(--border)}
+.tag.warn{background:var(--warn-bg);border-color:var(--warn-border);color:var(--warn);font-weight:700}
+.tags{display:flex;flex-wrap:wrap;gap:8px}
+/* 位置條 */
+.pos{display:grid;grid-template-columns:64px minmax(0,1fr);gap:0 8px;align-items:center}
+.pos>.pos-v{grid-column:1/3}
+.pos-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.pos-k{font-size:14px;color:var(--ink-muted);white-space:nowrap;line-height:1.7}
+.pos-v{font-size:16px;color:var(--ink);line-height:1.5}
+.bar{position:relative;height:6px;border-radius:var(--r-pill);background:var(--border);margin:0 7px}
+.bar i{position:absolute;top:-4px;width:14px;height:14px;border-radius:50%;background:var(--ink);border:2px solid var(--surface);box-shadow:0 0 0 1px var(--ink);transform:translateX(-50%)}
+.bar-ends{display:flex;justify-content:space-between;font-size:14px;color:var(--ink-muted);line-height:1.4}
+/* 觀察位 */
+.obs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.obs>div{background:var(--bg);border-radius:var(--r-md);padding:8px 10px;min-width:0}
+.obs dt{font-size:14px;color:var(--ink-muted);line-height:1.4}
+.obs dd{font-family:'Manrope','Noto Sans TC',sans-serif;font-variant-numeric:tabular-nums;font-size:18px;font-weight:800;color:var(--ink);line-height:1.3}
+.obs dd small{display:block;font-family:'Noto Sans TC',sans-serif;font-size:14px;font-weight:400;color:var(--ink-body);line-height:1.4}
+/* 卡片 */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;box-shadow:var(--shadow-sm)}
+.cards{display:grid;gap:16px}
+.c-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.c-price .chg{justify-content:flex-end}
+.c-name{font-size:22px;font-weight:700;color:var(--ink);line-height:1.25}
+.c-sub{font-size:14px;color:var(--ink-muted);line-height:1.5}
+.c-sub .num{font-weight:700;color:var(--ink-body)}
+.c-price{text-align:right}
+.c-price .num{display:block;font-size:22px;font-weight:800;color:var(--ink);line-height:1.25}
+.sep{height:1px;background:var(--border);margin:12px 0}
+.c-sec{font-size:14px;font-weight:700;color:var(--ink-muted);margin-bottom:8px;letter-spacing:.02em}
+/* 依據與限制 */
+.layer{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px}
+.layer+.layer{margin-top:16px}
+.layer-k{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--ink);background:var(--primary-tint);border-radius:var(--r-pill);padding:4px 12px;margin-bottom:12px}
+.layer p+p,.layer p+ul,.layer ul+p,.layer table+p,.layer p+table{margin-top:12px}
+.layer ul{padding-left:20px}
+.layer li+li{margin-top:8px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{color:var(--ink-muted);font-weight:500;text-align:right;padding:8px 4px;border-bottom:1px solid var(--border);line-height:1.4}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl td{color:var(--ink-body);text-align:right;padding:8px 4px;border-bottom:1px solid var(--border);font-family:'Manrope','Noto Sans TC',sans-serif;font-variant-numeric:tabular-nums}
+.tbl tr.lab td{border-bottom:none;padding-bottom:0;font-family:'Noto Sans TC',sans-serif;color:var(--ink);font-weight:700;text-align:left}
+.tbl tr.site td{background:var(--surface-tint)}
+.tbl .big{font-size:16px;font-weight:800;color:var(--ink)}
+.foot{background:var(--surface-deep);color:var(--on-deep);border-radius:var(--r-xl);padding:24px;font-size:14px;line-height:1.6;margin-top:48px}
+.foot b{color:var(--on-deep)}
+.sec{margin-top:48px}
+.sec-head{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+
+.ma-list{list-style:none;margin-top:8px}
+.ma-list li{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;min-height:52px;border-top:1px solid var(--border)}
+.ma-list .num{font-size:14px;color:var(--ink-body)}
+.mini{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:64px;padding:0 16px;border-radius:var(--r-pill);border:1px solid var(--border-strong);color:var(--ink);font-weight:700;font-size:14px;text-decoration:none;background:var(--surface)}
+a.fold{text-decoration:none}
+.helpbtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:44px;padding:0 12px;border-radius:var(--r-pill);border:1px solid var(--border-strong);background:var(--surface);color:var(--ink);font-size:14px;font-weight:700;text-decoration:none;white-space:nowrap}
+
+.hero{position:relative;overflow:hidden;background:var(--surface-tint);border-radius:var(--r-xl);padding:24px 20px;margin-top:12px}
+.blob{position:absolute;border-radius:50%;pointer-events:none}
+.blob.b1{width:160px;height:160px;background:var(--deco-pink);right:-48px;top:-56px;opacity:.6}
+.blob.b2{width:96px;height:96px;background:var(--deco-lavender);right:48px;bottom:-40px;opacity:.6}
+.hero>*{position:relative}
+.hero h1{font-size:28px;font-weight:800;margin-top:12px}
+.stats{display:flex;gap:24px;margin-top:16px}
+.stats .num{font-size:28px;font-weight:800;color:var(--ink);display:block;line-height:1.2}
+.stats span.l{font-size:14px;color:var(--ink-body)}
+.date{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-body);margin-top:12px}
+.banner{display:flex;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 20px;margin-top:16px}
+.banner .ico{color:var(--ink);margin-top:3px}
+.banner p{font-size:16px;color:var(--ink)}
+.head{margin-top:32px}
+.head h2{display:flex;align-items:center;gap:8px}
+.notice{margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 20px}
+.tier{margin-top:24px;background:var(--surface-tint);border-radius:var(--r-xl);padding:20px 16px}
+.tier h3{font-size:20px;font-weight:800}
+.lede{font-size:16px;margin-top:8px}
+.alines{list-style:none;margin-top:16px;display:grid;gap:8px}
+.alines li{display:grid;grid-template-columns:72px 1fr;gap:8px;font-size:16px;line-height:1.6;color:var(--ink-body)}
+.alines .pos-k{padding-top:1px}
+</style></head><body><div class="wrap">
+  <section class="hero">
+    <span class="blob b1"></span><span class="blob b2"></span>
+    <span class="badge-pill"><svg class="ico"  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/></svg>全市場候選情報・上市＋上櫃</span>
+    <h1>台股全市場選股</h1>
+    <div class="stats"><div><span class="num">785</span><span class="l">檔全市場掃描</span></div><div><span class="num">139</span><span class="l">檔今日候選</span></div></div>
+    <div class="date"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>資料日 2026-11-12<a class="helpbtn" href="#" style="margin-left:auto"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>使用說明</a></div>
+  </section>
+  <div class="banner"><svg class="ico"  width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg><div><p><b>大盤明顯走弱：全市場僅 17% 站上月線</b>（20 日報酬中位 −13%）。</p><p class="small" style="color:var(--ink-body);margin-top:4px">候選照常產生，請自行斟酌降低曝險。這是市場廣度代理、非大盤指數，不改選股。</p></div></div>
+
+  <div class="head">
+    <h2>候選情報・共 139 檔</h2>
+    <div class="notice">
+      <p class="honest" style="font-size:16px"><svg class="ico"  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span><b>這不是購買組合，是候選情報。</b>買哪幾檔、買不買，由你決定。</span></p>
+      <p class="small" style="margin-top:8px">全部 139 檔都只過了「強勢雙確認」門檻（全市場漲幅前段，已過濾營收年減／低量），沒有加權訊號，依近 60 天強弱排序。</p>
+    </div>
+  </div>
+
+  <section class="tier">
+    <span class="badge-pill">相對優勢・46 檔</span>
+    <h3 style="margin-top:8px">成交金額排在今天候選前 1/3</h3>
+    <p class="lede">跟同一天其他候選比，賺錢機率多約 6.0 個百分點（誤差範圍 +2.9～+8.6）；但單看這群自己，單檔賺錢機率 46.5%，<b>不到一半</b>。<a href="#how" style="color:var(--ink);font-weight:700">完整數字</a></p>
+    <p class="honest" style="margin-top:8px"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>門檻放寬的弱勢日，歷史上方向相反（相對優勢 38.8%、其他 41.7%）。今天門檻有套用。</span></p>
+    <p class="small muted" style="margin-top:8px">照原本順序（近 60 天強弱），不是好壞排名。防守價歷史上約 50.2% 的候選 20 天內會碰到，<a href="#defense" style="color:var(--ink)">代價見下方</a>。</p>
+    <div class="cards" style="margin-top:16px"><article class="card">
+    <div class="c-head">
+      <div><div class="c-name">聯一光電</div><div class="c-sub"><span class="num">3441</span>・光電</div></div>
+      <div class="c-price"><span class="num">196.5</span><span class="chg up"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg>+17.5（+9.8%）</span></div>
+    </div>
+    <dl class="obs" style="margin-top:16px">
+      <div><dt>月線</dt><dd>196.9<small>在現價上方</small></dd></div>
+      <div><dt>前高</dt><dd>293.5<small>距現價 +49.4%</small></dd></div>
+      <div><dt>防守價</dt><dd>167.0<small>＝現價 −15%</small></dd></div>
+    </dl>
+    <ul class="alines">
+      <li><span class="pos-k">強弱</span><span>近 60 天漲幅贏過全市場 <b class="num">99.7%</b> 的股票；近 20 天 <b class="num r20"><span class="dn"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg></span>−14.4%</b>，同期大盤 −10.9%</span></li>
+      <li><span class="pos-k">成交金額</span><span>在今天候選裡<b>排前 29%</b></span></li>
+      <li><span class="pos-k">離前高</span><span>比 94% 的候選離得遠</span></li>
+      <li><span class="pos-k">離月線</span><span>−0.2%，乖離在今天候選裡排前 44%</span></li>
+    </ul>
+    <div style="margin-top:12px"><div class="tags"><span class="tag">營收年增 <b class="num">+8.5%</b></span></div></div>
+  </article><article class="card">
+    <div class="c-head">
+      <div><div class="c-name">濱川</div><div class="c-sub"><span class="num">1569</span>・電腦及週邊設備</div></div>
+      <div class="c-price"><span class="num">102.5</span><span class="chg dn"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg>−2（−1.9%）</span></div>
+    </div>
+    <dl class="obs" style="margin-top:16px">
+      <div><dt>月線</dt><dd>88.41<small>在現價下方</small></dd></div>
+      <div><dt>前高</dt><dd>109<small>距現價 +6.3%</small></dd></div>
+      <div><dt>防守價</dt><dd>88.41<small>＝月線</small></dd></div>
+    </dl>
+    <ul class="alines">
+      <li><span class="pos-k">強弱</span><span>近 60 天漲幅贏過全市場 <b class="num">99.6%</b> 的股票；近 20 天 <b class="num r20"><span class="up"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg></span>+26.5%</b>，同期大盤 −10.9%</span></li>
+      <li><span class="pos-k">成交金額</span><span>在今天候選裡<b>排前 21%</b></span></li>
+      <li><span class="pos-k">離前高</span><span>比 29% 的候選離得遠</span></li>
+      <li><span class="pos-k">離月線</span><span>+15.9%，乖離在今天候選裡排前 9%</span></li>
+    </ul>
+    <div style="margin-top:12px"><div class="tags"><span class="tag warn"><svg class="ico"  width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>乖離大：高於月線 15% 以上</span><span class="tag">乖離排前段</span><span class="tag">營收年增 <b class="num">+133.5%</b></span></div></div>
+  </article><article class="card">
+    <div class="c-head">
+      <div><div class="c-name">倉和</div><div class="c-sub"><span class="num">6538</span>・電子零組件</div></div>
+      <div class="c-price"><span class="num">326</span><span class="chg up"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg>+18.5（+6.0%）</span></div>
+    </div>
+    <dl class="obs" style="margin-top:16px">
+      <div><dt>月線</dt><dd>296.7<small>在現價下方</small></dd></div>
+      <div><dt>前高</dt><dd>344<small>距現價 +5.5%</small></dd></div>
+      <div><dt>防守價</dt><dd>296.7<small>＝月線</small></dd></div>
+    </dl>
+    <ul class="alines">
+      <li><span class="pos-k">強弱</span><span>近 60 天漲幅贏過全市場 <b class="num">99.4%</b> 的股票；近 20 天 <b class="num r20"><span class="up"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg></span>+5.5%</b>，同期大盤 −10.9%</span></li>
+      <li><span class="pos-k">成交金額</span><span>在今天候選裡<b>排前 25%</b></span></li>
+      <li><span class="pos-k">離前高</span><span>比 25% 的候選離得遠</span></li>
+      <li><span class="pos-k">離月線</span><span>+9.9%，乖離在今天候選裡排前 15%</span></li>
+    </ul>
+    <div style="margin-top:12px"><div class="tags"><span class="tag">乖離排前段</span><span class="tag">營收年增 <b class="num">+57.4%</b></span></div></div>
+  </article><article class="card">
+    <div class="c-head">
+      <div><div class="c-name">騰輝電子-KY</div><div class="c-sub"><span class="num">6672</span>・電子零組件</div></div>
+      <div class="c-price"><span class="num">497</span><span class="chg dn"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg>−28（−5.3%）</span></div>
+    </div>
+    <dl class="obs" style="margin-top:16px">
+      <div><dt>月線</dt><dd>539.9<small>在現價上方</small></dd></div>
+      <div><dt>前高</dt><dd>677<small>距現價 +36.2%</small></dd></div>
+      <div><dt>防守價</dt><dd>422.4<small>＝現價 −15%</small></dd></div>
+    </dl>
+    <ul class="alines">
+      <li><span class="pos-k">強弱</span><span>近 60 天漲幅贏過全市場 <b class="num">98.9%</b> 的股票；近 20 天 <b class="num r20"><span class="dn"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg></span>−7.8%</b>，同期大盤 −10.9%</span></li>
+      <li><span class="pos-k">成交金額</span><span>在今天候選裡<b>排前 8%</b></span></li>
+      <li><span class="pos-k">離前高</span><span>比 86% 的候選離得遠</span></li>
+      <li><span class="pos-k">離月線</span><span>−7.9%，乖離在今天候選裡排前 78%</span></li>
+    </ul>
+    <div style="margin-top:12px"><div class="tags"><span class="tag">營收年增 <b class="num">+224.4%</b></span></div></div>
+  </article></div>
+    <button class="btn2" style="margin-top:16px">展開全部 46 檔 <svg class="ico"  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+  </section>
+
+  <div class="sec" style="margin-top:24px"><a class="fold" href="#"><span>其他候選 93 檔<small>沒有分類稱號，同樣只過門檻</small></span><svg class="ico"  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></div>
+
+  <section class="sec" id="how">
+    <div class="sec-head"><h2>這些數字怎麼來的</h2></div>
+    
+  <div class="layer" id="conclusion">
+    <span class="layer-k"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>結論</span>
+    <p><b>跟同一天其他候選比</b>：相對優勢的賺錢機率多約 <b class="num">6.0</b> 個百分點（誤差範圍 +2.9～+8.6），平均每筆多約 <b class="num">2.1</b> 個百分點（誤差範圍 +0.6～+3.6）。</p>
+    <p><b>單看這群自己</b>：單檔賺錢機率 <b class="num">46.5%</b>，不到一半；平均每筆 +0.9%，但誤差範圍 −3.3%～+6.1% 跨過 0，<b>量不出這群自己會賺</b>。兩句講的是不同的比較，不矛盾。</p>
+    <p class="honest"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span><b>誤差範圍</b>＝把運氣算進去後，真正的數字大概落在這一段。範圍整段都在 0 以上，才算量得出差別。</span></p>
+  </div>
+  <div class="layer">
+    <span class="layer-k"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>證據</span>
+    <table class="tbl" aria-label="相對優勢與其他候選的歷史對照">
+      <thead><tr><th></th><th>相對優勢</th><th>其他候選</th></tr></thead>
+      <tbody>
+        <tr><td>單檔賺錢機率</td><td class="big">46.5%</td><td class="big">43.6%</td></tr>
+        <tr><td>賺的時候平均</td><td>+16.8%</td><td>—</td></tr>
+        <tr><td>賠的時候平均</td><td>−12.9%</td><td>—</td></tr>
+        <tr><td>賺錢機率誤差範圍</td><td>36.6～58.0%</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p class="small">樣本：歷史上每天重播同一套選股流程，共 <b class="num">14,686</b> 筆；持有 20 個交易日互相重疊，約等於 <b class="num">20</b> 批獨立進場，所以誤差範圍很寬。已扣來回交易成本 0.785%。這是整群的統計，<b>不是任何一檔自己的勝率</b>。</p>
+    <a class="fold" style="margin-top:12px" href="#"><span>各條件層級的歷史分佈<small>三層賺錢機率、賺賠幅度分佈</small></span><svg class="ico"  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
+  </div>
+  <div class="layer">
+    <span class="layer-k"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>限制</span>
+    <ul>
+      <li><b>弱勢日方向相反</b>：過門檻的股票不到 20 檔、系統放寬門檻的日子（歷史 58 天），相對優勢 38.8%、其他候選 41.7%，反而比較差。今天門檻有套用。</li>
+      <li><b>歷史重播不了的條件</b>：營收年減剔除、同業低估、千張大戶、外資／投信連買，以及上市未滿約 85 個交易日的新股，回測裡都沒套用；也只重播今天還在的股票（倖存者偏差）。</li>
+      <li><b>「離前高」方向不穩定</b>：重算後跟舊研究方向相反，只當位置看，不代表離前高越遠或越近越好。</li>
+      <li><b>大盤狀態</b>是市場廣度代理（站上月線的比例），不是大盤指數，不會改變選股結果。</li>
+    </ul>
+  </div>
+  <div class="layer" id="defense">
+    <span class="layer-k"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>防守價與停損的代價</span>
+    <p><b>防守價</b>＝「現價 −15%」與「月線」取較高者（月線要在現價下方才算，否則用 −15%）。它只是參考線，網站不會替你賣，也不是建議設在哪裡。實際上多半是月線在當停損。</p>
+    <p>歷史上照這條線，約 <b class="num">50.2%</b> 的候選 20 天內會碰到；本來抱滿會賺的那群裡，有 <b class="num">21.1%</b> 先被洗出場。它壓低的是極端單筆虧損，不是提高報酬；資料分不出哪條停損線比較好，跌了才賣平均也沒有比續抱好（誤差範圍跨過 0）。</p>
+    <p class="small muted">觸發＝20 天內碰到；誤砍＝本來會賺卻先被洗出場；賺錢率＝這樣操作最後賺錢的比例；最慘 5%＝最差那 5% 大約虧多少。這不是建議，取捨由你決定。</p>
+    <table class="tbl" aria-label="各條停損線的代價">
+    <thead><tr><th>停損線</th><th>觸發</th><th>誤砍</th><th>賺錢率</th><th>最慘5%</th></tr></thead>
+    <tbody><tr class=""><td>抱滿 20 天</td><td>0%</td><td>0%</td><td>44.6%</td><td>−25.7%</td></tr><tr class=""><td>−8%</td><td>55.7%</td><td>24.1%</td><td>34.7%</td><td>−17.4%</td></tr><tr class=""><td>−10%</td><td>47.1%</td><td>15.6%</td><td>38.0%</td><td>−19.7%</td></tr><tr class=""><td>−12%</td><td>39.7%</td><td>10.0%</td><td>40.2%</td><td>−22.0%</td></tr><tr class=""><td>−15%</td><td>31.2%</td><td>5.6%</td><td>42.2%</td><td>−24.7%</td></tr><tr class=""><td>−20%</td><td>20.4%</td><td>1.8%</td><td>43.8%</td><td>−27.8%</td></tr><tr class="site"><td>網站預設（−15% 與月線取較高者）</td><td>50.2%</td><td>21.1%</td><td>37.5%</td><td>−23.2%</td></tr></tbody>
+  </table>
+  <p class="small muted">最慘單筆（歷史上最差的一筆）：抱滿 −70.2%、−8% −26.0%、−10% −27.6%、−12% −29.1%、−15% −31.6%、−20% −35.6%、網站預設 −34.7%。</p>
+    <p class="small muted">量測 2025-01-16～2026-10-12，44,286 筆、約 20 批獨立樣本。假設盤中碰到、隔天開盤才賣；不含下市股、看不到跌停賣不掉，實際可能更差。</p>
+    <p class="honest" style="margin-top:12px"><svg class="ico"  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg><span><b>20 日績效檢視日：2026-12-10</b>（訊號日起 20 個交易日）。這是回測結算的口徑，<b>不是建議賣出日</b>。</span></p>
+  </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>工具</h2></div>
+    
+  <a class="fold" href="#"><span>候選情報成績單<small>勝率 45%・平均報酬 +1.02%・樣本 5,687（入選後 20 交易日）</small></span><svg class="ico"  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
+  <div class="card" style="margin-top:16px">
+    <div class="c-sec">本週市況：明顯走弱（空頭）・17% 站上月線</div>
+    <p class="small">這個市況下歷史表現最強的訊號（未扣成本、僅供參考）：</p>
+    <ul class="ma-list">
+      <li><span>強勢雙確認</span><span class="num">+1.06 個百分點</span><a href="#" class="mini">套用</a></li><li><span>多頭排列</span><span class="num">+0.61 個百分點</span><a href="#" class="mini">套用</a></li><li><span>強勢股60日</span><span class="num">+0.44 個百分點</span><a href="#" class="mini">套用</a></li><li><span>縮口帶量突破</span><span class="num">+0.30 個百分點</span><a href="#" class="mini">套用</a></li><li><span>大量撐</span><span class="num">+0.26 個百分點</span><a href="#" class="mini">套用</a></li>
+    </ul>
+  </div>
+  <a class="fold" style="margin-top:16px" href="#"><span>進階篩選（舊版手動篩選器）<small>自己勾條件、自己排序，跟候選情報互不影響</small></span><svg class="ico"  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a>
+  </section>
+  <footer class="foot">資料來源：TWSE／TPEX 官方公開資料。僅供研究參考，<b>非投資建議</b>；歷史不代表未來，買不買、買哪幾檔由你決定。</footer>
+  <div style="height:24px"></div>
+  </div></body></html>
