@@ -57,6 +57,21 @@ MIN_TIER_POOL = 10
 HISTORY_MAX = 3650
 
 
+def feature_level(pct):
+    """候選池內百分位 → 層級（high／mid／low）；缺值回 None（＝永不達標）。
+
+    線上分類（build_opportunities 的 win/return/both）與歷史層級統計
+    （tier_stats.compute_pool_tier_stats）**共用這一支**：兩邊對「前段／中段／後段」的切法
+    只要分岔一次，網站上的分類就會對到另一套數字（2026-11-13 修母體錯配時順手收斂）。"""
+    if pct is None:
+        return None
+    if pct >= TIER_HIGH_PCT:
+        return "high"
+    if pct >= TIER_MID_PCT:
+        return "mid"
+    return "low"
+
+
 GATE_SIGNAL = "rs_confirmed_60_120"   # 入場門檻訊號（強勢雙確認）
 GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < 此數 → 退回不設門檻（保命）
 
@@ -210,22 +225,20 @@ def build_opportunities(results, weights, revenue, data_date):
     # 而不是硬給一個看起來有依據的標籤。
     tier_on = len(picks) >= MIN_TIER_POOL
 
-    def _ge(v, thresh):
-        """缺值永不達標——None 代表「不知道它在哪個位置」，不是「位置很高」。"""
-        return v is not None and v >= thresh
-
     for p in picks:
         fp = p["feat_pct"]
         if not tier_on:
             p["tier"] = None
             continue
-        win_flag = _ge(fp["turnover"], TIER_HIGH_PCT)
-        ret_flag = _ge(fp["bias20_pct"], TIER_HIGH_PCT)
+        # 缺值永不達標——feature_level(None) 回 None，不等於任何層級
+        lv_turn = feature_level(fp["turnover"])
+        win_flag = lv_turn == "high"
+        ret_flag = feature_level(fp["bias20_pct"]) == "high"
         if win_flag and ret_flag:
             p["tier"] = "both"
         elif win_flag:
             p["tier"] = "win"
-        elif ret_flag and _ge(fp["turnover"], TIER_MID_PCT):
+        elif ret_flag and lv_turn in ("high", "mid"):
             p["tier"] = "return"
         else:
             p["tier"] = None
@@ -408,8 +421,12 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     if regime:
         _write_json(os.path.join(OUT_DIR, "signal_regime.json"), regime)
     tiers = bt._load(bt.TIER_STATS_PATH)      # 條件層級歷史分佈（候選情報用，不給個股精確勝率）
+    pub_tiers = os.path.join(OUT_DIR, "tier_stats.json")
     if tiers:
-        _write_json(os.path.join(OUT_DIR, "tier_stats.json"), tiers)
+        _write_json(pub_tiers, tiers)
+    elif os.path.exists(pub_tiers):
+        # 來源檔不見了就不能讓前端繼續顯示上一份（Codex 必修 7）：刪掉，前端走「暫時取不到」降級
+        os.remove(pub_tiers)
 
     names = "、".join(f"{p['name']}({p['id']}) {p['score']}分" for p in opp["picks"][:PREVIEW_N]) or "（今日無符合標的）"
     more = f"…等共 {opp['pool_n']} 檔" if opp["pool_n"] > PREVIEW_N else ""

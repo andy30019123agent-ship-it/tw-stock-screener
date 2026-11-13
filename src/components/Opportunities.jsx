@@ -7,22 +7,20 @@ import OutcomeShape from './OutcomeShape'
 // 前端只負責分組顯示，不重新排序、不重新判斷。
 // ⚠️ 名次沒有證據（2026-07-25 實測：前 3 名 vs 第 4~8 名 t=-0.22，第 2 名反而最差）——
 // 每組清單一律照 JSON 給的原始順序顯示，不做任何「誰比較好」的二次排序。
+// 🔴 2026-11-13：下面的說明原本依據 _reports/驗證_雙優分類_2026-07-26.md，那份用的是「所有訊號事件」
+// 這個錯的母體。改依 _reports/重算_候選池層級統計_2026-11-13.md（歷史候選池重播、同日配對比較）。
+// 精確數字由 TierHistory 讀 tier_stats.json 顯示，這裡只寫結論與量測日期。
 const TIER_META = {
-  // 「雙優」是全站唯一的視覺主角（2026-07-26 單欄故事線核准方向第 2 條）：
-  // _reports/驗證_雙優分類_2026-07-26.md 實測它是三個分類裡唯一同時拿到最高賺錢機率、
-  // 最高上檔幅度、且中位數不是負的一組。lede 刻意不寫死那次測出的百分比——數字有效期只到
-  // 下次重新回測，精確數字交給下方「這些數字怎麼來的」一律讀 tier_stats.json 現算，這裡只講結論。
+  // 「雙優」是全站唯一的視覺主角（2026-07-26 單欄故事線核准方向第 2 條）。
   both: {
     label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段',
-    // lede 刻意短——完整根據（實測賺錢機率／上檔幅度／中位數）放在下方「這些數字怎麼來的」，
-    // 這裡只給結論，不然首屏會被長文字擋住看不到卡片（2026-07-26 審計主要抱怨）。
-    lede: '三個分類裡最有根據的一組：兩個條件都排前段，唯一同時賺得勤又賺得多的一類（見下方「這些數字怎麼來的」）。',
+    // lede 刻意短——完整根據放在下方「這些數字怎麼來的」，不然首屏會被長文字擋住看不到卡片。
+    lede: '成交金額與乖離都排在候選池前段。2026-11-13 同一天比：比「兩項都不突出」的常賺、平均也賺得多；但跟「勝率偏優」比還量不出確定差別，而且仍有一半以上的交易是虧的。',
   },
-  win: { label: '勝率偏優', Icon: Award, blurb: '成交金額排在候選池前段——歷史上這組單檔賺錢機率較高' },
-  // ⚠️ 2026-07-26 實測（_reports/驗證_雙優分類_2026-07-26.md）：「只有乖離高」的賺錢機率 42.5%，
-  // 比「兩個條件都不符合」的 42.6% 還低一點——乖離單獨看只增加賺賠「幅度」，不增加「頻率」。
-  // 所以這個分類的說明**絕對不可以**暗示勝率比較好，只能講幅度。
-  return: { label: '報酬偏優', Icon: Coins, blurb: '20 日乖離排在候選池前段、成交金額不在後段——歷史上這組賺的時候賺比較多（+13.4% vs 未分類的 +11.4%），但賺錢的「次數」並沒有比較多' },
+  win: { label: '勝率偏優', Icon: Award, blurb: '成交金額排在候選池前段——2026-11-13 同一天比：比「兩項都不突出」的賺錢比例高約 5 個百分點，但單檔仍不到一半會賺' },
+  // ⚠️ 2026-11-13 正確母體重量：「只有乖離高」跟「兩項都不突出」同一天比，賺錢比例與平均報酬
+  // 的差都在信賴區間內（量不出差別）。這個分類的說明**不可以**暗示它比較好。
+  return: { label: '報酬偏優', Icon: Coins, blurb: '20 日乖離排在候選池前段、成交金額不在後段——⚠️ 2026-11-13 用歷史候選池重量：跟「兩項都不突出」比，賺錢次數與平均報酬都量不出差別，「報酬偏優」目前沒有證據支撐' },
 }
 const TIER_ORDER = ['both', 'win', 'return']
 
@@ -60,7 +58,9 @@ function HonestyCallout({ tierStats }) {
   const { high: hi, mid, low: lo } = t
   const winPct = v => (v.win_rate * 100).toFixed(1)
   const allBelowHalf = [hi, mid, lo].every(x => x.win_rate < 0.5)
-  const ev = hi.win_rate * hi.avg_win_pct + (1 - hi.win_rate) * hi.avg_loss_pct
+  // 期望值優先用 JSON 的 ev_pct（平均淨報酬）；舊版 JSON 沒有才用勝率×賺賠幅度推算
+  const ev = Number.isFinite(hi.ev_pct) ? hi.ev_pct
+    : hi.win_rate * hi.avg_win_pct + (1 - hi.win_rate) * hi.avg_loss_pct
   return (
     <p className="opp-honesty">
       <Info size={15} strokeWidth={1.75} />
@@ -69,11 +69,14 @@ function HonestyCallout({ tierStats }) {
         {allBelowHalf
           ? <>——<b>三層都不到一半</b></>
           : <>（中段 {winPct(mid)}%）</>}
-        。這套的優勢在賺賠幅度（賺時 <b className="good">+{hi.avg_win_pct.toFixed(1)}%</b>、
-        賠時 <b className="bad">−{Math.abs(hi.avg_loss_pct).toFixed(1)}%</b>，
-        期望值 <b className={ev >= 0 ? 'good' : 'bad'}>{ev >= 0 ? '+' : ''}{ev.toFixed(2)}%</b>），不是在勝率。
+        。賺時平均 <b className="good">+{hi.avg_win_pct.toFixed(1)}%</b>、
+        賠時平均 <b className="bad">−{Math.abs(hi.avg_loss_pct).toFixed(1)}%</b>，
+        平均每筆 <b className={ev >= 0 ? 'good' : 'bad'}>{ev >= 0 ? '+' : ''}{ev.toFixed(2)}%</b>
+        {ev > 0 ? '——就算有優勢也在賺賠幅度，不是在勝率。' : '——扣完成本平均沒有賺。'}
         <small className="opp-ci-note">
-          （{hi.blocks} 批獨立樣本，90% CI 高層 {hi.ci90[0]}–{hi.ci90[1]}% ／ 低層 {lo.ci90[0]}–{lo.ci90[1]}%）
+          （{hi.blocks} 批獨立樣本，90% CI 高層 {hi.ci90[0]}–{hi.ci90[1]}% ／ 低層 {lo.ci90[0]}–{lo.ci90[1]}%；
+          {hi.ci90[0] < lo.ci90[1] ? '兩層區間重疊＝目前量不出高層確定比較好。' : ''}樣本＝歷史上每天重播候選流程後的候選池）
+          {tierStats.stale && <b className="bad">　⚠️ 這份統計最近一次重算失敗，數字可能過期</b>}
         </small>
       </span>
     </p>
@@ -140,7 +143,21 @@ function CandidateCard({ p, onClick }) {
 
 // 一個分類分區（雙優／勝率偏優／報酬偏優／其他候選）：標題講清楚共幾檔、列前幾檔，
 // 旁邊一律附「不是好壞排名」的提醒——這是 2026-07-25 實測推翻過的東西，不可回歸。
-function TierSection({ tierKey, label, Icon, blurb, lede, variant = 'secondary', list, previewN, onPick }) {
+// 這一類的歷史數字（2026-11-13 加）：讀 tier_stats.json 的 categories（逐日重播候選流程後的
+// 候選池、按線上同一套分類切），不寫死。任何欄位缺就整行不顯示，不印 NaN。
+const isNum = v => typeof v === 'number' && Number.isFinite(v)
+function TierHistory({ s }) {
+  if (!s || !isNum(s.win_rate) || !isNum(s.ev_pct) || !Array.isArray(s.ci90) || !Array.isArray(s.ci90_ev)) return null
+  return (
+    <p className="opp-tier-blurb">
+      歷史（候選池重播 {s.samples} 筆、約 {s.blocks} 批獨立進場）：賺錢機率 <b>{(s.win_rate * 100).toFixed(1)}%</b>
+      （90% CI {s.ci90[0]}–{s.ci90[1]}%）、平均每筆 <b className={s.ev_pct >= 0 ? 'good' : 'bad'}>{s.ev_pct >= 0 ? '+' : ''}{s.ev_pct.toFixed(2)}%</b>
+      （90% CI {s.ci90_ev[0]}–{s.ci90_ev[1]}%）
+    </p>
+  )
+}
+
+function TierSection({ tierKey, label, Icon, blurb, lede, hist, variant = 'secondary', list, previewN, onPick }) {
   const [expanded, setExpanded] = useState(false)
   if (!list.length) return null
   const shown = expanded ? list : list.slice(0, previewN)
@@ -158,6 +175,7 @@ function TierSection({ tierKey, label, Icon, blurb, lede, variant = 'secondary',
       {lede
         ? <p className="opp-tier-lede">{lede}</p>
         : blurb && <p className="opp-tier-blurb">{blurb}</p>}
+      <TierHistory s={hist} />
       <p className="opp-tier-note">照候選清單原始順序，不是好壞排名</p>
       <div className="opp-cards">
         {shown.map(p => <CandidateCard key={p.id} p={p} onClick={() => onPick(p)} />)}
@@ -329,7 +347,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
       {open && (<>
       {TIER_ORDER.map(key => (
         <TierSection key={key} tierKey={key} label={TIER_META[key].label} Icon={TIER_META[key].Icon}
-          blurb={TIER_META[key].blurb} lede={TIER_META[key].lede}
+          blurb={TIER_META[key].blurb} lede={TIER_META[key].lede} hist={tierStats?.categories?.[key]}
           variant={key === 'both' ? 'primary' : 'secondary'}
           list={tiered[key]} previewN={previewN} onPick={handlePick} />
       ))}
@@ -341,6 +359,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
             其他候選（未達分類門檻）共 {tiered.other.length} 檔
           </button>
           {showOther && (<>
+            <TierHistory s={tierStats?.categories?.unclassified} />
             <p className="opp-tier-note">照候選清單原始順序，不是好壞排名</p>
             <div className="opp-cards">
               {tiered.other.map(p => <CandidateCard key={p.id} p={p} onClick={() => handlePick(p)} />)}

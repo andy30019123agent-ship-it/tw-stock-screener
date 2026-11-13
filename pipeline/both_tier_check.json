@@ -1,42 +1,169 @@
 {
- "both": {
-  "n": 39398,
-  "days": 395,
-  "blocks": 19,
-  "win_rate": 0.5003,
-  "avg_win_pct": 18.39,
-  "avg_loss_pct": -10.46,
-  "ev_pct": 3.97,
-  "median_pct": 0.01
+ "computed": "2026-11-13 11:06",
+ "population": "逐日重播 opportunities.build_opportunities 後的最終候選池（引擎訊號＋均量≥500 張＋強勢雙確認門檻（候選不足 20 檔時退回）；營收濾網未重播）",
+ "candidate_pool": {
+  "both": {
+   "samples": 5363,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4848,
+   "median_pct": -0.78,
+   "p20_pct": -13.47,
+   "p80_pct": 14.44,
+   "avg_win_pct": 17.82,
+   "avg_loss_pct": -12.73,
+   "ev_pct": 2.08,
+   "ci90": [
+    38.67,
+    59.29
+   ],
+   "ci90_ev": [
+    -2.04,
+    7.17
+   ]
+  },
+  "turn_only": {
+   "samples": 9315,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4548,
+   "median_pct": -1.82,
+   "p20_pct": -14.96,
+   "p80_pct": 12.91,
+   "avg_win_pct": 16.14,
+   "avg_loss_pct": -13.04,
+   "ev_pct": 0.23,
+   "ci90": [
+    34.67,
+    57.89
+   ],
+   "ci90_ev": [
+    -4.33,
+    5.79
+   ]
+  },
+  "bias_only": {
+   "samples": 9310,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4466,
+   "median_pct": -1.99,
+   "p20_pct": -13.58,
+   "p80_pct": 10.39,
+   "avg_win_pct": 15.17,
+   "avg_loss_pct": -11.79,
+   "ev_pct": 0.25,
+   "ci90": [
+    35.02,
+    54.81
+   ],
+   "ci90_ev": [
+    -2.79,
+    4.33
+   ]
+  },
+  "neither": {
+   "samples": 20271,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4318,
+   "median_pct": -2.32,
+   "p20_pct": -13.81,
+   "p80_pct": 9.53,
+   "avg_win_pct": 13.89,
+   "avg_loss_pct": -11.8,
+   "ev_pct": -0.71,
+   "ci90": [
+    32.56,
+    55.05
+   ],
+   "ci90_ev": [
+    -4.62,
+    3.6
+   ]
+  }
  },
- "turn": {
-  "n": 54503,
-  "days": 395,
-  "blocks": 19,
-  "win_rate": 0.4762,
-  "avg_win_pct": 14.77,
-  "avg_loss_pct": -9.53,
-  "ev_pct": 2.04,
-  "median_pct": -0.76
+ "old_population_all_signal_events": {
+  "both": {
+   "samples": 41479,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4976,
+   "median_pct": -0.09,
+   "p20_pct": -12.0,
+   "p80_pct": 15.29,
+   "avg_win_pct": 18.22,
+   "avg_loss_pct": -11.78,
+   "ev_pct": 3.15,
+   "ci90": [
+    44.99,
+    54.48
+   ],
+   "ci90_ev": [
+    0.41,
+    5.88
+   ]
+  },
+  "turn_only": {
+   "samples": 58704,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4782,
+   "median_pct": -0.67,
+   "p20_pct": -10.91,
+   "p80_pct": 12.08,
+   "avg_win_pct": 15.12,
+   "avg_loss_pct": -10.43,
+   "ev_pct": 1.79,
+   "ci90": [
+    42.08,
+    53.5
+   ],
+   "ci90_ev": [
+    -0.66,
+    4.41
+   ]
+  },
+  "bias_only": {
+   "samples": 58764,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4196,
+   "median_pct": -1.95,
+   "p20_pct": -10.52,
+   "p80_pct": 7.88,
+   "avg_win_pct": 13.42,
+   "avg_loss_pct": -9.3,
+   "ev_pct": 0.23,
+   "ci90": [
+    37.51,
+    46.43
+   ],
+   "ci90_ev": [
+    -1.46,
+    2.07
+   ]
+  },
+  "neither": {
+   "samples": 141351,
+   "days": 416,
+   "blocks": 20,
+   "win_rate": 0.4258,
+   "median_pct": -1.59,
+   "p20_pct": -9.0,
+   "p80_pct": 7.45,
+   "avg_win_pct": 11.71,
+   "avg_loss_pct": -8.14,
+   "ev_pct": 0.31,
+   "ci90": [
+    37.7,
+    47.47
+   ],
+   "ci90_ev": [
+    -1.42,
+    1.97
+   ]
+  }
  },
- "bias": {
-  "n": 54550,
-  "days": 395,
-  "blocks": 19,
-  "win_rate": 0.4245,
-  "avg_win_pct": 13.4,
-  "avg_loss_pct": -8.68,
-  "ev_pct": 0.69,
-  "median_pct": -1.75
- },
- "none": {
-  "n": 132979,
-  "days": 395,
-  "blocks": 19,
-  "win_rate": 0.4257,
-  "avg_win_pct": 11.41,
-  "avg_loss_pct": -7.85,
-  "ev_pct": 0.35,
-  "median_pct": -1.6
- }
+ "note": "candidate_pool＝正確母體；old_population 只供對照（2026-07-26 誤用的母體，成本已改 _apply_cost）"
 }

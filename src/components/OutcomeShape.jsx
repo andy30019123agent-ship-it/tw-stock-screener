@@ -8,12 +8,14 @@ import { ChevronDown, ChevronRight, Dices, AlertTriangle } from 'lucide-react'
 // 每天候選池會按 turnover／bias20_pct／high20_gap／rs_pct_60 四個特徵各自切成高/中/低三層，
 // 這裡顯示的是「這個層級的股票，歷史上進場後 20 個交易日大概長怎樣」，不是某一批候選的預測。
 //
-// 資料來源：public/data/tier_stats.json（pipeline/tier_stats.py 算，逐日更新）。
+// 資料來源：public/data/tier_stats.json（pipeline/tier_stats.py 的 compute_pool_tier_stats，約每週重算）。
+// 🔴 2026-11-13：母體改成「歷史上每天重播 build_opportunities 後的候選池」——舊版用的是
+// 「所有訊號事件」，跟這裡被分類的候選不是同一群股票（Codex 2026-07-26 必修第 3 點）。
 // 一律讀 JSON，不寫死——2026-07-26 重算後 52%／44%／66% 這些舊數字全部作廢，
 // 如果又出現這種寫死的數字，就是重蹈舊版的覆轍。
 //
 // 🔴 兩條硬性限制（實作計畫 Task 8）：
-// 1. high20_gap 不可標「偏優」——重算後方向與舊研究相反（high 42.5% vs low 45.8%），是不穩定特徵。
+// 1. high20_gap 不可標「偏優」——2026-07-26 重算後方向與舊研究相反，是不穩定特徵（數字見 JSON）。
 //    只顯示數值當事實。
 // 2. 不可用兩層的信賴區間是否重疊來宣稱「差異顯著」——CI 只說明「這一層自己有多不確定」，
 //    要證明層級之間有差，需要同日配對比較（第二段 walk-forward 的工作，這裡還沒有）。
@@ -38,8 +40,11 @@ const FEATURES = [
 ]
 const LEVELS = [['high', '高（前 1/3）'], ['mid', '中（中間 1/3）'], ['low', '低（後 1/3）']]
 
-const pct1 = v => `${v.toFixed(1)}%`
-const signedPct = v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+// 逐欄 null/非有限值防護（Codex 必修 5）：層物件存在但某欄是 null（例如全賠時 avg_win_pct=null）
+// 也不能讓 toFixed 丟 TypeError 把整個候選區換成錯誤卡。
+const isNum = v => typeof v === 'number' && Number.isFinite(v)
+const signedPct = v => (isNum(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—')
+const ciText = ci => (Array.isArray(ci) && isNum(ci[0]) && isNum(ci[1]) ? `[${ci[0]}, ${ci[1]}]` : '[—]')
 
 function FeatureBlock({ meta, data }) {
   if (!data) return null
@@ -90,8 +95,8 @@ function FeatureBlock({ meta, data }) {
               <div className="os-level-rows">
                 <div className="os-level-row"><span>賺時平均</span><b className="good">{signedPct(d.avg_win_pct)}</b></div>
                 <div className="os-level-row"><span>賠時平均</span><b className="bad">{signedPct(d.avg_loss_pct)}</b></div>
-                <div className="os-level-row"><span>中位數</span><b className={d.median_pct > 0 ? 'good' : 'bad'}>{signedPct(d.median_pct)}</b></div>
-                <div className="os-level-row os-level-ci"><span>獨立樣本／90% CI</span><span>{d.blocks} 批 · [{d.ci90[0]}, {d.ci90[1]}]</span></div>
+                <div className="os-level-row"><span>中位數</span><b className={isNum(d.median_pct) && d.median_pct > 0 ? 'good' : 'bad'}>{signedPct(d.median_pct)}</b></div>
+                <div className="os-level-row os-level-ci"><span>獨立樣本／90% CI</span><span>{d.blocks ?? '—'} 批 · {ciText(d.ci90)}</span></div>
               </div>
             </div>
           )
@@ -121,10 +126,10 @@ function FeatureBlock({ meta, data }) {
                 <tr key={lvKey}>
                   <td>{lvLabel}</td>
                   <td><b>{Math.round(d.win_rate * 100)}%</b></td>
-                  <td className="os-ci">{d.blocks} 批 · [{d.ci90[0]}, {d.ci90[1]}]</td>
+                  <td className="os-ci">{d.blocks ?? '—'} 批 · {ciText(d.ci90)}</td>
                   <td className="good">{signedPct(d.avg_win_pct)}</td>
                   <td className="bad">{signedPct(d.avg_loss_pct)}</td>
-                  <td className={d.median_pct > 0 ? 'good' : 'bad'}>{signedPct(d.median_pct)}</td>
+                  <td className={isNum(d.median_pct) && d.median_pct > 0 ? 'good' : 'bad'}>{signedPct(d.median_pct)}</td>
                 </tr>
               )
             })}
@@ -157,8 +162,19 @@ export default function OutcomeShape({ tierStats }) {
             數字已扣來回交易成本 <b>{tierStats.cost_pct}%</b>（手續費＋證交稅＋滑價）。
             <br />
             <b>不是個股勝率。</b>這裡只顯示「這個條件層級」歷史上的分佈，不顯示任何一檔股票自己的精確勝率——
-            樣本是同一層裡成千上萬筆歷史事件的統計，不是這檔股票單獨的成績。
+            樣本是歷史上每一天「照今天同一套流程選出候選、在候選池內切三層」之後，同一層所有股票的統計，
+            不是這檔股票單獨的成績。
+            {Array.isArray(tierStats.meta?.not_replayed) && tierStats.meta.not_replayed.length > 0 && (<>
+              <br />
+              歷史上重播不了、所以沒套用的：{tierStats.meta.not_replayed.map(x => x.item).join('、')}。
+            </>)}
           </p>
+          {tierStats.stale && (
+            <p className="os-warn">
+              <AlertTriangle size={15} strokeWidth={2} className="inline-warn-icon" />
+              <b>這份統計最近一次重算失敗</b>，下面是上一次成功的數字，可能過期。
+            </p>
+          )}
 
           {FEATURES.map(meta => (
             <FeatureBlock key={meta.key} meta={meta} data={tierStats.features?.[meta.key]} />

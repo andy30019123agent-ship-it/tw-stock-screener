@@ -156,6 +156,8 @@ MARKET_STATUS_LABEL = {
 }
 
 # 候選情報三分類標籤與圖示（tier 值來自 opportunities.py：win/both/return/None）。
+# ⚠️ 2026-11-13 候選池重播：「報酬偏優」跟未分類同日比量不出差別，標籤字面目前沒有證據支撐；
+# 改名屬產品決策，待 Andy 拍板（見 _reports/重算_候選池層級統計_2026-11-13.md）。
 TIER_LABEL = {"both": "雙優候選（勝率、報酬都偏優）", "win": "勝率偏優候選", "return": "報酬偏優候選"}
 TIER_ICON = {"both": "🎯", "win": "📈", "return": "💰"}
 
@@ -164,16 +166,44 @@ TIER_ICON = {"both": "🎯", "win": "📈", "return": "💰"}
 # 標題一律會明講「共 N 檔，這裡列前 M 檔」，不能讓 M 看起來像應該買 M 檔。
 TIER_PREVIEW_N = 5
 
-# 固定提醒（逐字，2026-07-26 規格）：候選是「情報」不是「配好的組合」，且要講清楚就算是
-# 條件最好的層級，單檔歷史賺錢機率也不到六成——不要讓人誤以為上榜＝高勝算保證。
-# 🔴 2026-07-26 改口徑後重算：舊版寫「約 52%」是「當天收盤進場」時代的數字，已過期。
-# 新口徑（隔日開盤進場、扣 0.785% 成本、tier_stats.json 實測 n=93,901）：成交金額最高的
-# 三分之一，單檔賺錢機率 48.6%、最低的三分之一 41.4%——**沒有任何一層過半**。
-# 真正的差別在賺賠幅度不對稱（高層賺時 +16.3%／賠時 −9.9%，期望值 +2.85%；低層期望值 0.0%）。
-# 只講勝率會讓人以為「上榜＝比較會賺」，必須連不對稱一起講，否則這句話本身就在誤導。
-FIXED_DISCLAIMER = ("⚠️ 這不是購買組合。單檔就算落在最好的層級，歷史賺錢機率也只有 "
-                    "49%（不到一半）——這套的優勢在賺賠幅度（賺時約 +16%、賠時約 −10%），"
-                    "不是在勝率。")
+# 條件層級歷史分佈（與網站同一份 JSON）。快報的提醒句數字一律從這裡讀，不再寫死。
+TIER_STATS_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "data", "tier_stats.json")
+
+# 固定提醒（2026-07-26 規格；2026-11-13 改成讀 JSON）：候選是「情報」不是「配好的組合」，
+# 且要講清楚就算是成交金額最高的那一層，單檔歷史賺錢機率是多少、優勢（若有）來自哪裡。
+# 🔴 2026-11-13：原本寫死「49%／賺時 +16%／賠時 −10%」——那是 2026-07-26 用**錯的母體**
+# （所有訊號事件，不是網站上的候選池）算的，而且寫死的數字下次重算就會跟網站不一致
+# （Codex 建議 5）。改成讀 tier_stats.json（候選池重播母體）現算；讀不到就只講不含數字的版本。
+DISCLAIMER_BASE = "⚠️ 這不是購買組合。"
+
+
+def _num(v):
+    return isinstance(v, (int, float)) and v == v
+
+
+def load_tier_stats(path=None):
+    try:
+        with open(path or TIER_STATS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def tier_disclaimer(tiers):
+    """提醒句：讀 tier_stats.json 的成交金額高層（＝「勝率偏優」分類依據）。缺欄位就退回無數字版。"""
+    hi = (((tiers or {}).get("features") or {}).get("turnover") or {}).get("high") or {}
+    if not all(_num(hi.get(k)) for k in ("win_rate", "avg_win_pct", "avg_loss_pct", "ev_pct")):
+        return (DISCLAIMER_BASE + "條件層級的歷史數字今天讀不到，單檔賺錢機率請以網站「這些數字怎麼來的」為準。")
+    wr = hi["win_rate"] * 100
+    half = "不到一半" if wr < 50 else "略過一半" if wr < 55 else "過半"
+    ev = hi["ev_pct"]
+    tail = ("這套的優勢在賺賠幅度，不是在勝率。" if ev > 0 and wr < 50
+            else "期望值是負的，代表扣完成本平均是虧的。" if ev <= 0 else "")
+    stale = "（⚠️ 這份數字已過期）" if tiers.get("stale") else ""
+    return (f"{DISCLAIMER_BASE}單檔就算落在成交金額最高的那一層，歷史賺錢機率也只有 "
+            f"{wr:.0f}%（{half}；{tiers.get('date') or '—'} 用歷史候選池重算{stale}），"
+            f"賺時約 {hi['avg_win_pct']:+.0f}%、賠時約 {hi['avg_loss_pct']:+.0f}%"
+            f"、期望值 {ev:+.1f}%。{tail}").replace("約 -", "約 −")
 
 
 def market_status_line(d):
@@ -196,7 +226,8 @@ def _tier_section(tier, group):
     純粹是「這個分類長什麼樣子」的舉例，所以標題必須同時講清楚「共 N 檔」跟「列前 M 檔」。
 
     ⚠️ **刻意不照該榜自己的特徵排序**（例如勝率榜不照 turnover 由高到低排）：實測支持的是
-    「同日三分位的層級差異」（前 1/3 賺錢機率 51.9% vs 後 1/3 43.8%），**沒有**測出「turnover
+    「同日三分位的層級差異」（2026-11-13 候選池重播、同日配對：成交金額前 1/3 比後 1/3 賺錢比例高
+    約 8 個百分點；舊註解的 51.9%/43.8% 是錯母體＋舊口徑的數字，已作廢），**沒有**測出「turnover
     越高越好」是單調的。照特徵排序等於用畫面宣稱一個沒量過的梯度——2026-07-25 已經踩過
     一模一樣的坑（「前 3 名標最高信心」實測被推翻，第 2 名反而是全場最差、賺錢機率 45.1%）。
     有證據的是「有沒有進這個層級」，不是「在層級裡排第幾」，所以標題下面必須明說順序不是排名。
@@ -283,7 +314,7 @@ def build_message(d):
             lines.append(sep)
             lines.extend(_tier_section(tier, group))
         lines.append(sep)
-        lines.append(FIXED_DISCLAIMER)
+        lines.append(tier_disclaimer(load_tier_stats()))
 
     lines.append(sep)
     lines.append(f"🔗 完整清單 {SITE}")

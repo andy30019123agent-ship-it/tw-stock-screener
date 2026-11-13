@@ -173,23 +173,45 @@ def test_three_tier_category_headers_present(tmp_path, monkeypatch):
     assert "報酬偏優" in text
 
 
+def _write_tiers(tmp_path, monkeypatch, hi):
+    p = tmp_path / "tier_stats.json"
+    p.write_text(json.dumps({"date": "2026-11-13", "features": {"turnover": {"high": hi}}}),
+                 encoding="utf-8")
+    monkeypatch.setattr(nt, "TIER_STATS_PATH", str(p))
+
+
 def test_contains_fixed_disclaimer_verbatim(tmp_path, monkeypatch):
     """固定提醒必須同時講兩件事，缺一就會誤導：
     ① 這不是購買組合
-    ② 就算落在最好的層級，單檔賺錢機率也不到一半（49%）——**而且優勢在賺賠幅度不是勝率**
+    ② 成交金額最高那層的單檔賺錢機率與賺賠幅度——**數字讀 tier_stats.json，不寫死**
 
-    🔴 2026-07-26 更新：原本寫「約 52%」是「當天收盤進場」時代的數字。改成隔日開盤進場、
-    扣 0.785% 成本重算後（tier_stats.json，n=93,901、19 個約當獨立批次）是 48.6%，
-    最差層級 41.4%，三層全都不到 50%。只寫勝率會讓人以為「上榜＝比較會賺」，所以這裡
-    強制要求把不對稱（賺時 +16%／賠時 −10%）一起寫進去——期望值的來源是它，不是勝率。"""
+    🔴 2026-11-13：原本寫死「49%／賺時 +16%／賠時 −10%」，那是錯的母體（所有訊號事件）算的。
+    這裡用假 JSON 的數字（47%／+15／−9）驗證提醒句真的是讀檔、不是舊字串。"""
     _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["win"])
+    _write_tiers(tmp_path, monkeypatch, {"win_rate": 0.4712, "avg_win_pct": 15.2,
+                                         "avg_loss_pct": -9.4, "ev_pct": 2.2})
     stocks = [_stock(id="9001", name="股9001")]
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
     assert "這不是購買組合" in text
-    assert "49%（不到一半）" in text
-    assert "賺時約 +16%" in text and "賠時約 −10%" in text
+    assert "47%（不到一半" in text
+    assert "賺時約 +15%" in text and "賠時約 −9%" in text
     assert "不是在勝率" in text
-    assert "52%" not in text, "舊口徑數字不可復活"
+    assert "49%" not in text and "52%" not in text, "寫死的舊數字不可復活"
+
+
+def test_disclaimer_讀不到層級統計時不印數字(tmp_path, monkeypatch):
+    """JSON 不在、或欄位是 null（零樣本層）都不能 crash，也不能印出寫死的舊數字。"""
+    monkeypatch.setattr(nt, "TIER_STATS_PATH", str(tmp_path / "nope.json"))
+    t1 = nt.tier_disclaimer(nt.load_tier_stats())
+    t2 = nt.tier_disclaimer({"features": {"turnover": {"high": {"win_rate": None}}}})
+    for t in (t1, t2):
+        assert "這不是購買組合" in t and "%" not in t
+
+
+def test_disclaimer_期望值為負時照實講():
+    t = nt.tier_disclaimer({"date": "2026-11-13", "features": {"turnover": {"high": {
+        "win_rate": 0.41, "avg_win_pct": 9.0, "avg_loss_pct": -8.0, "ev_pct": -1.2}}}})
+    assert "期望值是負的" in t and "優勢在賺賠幅度" not in t
 
 
 def test_both_tier_listed_once_not_duplicated_across_sections(tmp_path, monkeypatch):

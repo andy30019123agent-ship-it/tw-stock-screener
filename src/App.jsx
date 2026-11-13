@@ -121,7 +121,7 @@ export default function App() {
   if (route === 'help') {
     return (
       <div className="app">
-        <HelpGuide onBack={() => { window.location.hash = '' }} />
+        <HelpGuide tierStats={tierStats} onBack={() => { window.location.hash = '' }} />
       </div>
     )
   }

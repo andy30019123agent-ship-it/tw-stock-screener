@@ -367,9 +367,53 @@ def _xsect_flags(x):
     }
 
 
+# 重播 opportunities.build_opportunities 時，候選列（pool row）要帶的「指標原始欄位」——
+# signal_flags() 讀的就是這些鍵（foreign_buy 讀 foreign_streak、其餘讀同名布林）。只帶引擎訊號
+# 需要的鍵，讓重播時 build_opportunities 呼叫 signal_flags(r) 得到與回測當下完全相同的旗標。
+POOL_ROW_SIGNAL_KEYS = (
+    "signal_ma", "signal_breakout", "sn_squeeze_breakout", "sn_lower_reversal",
+    "sn_break_low_recover", "sn_immortal_guide", "sn_volume_support",
+    "foreign_streak", "trust_streak", "holder_rising", "undervalued",
+)
+
+
+def _pool_row(stock, ind, x, ret):
+    """把某 (日, 股) 的 point-in-time 指標轉成 build_opportunities 吃的 results 元素。
+
+    只收「至少一個引擎訊號成立」的列：沒有引擎訊號的股票在 build_opportunities 的 eligible()
+    一定被刷掉（不論門檻有沒有套用），收了只是浪費記憶體，不影響候選池與百分位。
+    `_ret`＝與 events 同口徑的毛報酬（隔日開盤進場、第 forward 日收盤出場）；None＝這列仍是
+    當天的候選（會參與百分位排名），但報酬量不出來（跨價格斷點／隔日開盤缺值），統計時剔除。"""
+    flags = signal_flags(ind)
+    if not any(flags.get(k) for k in ENGINE_SIGNALS):
+        return None
+    row = {k: ind.get(k) for k in POOL_ROW_SIGNAL_KEYS}
+    xf = _xsect_flags(x)
+    row.update({
+        "id": stock["id"], "name": stock.get("name", stock["id"]),
+        "avg_vol_lots": ind.get("avg_vol_lots"), "close": ind.get("close"),
+        "ma20": ind.get("ma20"), "recent_high20": ind.get("recent_high20"),
+        "bias20_pct": ind.get("bias20_pct"), "rs20": ind.get("rs20"),
+        "rs_pct_60": (x.get("rs_pct_60") if x else None),
+        "rs_confirmed_60_120": xf["rs_confirmed_60_120"],
+        "_ret": ret,
+    })
+    return row
+
+
 def collect_events(price_hist, chip_hist, div_hist, universe,
-                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None, xsect=None, breaks=None):
+                   forward=FORWARD, min_bars=MIN_BARS, cooldown=None, xsect=None, breaks=None,
+                   pool_rows=None):
     """逐檔、逐歷史交易日評估訊號，回傳 (events, by_date)。
+
+    pool_rows：傳入一個 dict 時，額外把每個 (日, 股) 的「重播候選池用列」收進
+             pool_rows[date]（見 _pool_row）。這是給 tier_stats.compute_pool_tier_stats
+             逐日重播 opportunities.build_opportunities 用的——條件層級統計的母體必須是
+             「當天真的會出現在網站上的候選池」，不是「任一訊號成立的事件」（2026-11-13 修，
+             Codex 2026-07-26 複查必修第 3 點）。傳 None（預設）時行為與舊版逐位元相同。
+             ⚠️ 跨價格斷點、或隔日開盤缺值的列**仍會收進候選池**（_ret=None）：線上那天它
+             照樣是候選、照樣佔百分位名次，只是我們量不出它的報酬——若直接丟掉，當天其他
+             候選的百分位會被算錯。
 
     events：[{date, sid, ret, fired:[訊號…], feat:{...}}]，只收「有訊號成立」的事件。
              feat＝point-in-time 特徵值（turnover/bias20_pct/high20_gap/rs_pct_60），
@@ -430,28 +474,39 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
             # 用訊號日收盤當進場價等於偷看——實測候選股隔夜跳空中位 +0.42%（全市場 +0.29%），
             # 會讓每筆交易的績效虛高約 0.5pp。出場仍用 close[i+forward]，持有期正好 forward 天。
             base = adj_open[i + 1]
-            if not base:
-                continue
-            if brk_idx:
+            unmeasurable = not base     # 報酬量不出來（隔日開盤缺值或跨斷點）
+            if not unmeasurable and brk_idx:
                 # 報酬窗 = (i, i+forward]；用 bisect 找有沒有斷點落在裡面
                 lo = bisect.bisect_right(brk_idx, i)
                 if lo < len(brk_idx) and brk_idx[lo] <= i + forward:
                     n_skipped_breaks += 1
-                    continue
+                    unmeasurable = True
+            if unmeasurable and pool_rows is None:
+                continue
             ind = bd.compute_indicators(pr[:i + 1], [c for c in cr if c["date"] <= di], ev, None)
             if ind is None:
                 continue
             # 流動性用「當下」的 20 日均量，不是最新的（point-in-time，避免前視偏誤）
             if (ind.get("avg_vol_lots", 0) or 0) < BACKTEST_MIN_VOL:
                 continue
+            x = xsect.get(di, {}).get(sid) if xsect is not None else None   # 當下（PIT）橫斷面快取
+            if unmeasurable:
+                # 只有 pool_rows 模式會走到這裡：仍是當天候選（佔百分位名次），但不進 events/by_date
+                row = _pool_row(stock, ind, x, None)
+                if row is not None:
+                    pool_rows.setdefault(di, []).append(row)
+                continue
 
             ret = adj_close[i + forward] / base - 1
             by_date.setdefault(di, []).append(ret)   # 基準母體：所有「可評估」個股，不論有無訊號
+            if pool_rows is not None:
+                row = _pool_row(stock, ind, x, ret)
+                if row is not None:
+                    pool_rows.setdefault(di, []).append(row)
 
             # raw_fired＝當天所有「原始成立」的訊號（不管冷卻）；eligible＝過了單訊號冷卻期的。
             # 單訊號統計吃 eligible（維持原結果不變）；組合統計吃 raw_fired（才是「當天真的同時
             # 成立 A+B」，否則 A 在冷卻期時 A+B 會被漏算——Codex 2026-07-24 指出）。
-            x = xsect.get(di, {}).get(sid) if xsect is not None else None   # 當下（PIT）橫斷面快取
             flags = signal_flags(ind)
             if xsect is not None:                 # Phase B 橫斷面訊號（RS/產業）從 PIT cache 併入
                 flags.update(_xsect_flags(x))
@@ -1281,6 +1336,14 @@ def _load(path):
     return None
 
 
+def _atomic_write_json(path, obj):
+    """先寫同目錄暫存檔再 os.replace——寫到一半出錯也不會截斷既有檔。"""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, path)
+
+
 def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=False):
     """回傳最新的權重表。檔案不存在、或距上次重算 ≥ RECOMPUTE_DAYS 天（約每週）才重跑回測，
     否則沿用既有 signal_weights.json（省成本）。回傳 dict 並確保 signal_weights.json 已寫入。"""
@@ -1341,7 +1404,10 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     xsect = build_xsect_cache(price_for_bt, div_hist, universe)
     print(f"   橫斷面快取：{len(xsect)} 個交易日有 RS/產業資料")
     # 事件只收集一次（逐檔重算指標的重活），再分別算「全歷史權重」與「多時間窗勝率榜」。
-    events, by_date = collect_events(price_for_bt, chip_hist, div_hist, universe, xsect=xsect)
+    # pool_rows：順手收「重播候選池用列」，給條件層級統計用正確母體（見 tier_stats 檔頭 2026-11-13）
+    pool_rows = {}
+    events, by_date = collect_events(price_for_bt, chip_hist, div_hist, universe, xsect=xsect,
+                                     pool_rows=pool_rows)
     weights = stats_to_weights(events_to_stats(events, by_date))
     out = {
         "date": today.isoformat(),
@@ -1433,20 +1499,29 @@ def ensure_weights(price_hist, chip_hist, div_hist, universe, today=None, force=
     # collect_events 的產物（逐檔重算指標的重活，跑一次約 20 分鐘）。接在每日流程等於
     # 每天多跑 20 分鐘；放這裡則沿用既有的 RECOMPUTE_DAYS 快取閘門（約每週一次），
     # 且與權重、勝率榜、組合、市況、出場共用同一批 events——同一把尺量出來的數字。
+    # 🔴 2026-11-13：母體改成「逐日重播 build_opportunities 的候選池」（compute_pool_tier_stats），
+    # 不再是 compute_tier_stats 的「所有訊號事件」——後者跟網站上被分類的股票不是同一群。
+    # 寫檔改 atomic（先寫暫存檔再 os.replace）：Codex 必修 7 指出舊版在 open(...,"w") 之後出錯
+    # 會把舊檔截斷，訊息卻說「沿用既有檔」。失敗時在既有檔上標 stale＋error（機器可讀），
+    # 讓前端／快報能講「這是舊數字」，而不是只在 stdout 印一行沒人看的警告。
     try:
         import tier_stats as ts
-        tiers = ts.compute_tier_stats(events)
-        tiers.update({"date": today.isoformat(), "computed": out["computed"], "forward_days": FORWARD})
-        with open(TIER_STATS_PATH, "w", encoding="utf-8") as f:
-            json.dump(tiers, f, ensure_ascii=False, separators=(",", ":"))
+        tiers = ts.compute_pool_tier_stats(pool_rows, weights=out)
+        tiers.update({"date": today.isoformat(), "computed": out["computed"], "forward_days": FORWARD,
+                      "stale": False})
+        _atomic_write_json(TIER_STATS_PATH, tiers)
         tn = tiers["features"]["turnover"]
-        print(f"   條件層級分佈：成交金額高層賺錢機率 {round((tn['high']['win_rate'] or 0) * 100)}%"
+        print(f"   條件層級分佈（候選池母體）：成交金額高層賺錢機率 {round((tn['high']['win_rate'] or 0) * 100)}%"
               f"／低層 {round((tn['low']['win_rate'] or 0) * 100)}%"
               f"（約當獨立批次 {tn['high']['blocks']}）")
     except Exception as e:
-        # 失敗不能擋權重更新（它是選股的必需品，層級分佈只是展示用）——但要講清楚，
-        # 不可靜默沿用舊檔讓前端顯示過期數字卻沒人知道。
-        print(f"   ⚠️ 條件層級分佈計算失敗，本次沿用既有 tier_stats.json（可能過期）：{e}")
+        # 失敗不能擋權重更新（權重已在上面寫好；層級分佈只是展示用），但要機器可讀地標過期。
+        print(f"   ⚠️ 條件層級分佈計算失敗，既有 tier_stats.json 已標 stale（前端會顯示過期）：{e!r}")
+        old_tiers = _load(TIER_STATS_PATH)
+        if old_tiers:
+            old_tiers.update({"stale": True, "error": f"{type(e).__name__}: {e}"[:300],
+                              "error_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M")})
+            _atomic_write_json(TIER_STATS_PATH, old_tiers)
 
     strong = max(weights.items(), key=lambda kv: (kv[1]["weight"], kv[1]["samples"]))
     print(f"   權重已更新，最強訊號：{strong[1]['label']}（權重 {strong[1]['weight']}、樣本 {strong[1]['samples']}）")

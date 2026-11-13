@@ -45,17 +45,17 @@ def test_同日切三分位不跨日比較():
                          [-0.05] * 3 + [0.0] * 3 + [0.05] * 3)
     day_b = _day_events("2025-01-02", list(range(1, 10)),
                          [0.05] * 3 + [0.0] * 3 + [-0.05] * 3)
-    out = ts.compute_tier_stats(day_a + day_b, cost=0.0)
+    out = ts.compute_tier_stats(day_a + day_b, net_fn=lambda r: r)
     high = out["features"]["turnover"]["high"]
     assert high["samples"] == 6, f"應該是兩天各 3 筆的『高』層合計，實際 {high['samples']}"
     assert high["win_rate"] == 0.5, f"高層混了兩天相反方向的報酬，勝率應為 0.5，實際 {high['win_rate']}"
 
 
 def test_成本已扣():
-    """9 筆事件毛報酬都是 0.5%，成本 0.785% > 0.5%，扣完淨報酬全部是負的，
+    """9 筆事件毛報酬都是 0.5%，成本約 0.785% > 0.5%，扣完淨報酬全部是負的，
     不論哪個層級 win_rate 都必須是 0——證明真的有扣成本，不是直接看毛報酬。"""
     day = _day_events("2025-02-01", list(range(1, 10)), [0.005] * 9)
-    out = ts.compute_tier_stats(day, cost=0.00785)
+    out = ts.compute_tier_stats(day)   # 預設 net_fn＝bt._apply_cost
     for tier in ("high", "mid", "low"):
         assert out["features"]["turnover"][tier]["win_rate"] == 0.0, \
             f"{tier} 層扣成本後應全輸，實際 {out['features']['turnover'][tier]['win_rate']}"
@@ -68,7 +68,7 @@ def test_blocks_等於不同日數除以20():
     for d in range(45):
         date = f"2025-03-{d + 1:02d}" if d < 31 else f"2025-04-{d - 30:02d}"
         events += _day_events(date, list(range(1, 10)), [0.02] * 9)
-    out = ts.compute_tier_stats(events, cost=0.0)
+    out = ts.compute_tier_stats(events, net_fn=lambda r: r)
     high = out["features"]["turnover"]["high"]
     assert high["days"] == 45, f"實際 days={high['days']}"
     assert high["blocks"] == 2, f"45 // 20 應為 2，實際 {high['blocks']}"
@@ -84,8 +84,8 @@ def test_bootstrap同seed兩次呼叫結果相同():
         base_ret = 0.03 if d % 3 == 0 else (-0.02 if d % 3 == 1 else 0.0)
         rets = [base_ret + 0.001 * i for i in range(9)]
         events += _day_events(date, list(range(1, 10)), rets)
-    out1 = ts.compute_tier_stats(events, cost=0.0, seed=20260726)
-    out2 = ts.compute_tier_stats(events, cost=0.0, seed=20260726)
+    out1 = ts.compute_tier_stats(events, net_fn=lambda r: r, seed=20260726)
+    out2 = ts.compute_tier_stats(events, net_fn=lambda r: r, seed=20260726)
     assert out1["features"]["turnover"]["high"]["ci90"] == out2["features"]["turnover"]["high"]["ci90"]
     assert out1["features"]["turnover"]["mid"]["ci90"] == out2["features"]["turnover"]["mid"]["ci90"]
     assert out1["features"]["turnover"]["low"]["ci90"] == out2["features"]["turnover"]["low"]["ci90"]
@@ -96,7 +96,7 @@ def test_特徵值為None時只影響該特徵不影響其他特徵():
     bias20_pct 這天應該整天被跳過（該特徵樣本數為 0），但 turnover 的分層完全不受影響。"""
     events = [_ev("2025-07-01", f"s{i}", 0.02, turnover=100 + i, bias20_pct=None)
               for i in range(9)]
-    out = ts.compute_tier_stats(events, cost=0.0)
+    out = ts.compute_tier_stats(events, net_fn=lambda r: r)
     assert out["features"]["turnover"]["high"]["samples"] == 3, \
         "turnover 有值，不該被 bias20_pct 的 None 拖累"
     total_bias = sum(out["features"]["bias20_pct"][t]["samples"] for t in ("high", "mid", "low"))

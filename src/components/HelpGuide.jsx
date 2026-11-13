@@ -30,7 +30,18 @@ function Term({ word, children }) {
   )
 }
 
-export default function HelpGuide({ onBack }) {
+// 條件層級數字一律讀 tier_stats.json（2026-11-13 起，母體＝歷史候選池重播）。讀不到印「—」。
+// 🔴 2026-11-13：這裡原本寫死 47.6%／42.5%／50.0%／48.6%／41.4%／−0.4%——全是 2026-07-26
+// 用「所有訊號事件」這個錯的母體算的，跟網站上被分類的候選不是同一群股票。
+const okNum = v => typeof v === 'number' && Number.isFinite(v)
+const wrTxt = s => (okNum(s?.win_rate) ? `${(s.win_rate * 100).toFixed(1)}%` : '—')
+const pctTxt = v => (okNum(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%` : '—')
+
+export default function HelpGuide({ onBack, tierStats }) {
+  const cat = tierStats?.categories || {}
+  const turn = tierStats?.features?.turnover || {}
+  const tsDate = tierStats?.date || '—'
+  const medians = ['high', 'mid', 'low'].map(k => turn[k]?.median_pct).filter(okNum)
   return (
     <div className="help">
       <header className="help-head">
@@ -65,15 +76,17 @@ export default function HelpGuide({ onBack }) {
             平常沒特別標警示，就是「沒有特別要提醒你的事」。
           </li>
           <li>
-            <b>看三個分類的差別。</b>「勝率偏優」＝歷史上這組單檔比較常賺（47.6%）；
-            「報酬偏優」＝賺的時候賺比較多，但<b>賺錢的次數並沒有比較多</b>（42.5%，跟沒分類的差不多）；
+            <b>看三個分類的差別。</b>分類只看兩件事在「當天候選池」裡排第幾：成交金額、20 日乖離。
             兩邊都排在前段的歸進「<b>雙優</b>」，<b>只列一次</b>。
             <span className="help-why">
-              2026-07-26 實測 28 萬筆：雙優是唯一同時拿到最高賺錢機率（50.0%）與最高上檔幅度
-              （賺時 +18.4%）的一組，也是唯一中位數不是負的（+0.01%）。
-              <b>如果你想從清單裡挑，雙優是最有根據的那一類。</b>
-              但要知道 50% 的意思是「一半的交易在虧」，它的價值來自賺賠幅度不對稱
-              （賺 +18.4%／賠 −10.5%），不是來自比較常對。
+              歷史上每一天照同一套流程重選候選、再分類（{tsDate} 重算）：雙優單檔賺錢機率 <b>{wrTxt(cat.both)}</b>、
+              勝率偏優 <b>{wrTxt(cat.win)}</b>、報酬偏優 <b>{wrTxt(cat.return)}</b>、未分類 <b>{wrTxt(cat.unclassified)}</b>——
+              {['both', 'win', 'return', 'unclassified'].every(k => okNum(cat[k]?.win_rate) && cat[k].win_rate < 0.5)
+                ? <><b>四類都沒過半</b>——就算挑最好的那類，一半以上的交易還是虧的。</>
+                : '過半不代表穩賺，要連賺賠幅度一起看。'}
+              2026-11-13 用「同一天比」量過：雙優、勝率偏優都比「兩項都不突出」的那群常賺（差約 5～7 個百分點，
+              前後兩段時間都成立）；<b>「報酬偏優」跟沒分類的比，賺錢次數和平均報酬都量不出差別</b>，
+              目前沒有證據說它比較好。雙優跟勝率偏優之間也還量不出確定的差別。
             </span>
           </li>
           <li>
@@ -90,9 +103,10 @@ export default function HelpGuide({ onBack }) {
           <p><b>三個要先記住的判斷（都有數字支撐，不是感覺）：</b></p>
           <ul>
             <li>
-              <b>挑對條件層級，拉不開太大差距。</b>候選情報清單上面那句「成交金額最高的三分之一賺錢機率 48.6%、
-              最低的三分之一 41.4%」是即時算的——兩層只差 7 個百分點，<b>而且都不到五成</b>。
-              真正決定賺賠的是幅度（賺時 +16% 級、賠時 −10% 級），不是挑得準不準。
+              <b>挑對條件層級，拉不開太大差距。</b>候選池裡成交金額最高的三分之一，歷史賺錢機率 {wrTxt(turn.high)}、
+              最低的三分之一 {wrTxt(turn.low)}（{tsDate} 重算，讀網站同一份資料）。
+              賺時平均 {pctTxt(turn.high?.avg_win_pct)}、賠時平均 {pctTxt(turn.high?.avg_loss_pct)}——
+              每一筆的結果主要由幅度決定，不是挑得準不準。
             </li>
             <li>
               <b>只買一兩檔不是「買到精華」，是把同一批賭注押得更集中。</b>
@@ -157,8 +171,9 @@ export default function HelpGuide({ onBack }) {
           <p>
             實測 26 萬筆歷史紀錄（2026-07-26 用「隔天開盤進場」的新口徑重算）：
             <b>13 個訊號的「贏過大盤比例」全部落在 37%～43% 之間，沒有一個過半</b>。
-            而條件層級的<b>典型結果（中位數）也全是負的</b>——就算是成交金額最高的那一層，
-            中位數仍是 −0.4%（最差的層級 −2.2%）。平均值之所以是正的，全靠少數漲很多的股票撐起來。
+            而候選池條件層級的<b>典型結果（中位數）</b>：成交金額最高的那一層中位數 {pctTxt(turn.high?.median_pct)}
+            {medians.length ? `（三層裡最差 ${pctTxt(Math.min(...medians))}）` : ''}，{tsDate} 重算。
+            平均數字之所以比中位數好看，靠的是少數漲很多的股票。
           </p>
           <p>這不是壞事，很多真實的動能策略都是這個形狀。但它決定了你該怎麼用：</p>
           <ul>
