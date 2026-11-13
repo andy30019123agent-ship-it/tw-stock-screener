@@ -168,3 +168,26 @@ def test_http_limits_shortens_and_restores(monkeypatch):
             pass
     assert seen == [(20, 10), (20, 10)]                           # 只跑 1 輪（curl＋urllib 各一次）
     assert (ms.CURL_MAX_TIME, ms.URLLIB_TIMEOUT, ms.HTTP_RETRIES) == (40, 20, 3)   # 離開就還原
+
+
+def test_otc_ohlc_unparseable_date_does_not_raise_and_still_collects(monkeypatch, capsys):
+    # 日期欄格式改版（多了星期）→ 當成「無法比對日期」：不丟例外、資料照收、印 warning
+    payload = {"date": "20261112", "stat": "ok",
+               "tables": [{"title": "上櫃股票行情", "date": "115/11/11 (三)", "data": [_TPEX_ROW]}]}
+    monkeypatch.setattr(ms, "get_json", lambda url: payload)
+    out = ms.fetch_otc_ohlc("2026-11-12")
+    assert out["6488"]["close"] == 400.0
+    assert "無法解析" in capsys.readouterr().out
+
+
+def test_otc_ohlc_table_without_date_is_skipped_but_dated_table_collected(monkeypatch):
+    # 真實上櫃回應含一張沒 date 的「管理股票」表：沒 date＝略過日期比對（不當成不符），不能讓整包歸零
+    other = ["6489", "管理股", "50.00", "+1.00", "49.00", "51.00", "48.00", "50.00",
+             "1,000,000", "50,000,000"]
+    payload = {"date": "20261112", "stat": "ok", "tables": [
+        {"title": "管理股票", "data": [other]},
+        {"title": "上櫃股票行情", "date": "115/11/12", "data": [_TPEX_ROW]}]}
+    monkeypatch.setattr(ms, "get_json", lambda url: payload)
+    out = ms.fetch_otc_ohlc("2026-11-12")
+    assert "6488" in out                                     # 有 date 且相符的表正常收
+    assert "6489" in out                                     # 沒 date 的表不比對、照收（不歸零）

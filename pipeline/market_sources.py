@@ -140,6 +140,21 @@ def _date_mismatch(date_iso, *candidates):
     return None
 
 
+def _table_date_or_none(raw, source):
+    """把回應裡的民國日期欄解析成 ISO；解析不了（格式改版，例如 '115/11/11 (三)'）→ 印 warning、回 None
+    ＝「無法比對日期」，呼叫端照原本行為收資料。只放寬「解析不了」；解析得出來但日期不符仍由
+    _date_mismatch 擋。比對日期是新增的保護，不能因它自己壞掉而讓每日更新當掉。"""
+    if not raw:
+        return None
+    try:
+        iso = roc_to_iso(raw)
+    except (ValueError, TypeError):
+        iso = None
+    if iso is None:
+        print(f"  ⚠️ {source} 日期欄格式無法解析（{raw!r}）→ 無法比對日期，照收資料")
+    return iso
+
+
 # ── 上市 OHLCV ────────────────────────────────────────────────────────
 def fetch_listed_ohlc_latest():
     """最新交易日全上市個股 OHLCV（STOCK_DAY_ALL，CSV）。回 (date_iso, {sid: row})。"""
@@ -230,7 +245,7 @@ def fetch_otc_ohlc(date_iso):
     # fields：代號,名稱,收盤,漲跌,開盤,最高,最低,均價,成交股數,成交金額(元)
     for t in tables:
         # 表的 date（民國 "115/11/11"）＝實際資料日；跟請求不同就整包不收（理由同 fetch_listed_ohlc）
-        bad = _date_mismatch(date_iso, roc_to_iso(t["date"]) if t.get("date") else None)
+        bad = _date_mismatch(date_iso, _table_date_or_none(t.get("date"), "上櫃 OHLCV"))
         if bad:
             print(f"  ⚠️ 上櫃 OHLCV 請求 {date_iso} 卻回 {bad} 的資料 → 不收")
             return {}

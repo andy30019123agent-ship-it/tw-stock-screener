@@ -391,6 +391,31 @@ def test_backfill_bt_does_not_add_rows_for_late_included_stock(tmp_path):
             assert [c[i] for c in before["stocks"][sid]] == [c[after["dates"].index(d)] for c in after["stocks"][sid]]
 
 
+def test_gap_older_than_price_window_but_inside_bt_writes_bt_only(tmp_path):
+    # 回補日比 price.json 視窗舊、但在 bt_price.json 範圍內 → 只補 bt、不寫 price；bt 無空洞、股票數不變
+    days = _bdays("2026-01-05", hs.PRICE_WINDOW + 20)
+    gap = days[10]                                            # 早於 price 視窗起點（days[20]）
+    paths = _setup(tmp_path, days, {gap})
+    price_before = hs.load(paths["price"])
+    assert gap < min(price_before["1000"])                    # 前提：確實比 price 視窗舊
+    bt_before = hs.load(paths["bt"])
+    assert gap not in bt_before["dates"] and bt_before["dates"][0] < gap
+    st = _run(paths, FakeNet(days), dates_arg=gap)
+    assert st["filled_this_run"] == [gap]
+    price = hs.load(paths["price"])
+    assert all(gap not in price[sid] for sid in price)        # price 不寫
+    assert price == price_before
+    bt = hs.load(paths["bt"])
+    assert gap in bt["dates"] and bt["dates"] == sorted(set(bt["dates"]))
+    assert len(bt["dates"]) == len(bt_before["dates"]) + 1
+    assert set(bt["stocks"]) == set(bt_before["stocks"])      # 股票數不變
+    k = bt["dates"].index(gap)
+    for sid in bt["stocks"]:                                  # 每檔每欄都有長度＝日期數、補的那格有值（無空洞）
+        assert all(len(col) == len(bt["dates"]) for col in bt["stocks"][sid])
+        assert bt["stocks"][sid][3][k] is not None
+    assert bt["stocks"]["1000"][3][k] == 20.0
+
+
 def test_detect_otc_missing_day_is_gap_when_markets_known():
     # 🟡6：某天只有上市（上櫃回空時 daily_update 只寫上市）→ 總數 >500 但要算缺口
     price = {}
