@@ -197,11 +197,18 @@ def tier_disclaimer(tiers):
     wr = hi["win_rate"] * 100
     half = "不到一半" if wr < 50 else "略過一半" if wr < 55 else "過半"
     ev = hi["ev_pct"]
-    tail = ("這套的優勢在賺賠幅度，不是在勝率。" if ev > 0 and wr < 50
-            else "期望值是負的，代表扣完成本平均是虧的。" if ev <= 0 else "")
+    ci_ev = hi.get("ci90_ev")
+    ev_lo = ci_ev[0] if isinstance(ci_ev, (list, tuple)) and len(ci_ev) == 2 and _num(ci_ev[0]) else None
+    # 只有期望值的 90% CI 下限 > 0 才講「優勢」；跨 0 就不宣稱（2026-11-13 驗收：高層 CI −3.3～+6.1）
+    if ev <= 0:
+        tail = "期望值是負的，代表扣完成本平均是虧的。"
+    elif ev_lo is not None and ev_lo > 0 and wr < 50:
+        tail = "這套的優勢在賺賠幅度，不是在勝率。"
+    else:
+        tail = "平均看起來略正，但誤差範圍跨過 0，不能說有優勢。"
     stale = "（⚠️ 這份數字已過期）" if tiers.get("stale") else ""
     return (f"{DISCLAIMER_BASE}單檔就算落在成交金額最高的那一層，歷史賺錢機率也只有 "
-            f"{wr:.0f}%（{half}；{tiers.get('date') or '—'} 用歷史候選池重算{stale}），"
+            f"{wr:.1f}%（{half}；{tiers.get('date') or '—'} 用歷史候選池重算{stale}），"
             f"賺時約 {hi['avg_win_pct']:+.0f}%、賠時約 {hi['avg_loss_pct']:+.0f}%"
             f"、期望值 {ev:+.1f}%。{tail}").replace("約 -", "約 −")
 

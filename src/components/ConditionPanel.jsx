@@ -303,7 +303,7 @@ export default function ConditionPanel({
                 </table>
               </div>
               <p className="strategy-note">
-                以所有訊號事件為樣本、進場價用訊號次日收盤，比較不同出場方式的<b>成本後</b>結果
+                以所有訊號事件為樣本、進場價用訊號隔日開盤，比較不同出場方式的<b>成本後</b>結果
                 （來回成本約 {exits.cost?.round_trip_pct}%）。淨超額＝扣成本後淨報酬減同期全市場平均。
                 <b>這是全樣本比較</b>，要真的改「持有 20 日」的現行設定，還需通過樣本外驗證才算數（先不動）。
                 ATR 停損停利因只有還原收盤、暫緩。

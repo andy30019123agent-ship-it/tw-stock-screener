@@ -483,7 +483,11 @@ def collect_events(price_hist, chip_hist, div_hist, universe,
                     unmeasurable = True
             if unmeasurable and pool_rows is None:
                 continue
-            ind = bd.compute_indicators(pr[:i + 1], [c for c in cr if c["date"] <= di], ev, None)
+            # 2026-11-13 驗收修正：指標只能看到「訊號日 D 當天已知」的除權息事件。
+            # 之前傳完整 ev，D 之後的事件會把 ≤D 的 ma20 往下縮、bias20 灌水（抽樣平均 +5.3pp）。
+            # 算報酬的 _adj（上面）仍用完整 ev——那是持有期間真實發生的配息，不是前視。
+            ev_known = [e for e in ev if e["date"] <= di]
+            ind = bd.compute_indicators(pr[:i + 1], [c for c in cr if c["date"] <= di], ev_known, None)
             if ind is None:
                 continue
             # 流動性用「當下」的 20 日均量，不是最新的（point-in-time，避免前視偏誤）

@@ -530,6 +530,24 @@ def test_進場價用隔日開盤而非當日收盤():
         f"by_date[{di}] 應含同一口徑算出的 0.10，實際 {by_date.get(di)}"
 
 
+def test_指標不得偷看訊號日之後的除權息事件():
+    """驗收 2026-11-13：compute_indicators 以前收到完整除權息清單，D 之後的事件會把 ≤D 的 ma20
+    往下縮，讓 D 當天的 20 日乖離被灌水（前視偏誤）。D 之後加一筆除權息，D 的特徵不得改變。"""
+    n = 100
+    rows = _make_rows(n=n, close=100.0)
+    i_sig = 70
+    price_hist = {"9999": _rows_to_hist(rows)}
+    universe = [{"id": "9999", "name": "測試", "market": "上市", "industry": "IND00"}]
+    base_ev, _ = bt.collect_events(price_hist, {}, {}, universe)
+    future_day = rows[i_sig + 5]["date"]
+    div_hist = {"9999": {future_day: 0.8}}
+    new_ev, _ = bt.collect_events(price_hist, {}, div_hist, universe)
+    a = [e for e in base_ev if e["i"] == i_sig][0]["feat"]
+    b = [e for e in new_ev if e["i"] == i_sig][0]["feat"]
+    assert a["bias20_pct"] == b["bias20_pct"], (a["bias20_pct"], b["bias20_pct"])
+    assert a["high20_gap"] == b["high20_gap"]
+
+
 def test_collect_events_event帶point_in_time特徵值():
     """Task 2：條件層級統計（tier_stats）要用『訊號成立當下』的特徵值分層，不能用最新值——
     否則今天看起來很旺的股票，會被拿去解釋兩年前那筆訊號的勝率，因果顛倒。

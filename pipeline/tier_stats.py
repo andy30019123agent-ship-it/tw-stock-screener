@@ -156,7 +156,8 @@ def _tier_summary(entries, block, n_boot, rng):
     net_rets = sorted(r for _, r in entries)
     wins = [r for r in net_rets if r > 0]
     losses = [r for r in net_rets if r <= 0]
-    win_rate = round(len(wins) / n, 4)
+    # 只留 3 位（0.1%）：前端 toFixed(1)、報告、TG 讀同一個數就不會差 0.1（驗收 2026-11-13）
+    win_rate = round(len(wins) / n, 3)
     ci_win, ci_ev = _moving_block_ci(entries, block, n_boot, rng)
     avg_win_pct = round(sum(wins) / len(wins) * 100, 2) if wins else None
     avg_loss_pct = round(sum(losses) / len(losses) * 100, 2) if losses else None
@@ -249,6 +250,15 @@ NOT_REPLAYED = [
     {"item": "千張大戶↑（holder_rising）訊號",
      "why": "集保大戶歷史只有近期幾週，回測時幾乎恆不成立（與 collect_events 同口徑）",
      "effect": "同上"},
+    {"item": "外資連買／投信連買訊號",
+     "why": "籌碼歷史最早只到 2026-05-29，重播期間（2025-01～2026-10）只靠籌碼訊號入選的候選是 0 列",
+     "effect": "歷史候選池少了線上約一成的候選（線上快照中只靠這兩個訊號入選的約占 11%）"},
+    {"item": "倖存者偏差（只重播今天的股票清單）",
+     "why": "重播用現存股票清單，已下市的股票不在歷史資料裡",
+     "effect": "三層的絕對賺錢機率可能偏高；同日配對差受影響應較小"},
+    {"item": "訊號權重用「今天」算的",
+     "why": "重播時 weights 是用全歷史算出來的現行權重，不是當時的版本",
+     "effect": "只影響分數排序與推薦理由，不影響候選資格、門檻與分層（驗收實測樣本數逐筆相同）"},
     {"item": "上市未滿約 85 個交易日的新股",
      "why": "collect_events 要求至少 MIN_BARS+FORWARD+1 根 K 線才回測",
      "effect": "線上可能是候選、歷史重播看不到"},

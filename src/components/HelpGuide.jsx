@@ -1,4 +1,5 @@
 import { ArrowLeft, BookOpen, AlertTriangle } from 'lucide-react'
+import { usablePair, pairShort } from '../lib/tierVerdict'
 
 // 使用說明書（Andy 2026-07-25 要求，選「做進網站」＋「寫給自己看（術語附白話）」）。
 //
@@ -41,6 +42,18 @@ export default function HelpGuide({ onBack, tierStats }) {
   const cat = tierStats?.categories || {}
   const turn = tierStats?.features?.turnover || {}
   const tsDate = tierStats?.date || '—'
+  // 「同一天比」的結論由 paired 的 CI 決定（下限>0 才說比較常賺，跨 0 說量不出差別）；缺資料／stale 走中性句。
+  const sentences = [
+    ['cat_both_vs_unclassified', '雙優', '未分類'], ['cat_win_vs_unclassified', '勝率偏優', '未分類'],
+    ['cat_return_vs_unclassified', '報酬偏優', '未分類'], ['cat_both_vs_win', '雙優', '勝率偏優'],
+  ].map(([k, a, b]) => {
+    const t = pairShort(usablePair(tierStats, k), b)
+    return t ? `${a}：${t.replace(`同一天比「${b}」：`, '')}` : null
+  })
+  const helpPairs = sentences.every(Boolean)
+    ? <>用「同一天比」量過（{tsDate}）——{sentences.map((t, i) => <span key={i}>{i ? '；' : ''}{['雙優比未分類', '勝率偏優比未分類', '報酬偏優比未分類', '雙優比勝率偏優'][i]}，{t.split('：')[1]}</span>)}。
+      這是看完資料才選的比較方式，還需要新資料再驗證。</>
+    : '各分類跟其他候選的同日比較數字暫時取不到，任何分類都不保證會賺。'
   const medians = ['high', 'mid', 'low'].map(k => turn[k]?.median_pct).filter(okNum)
   return (
     <div className="help">
@@ -84,9 +97,7 @@ export default function HelpGuide({ onBack, tierStats }) {
               {['both', 'win', 'return', 'unclassified'].every(k => okNum(cat[k]?.win_rate) && cat[k].win_rate < 0.5)
                 ? <><b>四類都沒過半</b>——就算挑最好的那類，一半以上的交易還是虧的。</>
                 : '過半不代表穩賺，要連賺賠幅度一起看。'}
-              2026-11-13 用「同一天比」量過：雙優、勝率偏優都比「兩項都不突出」的那群常賺（差約 5～7 個百分點，
-              前後兩段時間都成立）；<b>「報酬偏優」跟沒分類的比，賺錢次數和平均報酬都量不出差別</b>，
-              目前沒有證據說它比較好。雙優跟勝率偏優之間也還量不出確定的差別。
+              {helpPairs}
             </span>
           </li>
           <li>
@@ -95,7 +106,7 @@ export default function HelpGuide({ onBack, tierStats }) {
           </li>
           <li>
             <b>放 20 個交易日再檢視。</b>這是回測結算的口徑，不是叫你一定要抱滿或一定要出場。
-            <span className="help-why">中途帳面先虧是正常的——下面「這套的優勢在賺賠幅度」那句已經講了，很多筆交易其實是先小輸的。</span>
+            <span className="help-why">中途帳面先虧很常見，所以才建議放滿 20 日再看，別被前幾天的帳面帶著走。</span>
           </li>
         </ol>
 
@@ -314,7 +325,7 @@ export default function HelpGuide({ onBack, tierStats }) {
             回測期間沒有資料 → 樣本 0。它們可以拿來篩股，但<b>沒有回測數字支撐</b>。
           </li>
           <li>
-            <b>進場價用「訊號當天收盤」計算</b>。實際上你要隔天才買得到，所以真實結果會比回測略差。
+            <b>進場價用「訊號隔天開盤」計算</b>，跟你實際最快能買到的時間一致；但盤中追高、或隔幾天才買，結果就會跟回測不同。
           </li>
           <li>
             <b>不含停損停利</b>。所有戰績都是「買進後固定持有 20 個交易日」。

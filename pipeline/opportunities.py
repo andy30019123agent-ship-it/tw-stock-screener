@@ -338,12 +338,13 @@ def compute_scoreboard(entries, cal, adj_close_by_sid, adj_open_by_sid, forward=
     - 進場價＝pick 日**隔一個交易日**的還原開盤——管線 18:17（收盤後）才發榜，Andy 最快隔天
       開盤才買得到，用 pick 當日收盤當進場價等於偷看未來。
     - 出場價＝pick 日 + forward 個交易日的還原收盤（跟原本一致，持有期仍是 forward 天）。
-    - 淨報酬＝毛報酬 − 來回成本（COST_PCT，預設 0.785%）；勝率＝淨報酬 > 0 的比例。
+    - 淨報酬＝bt._apply_cost(毛報酬)（乘除式，來回成本約 0.785%）；勝率＝淨報酬 > 0 的比例。
       全站「勝率」統一這把尺，不能有的地方看毛報酬、有的地方看淨報酬（會變成兩個不同定義的
       「勝率」互相打架，誤導 Andy）。
     找不到隔日開盤（例如當天停牌、資料缺）的樣本直接跳過，**不可用收盤價頂替**。
     """
-    cost = COST_PCT if cost is None else cost
+    # 2026-11-13：成績單改用 bt._apply_cost（乘除式，跟 tier_stats／出場分析同一把尺），不再直接減 COST_PCT。
+    # cost 參數只留給舊測試／特殊情境覆寫（給數字就照舊直接減）；預設 None＝乘除式。
     pos = {d: i for i, d in enumerate(cal)}
     wins = cnt = 0
     ret_sum = 0.0
@@ -359,7 +360,8 @@ def compute_scoreboard(entries, cal, adj_close_by_sid, adj_open_by_sid, forward=
             fut = (adj_close_by_sid.get(p["id"]) or {}).get(d_exit)
             if not base or fut is None:
                 continue                              # 隔日開盤／出場收盤缺值 → 跳過，不拿收盤頂替
-            ret = fut / base - 1 - cost
+            gross = fut / base - 1
+            ret = bt._apply_cost(gross) if cost is None else gross - cost
             cnt += 1
             ret_sum += ret
             if ret > 0:
@@ -370,7 +372,7 @@ def compute_scoreboard(entries, cal, adj_close_by_sid, adj_open_by_sid, forward=
         "samples": cnt,
         "win_rate": round(wins / cnt, 4) if cnt else None,
         "avg_ret": round(ret_sum / cnt * 100, 2) if cnt else None,
-        "cost_pct": round(cost * 100, 3),
+        "cost_pct": round((COST_PCT if cost is None else cost) * 100, 3),
     }
 
 

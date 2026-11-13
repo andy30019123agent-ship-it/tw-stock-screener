@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { Target, TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Sparkles, Award, Coins, Info } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
+import { usablePair, verdictOf, pairShort, winDiffText, evDiffText } from '../lib/tierVerdict'
+
+const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
 // 候選情報三分類（2026-07-26 誠實化）：tier 由後端 opportunities.py 依「當日候選池內百分位」算好，
 // 前端只負責分組顯示，不重新排序、不重新判斷。
@@ -10,17 +13,39 @@ import OutcomeShape from './OutcomeShape'
 // 🔴 2026-11-13：下面的說明原本依據 _reports/驗證_雙優分類_2026-07-26.md，那份用的是「所有訊號事件」
 // 這個錯的母體。改依 _reports/重算_候選池層級統計_2026-11-13.md（歷史候選池重播、同日配對比較）。
 // 精確數字由 TierHistory 讀 tier_stats.json 顯示，這裡只寫結論與量測日期。
-const TIER_META = {
-  // 「雙優」是全站唯一的視覺主角（2026-07-26 單欄故事線核准方向第 2 條）。
-  both: {
-    label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段',
-    // lede 刻意短——完整根據放在下方「這些數字怎麼來的」，不然首屏會被長文字擋住看不到卡片。
-    lede: '成交金額與乖離都排在候選池前段。2026-11-13 同一天比：比「兩項都不突出」的常賺、平均也賺得多；但跟「勝率偏優」比還量不出確定差別，而且仍有一半以上的交易是虧的。',
-  },
-  win: { label: '勝率偏優', Icon: Award, blurb: '成交金額排在候選池前段——2026-11-13 同一天比：比「兩項都不突出」的賺錢比例高約 5 個百分點，但單檔仍不到一半會賺' },
-  // ⚠️ 2026-11-13 正確母體重量：「只有乖離高」跟「兩項都不突出」同一天比，賺錢比例與平均報酬
-  // 的差都在信賴區間內（量不出差別）。這個分類的說明**不可以**暗示它比較好。
-  return: { label: '報酬偏優', Icon: Coins, blurb: '20 日乖離排在候選池前段、成交金額不在後段——⚠️ 2026-11-13 用歷史候選池重量：跟「兩項都不突出」比，賺錢次數與平均報酬都量不出差別，「報酬偏優」目前沒有證據支撐' },
+// 結論句（比較常賺／量不出差別）不寫死：由 tierVerdict 讀 tier_stats.json 的 paired 同日配對差與 CI 決定；
+// 缺欄位／null／stale 時退成不帶數字的中性句（2026-11-13 驗收後）。
+const NEUTRAL = '歷史上跟其他候選的比較數字暫時取不到，任何分類都不保證會賺。'
+const belowHalf = s => isNum(s?.win_rate) && s.win_rate < 0.5
+export function tierMeta(tierStats) {
+  const cats = tierStats?.categories || {}
+  const bothVsUn = pairShort(usablePair(tierStats, 'cat_both_vs_unclassified'), '未分類')
+  const bothVsWin = pairShort(usablePair(tierStats, 'cat_both_vs_win'), '勝率偏優')
+  const winVsUn = pairShort(usablePair(tierStats, 'cat_win_vs_unclassified'), '未分類')
+  const retPair = usablePair(tierStats, 'cat_return_vs_unclassified')
+  const retVsUn = pairShort(retPair, '未分類')
+  const retNoEvidence = retPair && verdictOf(retPair.win_ci90) === 'nodiff'
+    && (retPair.ev_ci90 == null || verdictOf(retPair.ev_ci90) === 'nodiff')
+  const when = tierStats?.date ? `${tierStats.date} ` : ''
+  return {
+    // 「雙優」是全站唯一的視覺主角（2026-07-26 單欄故事線核准方向第 2 條）。
+    both: {
+      label: '雙優', Icon: Sparkles, blurb: '成交金額與 20 日乖離都排在候選池前段',
+      // lede 刻意短——完整根據放在下方「這些數字怎麼來的」，不然首屏會被長文字擋住看不到卡片。
+      lede: bothVsUn
+        ? `成交金額與乖離都排在候選池前段。${when}${bothVsUn}${bothVsWin ? `；${bothVsWin}` : ''}${belowHalf(cats.both) ? '；單檔仍不到一半會賺' : ''}。`
+        : `成交金額與乖離都排在候選池前段。${NEUTRAL}`,
+    },
+    win: {
+      label: '勝率偏優', Icon: Award,
+      blurb: `成交金額排在候選池前段——${winVsUn ? `${when}${winVsUn}${belowHalf(cats.win) ? '，但單檔仍不到一半會賺' : ''}` : NEUTRAL}`,
+    },
+    // ⚠️ 這個分類的說明不可以在 CI 跨 0 時暗示它比較好；讀 paired 決定。
+    return: {
+      label: '報酬偏優', Icon: Coins,
+      blurb: `20 日乖離排在候選池前段、成交金額不在後段——${retVsUn ? `${when}${retVsUn}${retNoEvidence ? '，目前沒有證據說它比較好' : ''}` : NEUTRAL}`,
+    },
+  }
 }
 const TIER_ORDER = ['both', 'win', 'return']
 
@@ -38,7 +63,7 @@ const FEAT_LABELS = {
 
 // 「這套的優勢在賺賠幅度、不是勝率」——今天重算後的頭條數字，一律從 tier_stats.json 算，不寫死。
 // 用 turnover 這個特徵（真正拿來分「勝率偏優」的依據）算：高／低兩層的賺錢機率、以及高層的期望值。
-function HonestyCallout({ tierStats }) {
+export function HonestyCallout({ tierStats }) {
   const t = tierStats?.features?.turnover
   // 🔴 2026-07-26 Codex 複查：原本只檢查「三層物件存不存在」，但零樣本的層**物件存在、
   // 欄位全是 null**（tier_stats.py 的 _tier_summary 在 n==0 時如此）。下面直接做
@@ -56,6 +81,9 @@ function HonestyCallout({ tierStats }) {
     )
   }
   const { high: hi, mid, low: lo } = t
+  const hp = usablePair(tierStats, 'turnover_high_vs_low')
+  const hpWin = winDiffText(hp), hpEv = evDiffText(hp)
+  const pairedLine = hpWin ? `同一天比，高層比低層${hpWin}${hpEv ? `、${hpEv}` : ''}` : null
   const winPct = v => (v.win_rate * 100).toFixed(1)
   const allBelowHalf = [hi, mid, lo].every(x => x.win_rate < 0.5)
   // 期望值優先用 JSON 的 ev_pct（平均淨報酬）；舊版 JSON 沒有才用勝率×賺賠幅度推算
@@ -72,10 +100,14 @@ function HonestyCallout({ tierStats }) {
         。賺時平均 <b className="good">+{hi.avg_win_pct.toFixed(1)}%</b>、
         賠時平均 <b className="bad">−{Math.abs(hi.avg_loss_pct).toFixed(1)}%</b>，
         平均每筆 <b className={ev >= 0 ? 'good' : 'bad'}>{ev >= 0 ? '+' : ''}{ev.toFixed(2)}%</b>
-        {ev > 0 ? '——就算有優勢也在賺賠幅度，不是在勝率。' : '——扣完成本平均沒有賺。'}
+        {ev > 0
+          ? (Array.isArray(hi.ci90_ev) && isNum(hi.ci90_ev[0]) && hi.ci90_ev[0] > 0
+            ? '——優勢在賺賠幅度，不是在勝率。'
+            : '——平均看起來略正，但誤差範圍跨過 0，還不能說有優勢。')
+          : '——扣完成本平均沒有賺。'}
         <small className="opp-ci-note">
           （{hi.blocks} 批獨立樣本，90% CI 高層 {hi.ci90[0]}–{hi.ci90[1]}% ／ 低層 {lo.ci90[0]}–{lo.ci90[1]}%；
-          {hi.ci90[0] < lo.ci90[1] ? '兩層區間重疊＝目前量不出高層確定比較好。' : ''}樣本＝歷史上每天重播候選流程後的候選池）
+          {pairedLine ? `${pairedLine}；` : ''}樣本＝歷史上每天重播候選流程後的候選池）
           {tierStats.stale && <b className="bad">　⚠️ 這份統計最近一次重算失敗，數字可能過期</b>}
         </small>
       </span>
@@ -83,7 +115,7 @@ function HonestyCallout({ tierStats }) {
   )
 }
 
-// 一張候選卡：不放名次號碼、不做「領先卡」特殊放大——這批清單不是排行榜（見上方 TIER_META 註解）。
+// 一張候選卡：不放名次號碼、不做「領先卡」特殊放大——這批清單不是排行榜（見上方 tierMeta 註解）。
 function CandidateCard({ p, onClick }) {
   const bias = p.support_ma20 ? ((p.close - p.support_ma20) / p.support_ma20 * 100) : null
   const fp = p.feat_pct || {}
@@ -145,7 +177,6 @@ function CandidateCard({ p, onClick }) {
 // 旁邊一律附「不是好壞排名」的提醒——這是 2026-07-25 實測推翻過的東西，不可回歸。
 // 這一類的歷史數字（2026-11-13 加）：讀 tier_stats.json 的 categories（逐日重播候選流程後的
 // 候選池、按線上同一套分類切），不寫死。任何欄位缺就整行不顯示，不印 NaN。
-const isNum = v => typeof v === 'number' && Number.isFinite(v)
 function TierHistory({ s }) {
   if (!s || !isNum(s.win_rate) || !isNum(s.ev_pct) || !Array.isArray(s.ci90) || !Array.isArray(s.ci90_ev)) return null
   return (
@@ -233,6 +264,7 @@ function trendOf(row) {
 // （Andy 拍板：不用幫我配好購買組合）。picks 不再截斷，檔數一律讀 opp.pool_n，不寫死。
 // 都採「抓不到就靜默省略該部分」，不讓這區拖垮既有選股頁。
 export default function Opportunities({ stocks, onPick, onCount, engineStatus, tierStats }) {
+  const meta = tierMeta(tierStats)
   const [opp, setOpp] = useState(null)
   const [board, setBoard] = useState(null)
   const [weights, setWeights] = useState(null)
@@ -346,8 +378,8 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
 
       {open && (<>
       {TIER_ORDER.map(key => (
-        <TierSection key={key} tierKey={key} label={TIER_META[key].label} Icon={TIER_META[key].Icon}
-          blurb={TIER_META[key].blurb} lede={TIER_META[key].lede} hist={tierStats?.categories?.[key]}
+        <TierSection key={key} tierKey={key} label={meta[key].label} Icon={meta[key].Icon}
+          blurb={meta[key].blurb} lede={meta[key].lede} hist={tierStats?.categories?.[key]}
           variant={key === 'both' ? 'primary' : 'secondary'}
           list={tiered[key]} previewN={previewN} onPick={handlePick} />
       ))}

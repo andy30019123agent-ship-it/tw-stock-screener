@@ -18,7 +18,9 @@ import { ChevronDown, ChevronRight, Dices, AlertTriangle } from 'lucide-react'
 // 1. high20_gap 不可標「偏優」——2026-07-26 重算後方向與舊研究相反，是不穩定特徵（數字見 JSON）。
 //    只顯示數值當事實。
 // 2. 不可用兩層的信賴區間是否重疊來宣稱「差異顯著」——CI 只說明「這一層自己有多不確定」，
-//    要證明層級之間有差，需要同日配對比較（第二段 walk-forward 的工作，這裡還沒有）。
+//    要證明層級之間有差，要看同日配對比較——已經有了：tier_stats.json 的 paired（每天先算 A−B 再
+//    bootstrap），結論句由 src/lib/tierVerdict.js 讀它決定（Opportunities／HelpGuide 使用）。
+//    這個元件自己只顯示各層的 CI，不做層與層的比較。
 
 const FEATURES = [
   {

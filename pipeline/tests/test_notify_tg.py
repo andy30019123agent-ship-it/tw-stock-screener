@@ -189,11 +189,12 @@ def test_contains_fixed_disclaimer_verbatim(tmp_path, monkeypatch):
     這裡用假 JSON 的數字（47%／+15／−9）驗證提醒句真的是讀檔、不是舊字串。"""
     _write_opp(tmp_path, monkeypatch, "2026-07-24", ["9001"], tiers=["win"])
     _write_tiers(tmp_path, monkeypatch, {"win_rate": 0.4712, "avg_win_pct": 15.2,
-                                         "avg_loss_pct": -9.4, "ev_pct": 2.2})
+                                         "avg_loss_pct": -9.4, "ev_pct": 2.2,
+                                         "ci90_ev": [0.5, 4.0]})
     stocks = [_stock(id="9001", name="股9001")]
     text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": stocks})
     assert "這不是購買組合" in text
-    assert "47%（不到一半" in text
+    assert "47.1%（不到一半" in text
     assert "賺時約 +15%" in text and "賠時約 −9%" in text
     assert "不是在勝率" in text
     assert "49%" not in text and "52%" not in text, "寫死的舊數字不可復活"
@@ -212,6 +213,17 @@ def test_disclaimer_期望值為負時照實講():
     t = nt.tier_disclaimer({"date": "2026-11-13", "features": {"turnover": {"high": {
         "win_rate": 0.41, "avg_win_pct": 9.0, "avg_loss_pct": -8.0, "ev_pct": -1.2}}}})
     assert "期望值是負的" in t and "優勢在賺賠幅度" not in t
+
+
+def test_disclaimer_期望值CI跨0不說優勢():
+    """驗收 2026-11-13：高層期望值 90% CI 跨 0，不可說「優勢在賺賠幅度」。"""
+    t = nt.tier_disclaimer({"date": "2026-11-13", "features": {"turnover": {"high": {
+        "win_rate": 0.46, "avg_win_pct": 16.0, "avg_loss_pct": -13.0, "ev_pct": 0.9,
+        "ci90_ev": [-3.3, 6.1]}}}})
+    assert "優勢在賺賠幅度" not in t and "不能說有優勢" in t
+    t2 = nt.tier_disclaimer({"features": {"turnover": {"high": {
+        "win_rate": 0.46, "avg_win_pct": 16.0, "avg_loss_pct": -13.0, "ev_pct": 0.9}}}})
+    assert "優勢在賺賠幅度" not in t2, "缺 CI 也不宣稱優勢"
 
 
 def test_both_tier_listed_once_not_duplicated_across_sections(tmp_path, monkeypatch):

@@ -1,167 +1,167 @@
 {
- "computed": "2026-11-13 11:06",
+ "computed": "2026-11-13 11:33",
  "population": "逐日重播 opportunities.build_opportunities 後的最終候選池（引擎訊號＋均量≥500 張＋強勢雙確認門檻（候選不足 20 檔時退回）；營收濾網未重播）",
  "candidate_pool": {
   "both": {
-   "samples": 5363,
+   "samples": 5509,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4848,
-   "median_pct": -0.78,
-   "p20_pct": -13.47,
-   "p80_pct": 14.44,
-   "avg_win_pct": 17.82,
-   "avg_loss_pct": -12.73,
-   "ev_pct": 2.08,
+   "win_rate": 0.472,
+   "median_pct": -1.21,
+   "p20_pct": -14.68,
+   "p80_pct": 14.95,
+   "avg_win_pct": 18.28,
+   "avg_loss_pct": -13.21,
+   "ev_pct": 1.67,
    "ci90": [
-    38.67,
-    59.29
+    37.78,
+    58.46
    ],
    "ci90_ev": [
-    -2.04,
-    7.17
+    -2.71,
+    7.19
    ]
   },
   "turn_only": {
-   "samples": 9315,
+   "samples": 9177,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4548,
-   "median_pct": -1.82,
-   "p20_pct": -14.96,
-   "p80_pct": 12.91,
-   "avg_win_pct": 16.14,
-   "avg_loss_pct": -13.04,
-   "ev_pct": 0.23,
+   "win_rate": 0.461,
+   "median_pct": -1.54,
+   "p20_pct": -14.45,
+   "p80_pct": 12.66,
+   "avg_win_pct": 15.86,
+   "avg_loss_pct": -12.74,
+   "ev_pct": 0.45,
    "ci90": [
-    34.67,
-    57.89
+    35.01,
+    58.72
    ],
    "ci90_ev": [
-    -4.33,
-    5.79
+    -3.94,
+    5.88
    ]
   },
   "bias_only": {
-   "samples": 9310,
+   "samples": 9173,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4466,
-   "median_pct": -1.99,
-   "p20_pct": -13.58,
-   "p80_pct": 10.39,
-   "avg_win_pct": 15.17,
-   "avg_loss_pct": -11.79,
-   "ev_pct": 0.25,
+   "win_rate": 0.424,
+   "median_pct": -2.97,
+   "p20_pct": -14.81,
+   "p80_pct": 10.24,
+   "avg_win_pct": 16.1,
+   "avg_loss_pct": -12.5,
+   "ev_pct": -0.38,
    "ci90": [
-    35.02,
-    54.81
+    32.89,
+    52.55
    ],
    "ci90_ev": [
-    -2.79,
-    4.33
+    -3.68,
+    4.11
    ]
   },
   "neither": {
-   "samples": 20271,
+   "samples": 20427,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4318,
-   "median_pct": -2.32,
-   "p20_pct": -13.81,
-   "p80_pct": 9.53,
-   "avg_win_pct": 13.89,
-   "avg_loss_pct": -11.8,
-   "ev_pct": -0.71,
+   "win_rate": 0.442,
+   "median_pct": -1.94,
+   "p20_pct": -13.19,
+   "p80_pct": 9.61,
+   "avg_win_pct": 13.52,
+   "avg_loss_pct": -11.47,
+   "ev_pct": -0.42,
    "ci90": [
-    32.56,
-    55.05
+    33.61,
+    55.85
    ],
    "ci90_ev": [
-    -4.62,
-    3.6
+    -4.41,
+    3.71
    ]
   }
  },
  "old_population_all_signal_events": {
   "both": {
-   "samples": 41479,
+   "samples": 46121,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4976,
+   "win_rate": 0.498,
    "median_pct": -0.09,
-   "p20_pct": -12.0,
-   "p80_pct": 15.29,
-   "avg_win_pct": 18.22,
-   "avg_loss_pct": -11.78,
-   "ev_pct": 3.15,
+   "p20_pct": -12.24,
+   "p80_pct": 16.24,
+   "avg_win_pct": 18.85,
+   "avg_loss_pct": -11.96,
+   "ev_pct": 3.38,
    "ci90": [
-    44.99,
-    54.48
+    44.97,
+    54.73
    ],
    "ci90_ev": [
-    0.41,
-    5.88
+    0.55,
+    6.18
    ]
   },
   "turn_only": {
-   "samples": 58704,
+   "samples": 59374,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4782,
-   "median_pct": -0.67,
-   "p20_pct": -10.91,
-   "p80_pct": 12.08,
-   "avg_win_pct": 15.12,
-   "avg_loss_pct": -10.43,
-   "ev_pct": 1.79,
+   "win_rate": 0.481,
+   "median_pct": -0.56,
+   "p20_pct": -10.44,
+   "p80_pct": 11.33,
+   "avg_win_pct": 14.24,
+   "avg_loss_pct": -10.05,
+   "ev_pct": 1.62,
    "ci90": [
-    42.08,
-    53.5
+    42.39,
+    53.44
    ],
    "ci90_ev": [
-    -0.66,
-    4.41
+    -0.64,
+    3.97
    ]
   },
   "bias_only": {
-   "samples": 58764,
+   "samples": 59457,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4196,
-   "median_pct": -1.95,
-   "p20_pct": -10.52,
-   "p80_pct": 7.88,
-   "avg_win_pct": 13.42,
-   "avg_loss_pct": -9.3,
-   "ev_pct": 0.23,
+   "win_rate": 0.418,
+   "median_pct": -2.3,
+   "p20_pct": -11.48,
+   "p80_pct": 9.14,
+   "avg_win_pct": 15.07,
+   "avg_loss_pct": -10.0,
+   "ev_pct": 0.47,
    "ci90": [
-    37.51,
-    46.43
+    37.37,
+    46.58
    ],
    "ci90_ev": [
     -1.46,
-    2.07
+    2.55
    ]
   },
   "neither": {
-   "samples": 141351,
+   "samples": 151304,
    "days": 416,
    "blocks": 20,
-   "win_rate": 0.4258,
-   "median_pct": -1.59,
-   "p20_pct": -9.0,
-   "p80_pct": 7.45,
-   "avg_win_pct": 11.71,
-   "avg_loss_pct": -8.14,
-   "ev_pct": 0.31,
+   "win_rate": 0.427,
+   "median_pct": -1.47,
+   "p20_pct": -8.5,
+   "p80_pct": 6.93,
+   "avg_win_pct": 10.84,
+   "avg_loss_pct": -7.74,
+   "ev_pct": 0.2,
    "ci90": [
-    37.7,
-    47.47
+    38.23,
+    47.76
    ],
    "ci90_ev": [
-    -1.42,
-    1.97
+    -1.4,
+    1.71
    ]
   }
  },

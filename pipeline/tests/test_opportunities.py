@@ -201,7 +201,8 @@ def test_compute_scoreboard_hand_calc():
     }
     sb = opp.compute_scoreboard(entries, cal, adj_close, adj_open, forward=20)
     cost = opp.COST_PCT
-    net = [110.0 / 100 - 1 - cost, 95.0 / 100 - 1 - cost, 100.0 / 100 - 1 - cost]
+    # 2026-11-13：成績單改用 bt._apply_cost（乘除式），不再直接減 cost
+    net = [opp.bt._apply_cost(g) for g in (110.0 / 100 - 1, 95.0 / 100 - 1, 100.0 / 100 - 1)]
     assert sb["samples"] == 3
     assert sb["win_rate"] == round(sum(1 for r in net if r > 0) / 3, 4)   # 只有 A 扣成本後仍是正的
     assert sb["avg_ret"] == round(sum(net) / 3 * 100, 2)
