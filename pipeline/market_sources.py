@@ -151,7 +151,7 @@ def _table_date_or_none(raw, source):
     except (ValueError, TypeError):
         iso = None
     if iso is None:
-        print(f"  ⚠️ {source} 日期欄格式無法解析（{raw!r}）→ 無法比對日期，照收資料")
+        print(f"::warning::{source} 日期欄格式無法解析（{raw!r}）→ 無法比對日期，照收資料（官方格式可能改版，請檢查）")
     return iso
 
 
