@@ -12,6 +12,9 @@
 出場規則在跑之前就全部列好（RULES），跑完不增刪：
   固定停損 −5/−8/−10/−12/−15/−20%（以進場價計）、移動停損（自進場後最高收盤回落 −8/−10/−15%）、
   跌破月線（還原收盤 < 還原 MA20），各自都有時間上限（20 日主結果、40 日看結論會不會翻轉）。
+  驗收後追加一條（2026-11-13 驗收 🟢9，唯一的增補）：網站預設防守價
+  「−15% 與月線取較高者」（src/lib/position.js defendPrice：訊號日收盤 ×0.85，若 0.85×收盤 < MA20 < 收盤
+  則改用 MA20；訊號日定好的固定價位，盤中最低碰到即觸發）。
 
 成交假設（FILLS）：
   next_open（保守，主結果）：當天盤中最低價碰到停損價（月線規則是收盤跌破）→ **隔日開盤**賣，
@@ -20,7 +23,8 @@
   same_day（樂觀上限）：停損價當天成交；當天開盤就已跳空跌破停損價則只能拿開盤價。
              月線規則用當天收盤。現實做不到這麼好（跌停鎖死賣不掉、盯盤延遲），只當上限看。
 
-跑法（一行，約 20~30 分鐘，主要花在逐檔逐日重算指標）：
+跑法（一行，約 8 分鐘：2026-11-13 本機實測 479 秒，幾乎全花在逐檔逐日重算指標＋重播候選池；
+有 --cache 時約 17 秒）：
     python3 pipeline/research_exit_rules.py
 加 --cache PATH 可把重播後的候選清單存起來，第二次起直接讀（只省時間，不改結果）；
 加 --out PATH 把數字表（Markdown）另存一份。
@@ -51,6 +55,9 @@ RULES = (
     + [(f"trail{int(x * 100)}", "trail", x, f"移動停損 高點回落 −{int(x * 100)}%")
        for x in (0.08, 0.10, 0.15)]
     + [("ma20", "ma20", None, "收盤跌破月線")]
+    # ↓ 驗收後追加（2026-11-13 驗收報告 🟢9）：網站現行預設防守價 src/lib/position.js defendPrice。
+    #   除這一條外規則清單不增刪。
+    + [("site15ma", "site", 0.15, "網站預設 −15%／月線取較高者（驗收後追加）")]
 )
 BLOCK = 20
 N_BOOT = 1000
@@ -59,6 +66,19 @@ MAE_LEVELS = (0.05, 0.08, 0.10, 0.15)
 
 
 # ── 純函式（有單測）──────────────────────────────────────────────────────────
+def site_stop_level(c, sig_i, pct=0.15):
+    """照 src/lib/position.js defendPrice 算「網站預設防守價」（一個固定價位，訊號日當天算好）：
+    stop＝訊號日收盤 ×(1−pct)；ma20＝訊號日（含）前 20 根收盤平均；
+    只有 stop < ma20 < 收盤 時用月線，否則用 stop（月線在現價之上不算防守位）。
+    用還原價：還原是乘法係數，同一天的 ma20／收盤比值與 point-in-time 相同。"""
+    close = c[sig_i]
+    stop = close * (1 - pct)
+    ma20 = sum(c[sig_i - 19:sig_i + 1]) / 20 if sig_i >= 19 else None
+    if ma20 is not None and stop < ma20 < close:
+        return ma20
+    return stop
+
+
 def simulate_exit(o, h, l, c, entry_i, kind, param, cap, fill="next_open"):
     """單筆交易模擬。o/h/l/c 為同一檔的還原 OHLC（list，同 index）。
     進場＝o[entry_i]；進場日算第 1 天，時間上限出場＝c[entry_i+cap-1]。
@@ -67,6 +87,7 @@ def simulate_exit(o, h, l, c, entry_i, kind, param, cap, fill="next_open"):
     entry = o[entry_i]
     last = entry_i + cap - 1
     peak = entry
+    site_level = site_stop_level(c, entry_i - 1, param) if kind == "site" else None
 
     def done(px, hold, stopped, trig):
         return {"gross": px / entry - 1, "net": bt._net_return(entry, px), "hold": hold,
@@ -86,6 +107,9 @@ def simulate_exit(o, h, l, c, entry_i, kind, param, cap, fill="next_open"):
         elif kind == "ma20":
             ma = sum(c[t - 19:t + 1]) / 20
             hit = c[t] < ma
+        elif kind == "site":
+            level = site_level                  # 訊號日就定好的固定價位（盤中最低碰到即觸發）
+            hit = l[t] <= level
         else:
             raise ValueError(kind)
         if hit:
@@ -183,9 +207,9 @@ def summarize(trades):
     }
 
 
-def paired(rule_tr, ctrl_tr, dates, rng_seed=SEED):
+def paired(rule_tr, ctrl_tr, dates, rng_seed=SEED, block=BLOCK):
     """同一批進場的配對差：每筆 d＝規則淨報酬 − 對照淨報酬；先算每天平均，再對日序列
-    circular block bootstrap（block=20，持有期重疊 → 相鄰日高度相關）。單位 pp。"""
+    circular block bootstrap（預設 block=20，持有期重疊 → 相鄰日高度相關）。單位 pp。"""
     by_d, by_w = {}, {}
     for r, c_, d in zip(rule_tr, ctrl_tr, dates):
         by_d.setdefault(d, []).append((r["net"] - c_["net"]) * 100)
@@ -197,12 +221,65 @@ def paired(rule_tr, ctrl_tr, dates, rng_seed=SEED):
         return {"days": 0}
     half = len(days) // 2
     return {
-        "days": len(days), "blocks": len(days) // BLOCK,
-        "ev_pp": sum(ev) / len(ev), "ev_ci": ts._circular_mean_ci(ev, BLOCK, N_BOOT, random.Random(rng_seed)),
-        "win_pp": sum(wn) / len(wn), "win_ci": ts._circular_mean_ci(wn, BLOCK, N_BOOT, random.Random(rng_seed)),
+        "days": len(days), "blocks": len(days) // block,
+        "ev_pp": sum(ev) / len(ev), "ev_ci": ts._circular_mean_ci(ev, block, N_BOOT, random.Random(rng_seed)),
+        "win_pp": sum(wn) / len(wn), "win_ci": ts._circular_mean_ci(wn, block, N_BOOT, random.Random(rng_seed)),
         "ev_first": sum(ev[:half]) / max(half, 1), "ev_second": sum(ev[half:]) / max(len(ev) - half, 1),
         "split": days[half] if half < len(days) else None,
     }
+
+
+def circular_ratio_ci(sums, counts, block, n_boot=N_BOOT, rng=None):
+    """「按筆平均」的 90% CI：按日的 (總和, 筆數) 序列做 circular block bootstrap（與 _circular_mean_ci
+    同一種抽法，截成恰好 n 天），每次算 Σ總和／Σ筆數——同一天的筆數一起抽，保留同日相關。"""
+    n = len(sums)
+    if n == 0:
+        return None
+    rng = rng or random.Random(SEED)
+    b = min(block, n)
+    vals = []
+    for _ in range(n_boot):
+        picked = []
+        while len(picked) < n:
+            s = rng.randrange(n)
+            picked.extend((s + k) % n for k in range(b))
+        picked = picked[:n]
+        cnt = sum(counts[j] for j in picked)
+        vals.append(sum(sums[j] for j in picked) / cnt)
+    vals.sort()
+    return [round(ts._percentile(vals, 5), 2), round(ts._percentile(vals, 95), 2)]
+
+
+def hold_vs_sell(stop_tr, hold_tr, dates, max_day=5, blocks=(20, 40)):
+    """驗收 🔴1 的「可操作版本」：停損規則在前 max_day 天內（含進場日）觸發的那批，
+    「續抱到時間上限」vs「觸發後隔日開盤賣」（＝停損規則本身的成交）誰好。
+    stop_tr／hold_tr／dates 同 index 對齊。差＝續抱淨報酬 − 賣出淨報酬（正＝續抱較好）。
+    回：n、按筆平均差 pp、續抱較好比例、每日一票的平均與各 block 長度的 90% CI。"""
+    idx = [j for j, t in enumerate(stop_tr)
+           if t["stopped"] and t["trigger_day"] is not None and t["trigger_day"] <= max_day]
+    if not idx:
+        return {"n": 0}
+    diffs = [(hold_tr[j]["net"] - stop_tr[j]["net"]) * 100 for j in idx]
+    out = {"n": len(idx), "per_trade_pp": sum(diffs) / len(diffs),
+           "hold_better": sum(1 for d in diffs if d > 0) / len(diffs),
+           "hold_win": sum(1 for j in idx if hold_tr[j]["net"] > 0) / len(idx),
+           "sell_win": sum(1 for j in idx if stop_tr[j]["net"] > 0) / len(idx)}
+    sub_h = [hold_tr[j] for j in idx]
+    sub_s = [stop_tr[j] for j in idx]
+    sub_d = [dates[j] for j in idx]
+    by_day = {}
+    for d, x in zip(sub_d, diffs):
+        by_day.setdefault(d, []).append(x)
+    days = sorted(by_day)
+    sums = [sum(by_day[d]) for d in days]
+    cnts = [len(by_day[d]) for d in days]
+    for b in blocks:
+        p = paired(sub_h, sub_s, sub_d, block=b)
+        out["days"] = p["days"]
+        out["per_day_pp"] = p["ev_pp"]
+        out[f"per_day_ci_b{b}"] = p["ev_ci"]
+        out[f"per_trade_ci_b{b}"] = circular_ratio_ci(sums, cnts, b, rng=random.Random(SEED))
+    return out
 
 
 def verdict(ci):
@@ -282,6 +359,7 @@ def run(cands, ohlc):
 
     label = {k: lab for k, _, _, lab in RULES}
     res["summary"], res["paired"] = {}, {}
+    n_cmp = {"main": 0, "robust": 0, "hold_vs_sell": 0}   # 有算 CI、拿來下判定的配對比較列數（多重比較用）
     for cap in CAPS:
         dates = [b[0]["date"] for b in sub_of[cap]]
         for fill in FILLS:
@@ -310,6 +388,7 @@ def run(cands, ohlc):
                         continue
                     p = paired(sims[(cap, fill, key)], ref, dates)
                     res["paired"][f"cap{cap}_{fill}_{key}_vs_{'h20' if ref is ctrl[cap] else 'hcap'}"] = p
+                    n_cmp["main"] += 1
                     lab = label[key] if key != "hold" else f"固定持有 {cap} 日"
                     md.append(f"| {lab} | {p['ev_pp']:+.2f} | {ci_s(p['ev_ci'])} | {verdict(p['ev_ci'])} | "
                               f"{p['win_pp']:+.2f} | {ci_s(p['win_ci'])} | {p['ev_first']:+.2f}／{p['ev_second']:+.2f}（切點 {p['split']}） |")
@@ -326,7 +405,9 @@ def run(cands, ohlc):
         ("報酬偏優", lambda cd: cd["tier"] == "return"), ("未分類", lambda cd: cd["tier"] == "unclassified"),
     ]
     md.append(f"\n### 穩健性：時間上限 20 日、隔日開盤成交，規則 − 對照組，按子群拆開（前後半切點 {split}）\n")
-    md.append("每格＝平均每筆差 pp［90% CI］；★＝CI 不跨 0。子群天數少時 CI 很寬（門檻退回只有約 2 批獨立樣本）。\n")
+    n_gate_off = len(set(b[0]["date"] for b in rows if not b[0]["gate"]))
+    md.append(f"每格＝平均每筆差 pp［90% CI］；★＝CI 不跨 0。子群天數少時 CI 很寬"
+              f"（門檻退回只有 {n_gate_off} 天÷{BLOCK}≈{n_gate_off / BLOCK:.1f} 批獨立樣本）。\n")
     head = "| 規則 | " + " | ".join(g for g, _ in groups) + " |"
     md.append(head)
     md.append("|---" * (len(groups) + 1) + "|")
@@ -344,6 +425,7 @@ def run(cands, ohlc):
             p = paired([sims[(cap, fill, key)][j] for j in idx], [ctrl[cap][j] for j in idx],
                        [rows[j][0]["date"] for j in idx])
             res["robust"][f"{key}_{gname}"] = p
+            n_cmp["robust"] += 1
             star = "★" if p.get("ev_ci") and (p["ev_ci"][0] > 0 or p["ev_ci"][1] < 0) else ""
             cells.append(f"{p['ev_pp']:+.2f}［{ci_s(p['ev_ci'])}］{star}" if p["days"] else "—")
         md.append(f"| {label[key]} | " + " | ".join(cells) + " |")
@@ -364,7 +446,9 @@ def run(cands, ohlc):
         ent = s["o"][e]
         mae.append(min(s["l"][e:e + CONTROL_DAYS]) / ent - 1)
         mae_c.append(min(s["c"][e:e + CONTROL_DAYS]) / ent - 1)
-        first5.append(min(s["l"][e:e + 5]) / ent - 1)
+        # 判定口徑與 simulate_exit 相同（低點 <= 進場價×(1−x)）：整數價位剛好 −10% 時，
+        # 舊寫法 low/ent−1 <= −0.1 會因浮點誤差漏算（上一版 7,737 筆 vs 停損觸發 7,781 筆的差異來源）
+        first5.append((min(s["l"][e:e + 5]), ent))
     final = [t["net"] for t in ctrl[cap]]
     win_i = [j for j, x in enumerate(final) if x > 0]
     los_i = [j for j, x in enumerate(final) if x <= 0]
@@ -384,11 +468,12 @@ def run(cands, ohlc):
     md.append("|---|---|---|---|---|---|")
     res["first5"] = {}
     for x in MAE_LEVELS:
-        hit = [j for j in range(len(final)) if first5[j] <= -x]
-        miss = [j for j in range(len(final)) if first5[j] > -x]
+        hit_set = {j for j in range(len(final)) if first5[j][0] <= first5[j][1] * (1 - x)}
+        hit = sorted(hit_set)
+        miss = [j for j in range(len(final)) if j not in hit_set]
         r = {
-            "losers_share": sum(1 for j in los_i if first5[j] <= -x) / len(los_i),
-            "winners_share": sum(1 for j in win_i if first5[j] <= -x) / len(win_i),
+            "losers_share": sum(1 for j in los_i if j in hit_set) / len(los_i),
+            "winners_share": sum(1 for j in win_i if j in hit_set) / len(win_i),
             "n_hit": len(hit),
             "win_given_hit": (sum(1 for j in hit if final[j] > 0) / len(hit)) if hit else None,
             "win_given_miss": (sum(1 for j in miss if final[j] > 0) / len(miss)) if miss else None,
@@ -396,6 +481,51 @@ def run(cands, ohlc):
         res["first5"][f"{int(x * 100)}"] = r
         md.append(f"| −{int(x * 100)}% | {rate(r['losers_share'])} | {rate(r['winners_share'])} | {r['n_hit']:,} | "
                   f"{rate(r['win_given_hit'])} | {rate(r['win_given_miss'])} |")
+
+    # ---- 誤砍率：抱滿 20 日最後會賺的，有幾成會先被這條規則洗出場（驗收 🟡2）----
+    md.append("\n### 誤砍率：時間上限 20 日、隔日開盤成交，各規則「被停損出場」的比例，按最後結果拆開\n")
+    md.append("「最後會賺的」＝同一筆抱滿 20 日成本後 > 0。誤砍率＝這群裡被規則觸發的比例。\n")
+    md.append("| 規則 | 全部候選被停損 | 最後會賺的被誤砍 | 最後會賠的被停損 |")
+    md.append("|---|---|---|---|")
+    res["miscut"] = {}
+    sim_main = {key: sims[(cap, fill, key)] for key, *_ in RULES}
+    for key, *_ in RULES:
+        if key == "hold":
+            continue
+        trs = sim_main[key]
+        r = {"all": sum(1 for t in trs if t["stopped"]) / len(trs),
+             "winners": sum(1 for j in win_i if trs[j]["stopped"]) / len(win_i),
+             "losers": sum(1 for j in los_i if trs[j]["stopped"]) / len(los_i)}
+        res["miscut"][key] = r
+        md.append(f"| {label[key]} | {rate(r['all'])} | {rate(r['winners'])} | {rate(r['losers'])} |")
+
+    # ---- 可操作版本：前 5 天就觸發 −10% 的那批，續抱 vs 隔日開盤賣（驗收 🔴1）----
+    md.append("\n### 前 5 個交易日內（含進場日）就觸發 −10% 停損的那批：續抱到第 20 日 vs 觸發後隔日開盤賣\n")
+    md.append("差＝續抱淨報酬 − 隔日賣淨報酬（正＝續抱較好）。按筆＝每筆一票；按日＝先算每天平均再每天一票。"
+              "CI＝circular block bootstrap 90%（按筆的 CI 是整天一起抽、算 Σ差／Σ筆數）。\n")
+    md.append("| 群 | 筆數 | 天數 | 按筆平均差 | 按筆 90% CI（block 20） | 按筆 90% CI（block 40） | 按日平均差 | 按日 90% CI（block 20） | 按日 90% CI（block 40） | 續抱較好的比例 | 續抱最後賺錢 | 隔日賣仍賺錢 |")
+    md.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    res["hold_vs_sell"] = {}
+    dates_main = [b[0]["date"] for b in rows]
+    hv_groups = [("全部", lambda cd: True)] + [g for g in groups if g[0] not in ("前半段", "後半段")]
+    for gname, fn in hv_groups:
+        idx = [j for j, b in enumerate(rows) if fn(b[0])]
+        r = hold_vs_sell([sim_main["stop10"][j] for j in idx], [ctrl[cap][j] for j in idx],
+                         [dates_main[j] for j in idx], max_day=5)
+        res["hold_vs_sell"][gname] = r
+        if not r["n"]:
+            md.append(f"| {gname} | 0 | — | — | — | — | — | — | — | — | — | — |")
+            continue
+        n_cmp["hold_vs_sell"] += 1
+        md.append(f"| {gname} | {r['n']:,} | {r['days']} | {r['per_trade_pp']:+.2f} | {ci_s(r['per_trade_ci_b20'])} | "
+                  f"{ci_s(r['per_trade_ci_b40'])} | {r['per_day_pp']:+.2f} | {ci_s(r['per_day_ci_b20'])} | "
+                  f"{ci_s(r['per_day_ci_b40'])} | {rate(r['hold_better'])} | {rate(r['hold_win'])} | {rate(r['sell_win'])} |")
+
+    res["n_comparisons"] = n_cmp
+    md.append(f"\n### 這份報告一共做了幾組有 CI 的配對比較\n")
+    md.append(f"主表（各時間上限×成交口徑×對照組）{n_cmp['main']} 列＋子群穩健性表 {n_cmp['robust']} 格＋"
+              f"「續抱 vs 隔日賣」{n_cmp['hold_vs_sell']} 列＝**{sum(n_cmp.values())} 組**；"
+              "主表每列另有「賺錢機率差」一個 CI。全部沒做多重比較校正。")
     return res, "\n".join(md)
 
 
