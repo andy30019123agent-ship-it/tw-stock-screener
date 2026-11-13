@@ -160,6 +160,23 @@ def fetch_taiex_close(date_iso):
     return None
 
 
+def fetch_trading_days_month(ym):
+    """某月份的「官方交易日清單＋當日加權指數收盤」（TWSE FMTQIK 市場成交資訊，一請求一個月）。
+    ym＝"YYYYMM"。回 {date_iso: 加權指數收盤}。
+
+    給漏抓回補（gap_backfill.py）當「應有交易日」基準：它跟每日抓個股的 STOCK_DAY_ALL 是
+    不同端點、不同時間抓，每日那條路漏掉的日子，這裡照樣列得出來。
+    ⚠️ 回空（{}）≠「那個月沒交易」——限流、夜間維護都會回空；呼叫端要把空當成「基準未知」。"""
+    d = get_json(f"{TWSE_AT}/FMTQIK?date={ym}01&response=json")
+    out = {}
+    # 欄位：日期,成交股數,成交金額,成交筆數,發行量加權股價指數,漲跌點數
+    for r in d.get("data", []) or []:
+        iso = roc_to_iso(r[0]) if r else None
+        if iso:
+            out[iso] = _f(r[4]) if len(r) > 4 else None
+    return out
+
+
 # 註：舊的「逐月抓單一上市股 OHLCV」（STOCK_DAY，fetch_listed_ohlc_month）已於 2026-07-25 移除
 # ——回填改走逐日全市場的 fetch_listed_ohlc(day)（backfill.py:50），逐檔 STOCK_DAY 還會被 TWSE 限流。
 

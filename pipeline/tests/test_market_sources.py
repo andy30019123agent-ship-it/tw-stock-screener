@@ -75,6 +75,22 @@ def test_fetch_taiex_close_no_data_on_non_trading_day(monkeypatch):
     assert ms.fetch_taiex_close("2026-06-28") is None
 
 
+def test_fetch_trading_days_month_parses_fmtqik(monkeypatch):
+    # FMTQIK：日期(民國)/成交股數/成交金額/成交筆數/加權指數/漲跌點數（2026-11-13 實測 202608 格式）
+    payload = {"stat": "OK", "data": [
+        ["115/08/18", "10,333,808,272", "1,007,881,760,816", "5,224,454", "45,308.68", "-548.59"],
+        ["115/08/19", "10,230,116,335", "890,269,743,542", "4,880,908", "44,719.35", "-589.33"],
+    ]}
+    monkeypatch.setattr(ms, "get_json", lambda url: payload)
+    assert ms.fetch_trading_days_month("202608") == {"2026-08-18": 45308.68, "2026-08-19": 44719.35}
+
+
+def test_fetch_trading_days_month_empty_is_empty(monkeypatch):
+    # 限流/夜間回空 → 回 {}，由呼叫端當成「基準未知」，不能當成整月休市
+    monkeypatch.setattr(ms, "get_json", lambda url: {"stat": "很抱歉，沒有符合條件的資料!"})
+    assert ms.fetch_trading_days_month("202608") == {}
+
+
 def test_otc_chip_maps_columns(monkeypatch):
     # TPEX insti：外資合計 = [10]，投信 = [13]
     row = ["6488", "環球晶", "1", "1", "0", "0", "0", "0",
