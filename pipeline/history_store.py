@@ -155,6 +155,11 @@ def bt_empty():
     return {"dates": [], "stocks": {}}
 
 
+def _bt_cell(r):
+    return [round(r["open"], 2), round(r["max"], 2), round(r["min"], 2),
+            round(r["close"], 2), int((r.get("Trading_Volume") or 0) // 1000)]
+
+
 def bt_merge_days(bt, day_rows, window=BT_WINDOW):
     """把 {date_iso: {sid: row}} 併入長歷史（同日覆蓋），並修剪到 window 天。
 
@@ -178,10 +183,7 @@ def bt_merge_days(bt, day_rows, window=BT_WINDOW):
     for date_iso, ohlc_map in day_rows.items():
         added += 1
         for sid, r in ohlc_map.items():
-            flat.setdefault(sid, {})[date_iso] = [
-                round(r["open"], 2), round(r["max"], 2), round(r["min"], 2),
-                round(r["close"], 2), int((r.get("Trading_Volume") or 0) // 1000),
-            ]
+            flat.setdefault(sid, {})[date_iso] = _bt_cell(r)
 
     dates = sorted({d for v in flat.values() for d in v})[-window:]
     keep = set(dates)
@@ -208,10 +210,61 @@ def bt_merge_days(bt, day_rows, window=BT_WINDOW):
     return added
 
 
+def bt_insert_days(bt, day_rows, window=BT_WINDOW):
+    """「插入中間日期」模式（2026-11-13 漏抓回補驗收後新增）：把**不晚於** bt 最新日的日期
+    （回補補回來的舊交易日）插進長歷史，只補「已收錄、而且該股既有起訖範圍涵蓋這天」的格子。
+
+    為什麼不能用 bt_merge_days：它每次都把整段 500 天重跑流動性門檻、並把那天的列寫給
+    「所有」股票——較晚才收錄的股票會多出幾列孤立的舊資料、中間一大段空白（實測 55 檔），
+    邊緣股還會被重篩刪掉整段歷史（實測 1565 被刪 500 天）。這裡：
+      - 不重跑流動性篩選（收錄名單不因插入而增減）；
+      - 某股 bt 起點晚於這天（晚收錄）、或終點早於這天（已下市）→ 不補，不製造孤立列；
+      - 比 bt 最新日還新的日期不處理（那是「每週往後接」的事，交給 bt_merge_days）；
+      - 日期軸照樣修剪到 window 天（插 3 天＝最舊 3 天滑出，等同當初就有抓到）。
+    回傳實際插入（落在視窗內）的天數。"""
+    dates_old = list(bt.get("dates") or [])
+    if not dates_old or not day_rows:
+        return 0
+    last = dates_old[-1]
+    rows_in = {d: m for d, m in day_rows.items() if d <= last}
+    axis = sorted(set(dates_old) | set(rows_in))[-window:]
+    old_i = {d: i for i, d in enumerate(dates_old)}
+    n = len(axis)
+    stocks = {}
+    for sid, cols in (bt.get("stocks") or {}).items():
+        nn = [i for i, x in enumerate(cols[3]) if x is not None]
+        lo, hi = (dates_old[nn[0]], dates_old[nn[-1]]) if nn else (None, None)
+        new = [[None] * n for _ in range(5)]
+        for k, d in enumerate(axis):
+            i = old_i.get(d)
+            if i is not None:
+                for j in range(5):
+                    new[j][k] = cols[j][i]
+            if d in rows_in and lo is not None and lo <= d <= hi:
+                r = rows_in[d].get(sid)
+                if r is not None:
+                    for j, v in enumerate(_bt_cell(r)):
+                        new[j][k] = v
+        if any(x is not None for x in new[3]):   # 整段都滑出視窗的才移除（自然修剪）
+            stocks[sid] = new
+    bt["dates"] = axis
+    bt["stocks"] = stocks
+    return sum(1 for d in rows_in if d in set(axis))
+
+
+BT_INSERT_MIN_ROWS = 500   # 每週合併遇到「比 bt 最新日舊」的日期，price.json 至少要有這麼多檔才插
+
+
 def bt_merge_from_price(bt, price_hist, window=BT_WINDOW):
     """把 price.json（滾動 110 天）裡「長歷史還沒有」的日期併進來。每週跑一次即可——
-    price.json 的視窗遠大於一週，不會漏接。回傳併入天數。"""
+    price.json 的視窗遠大於一週，不會漏接。回傳併入天數。
+
+    兩種日期分開處理（2026-11-13）：
+      - 比 bt 最新日新的（每週正常新增）→ bt_merge_days，行為跟以前完全一樣（含流動性重篩）；
+      - 不晚於 bt 最新日的（漏抓回補補進 price.json 的舊日子）→ bt_insert_days，只補已收錄、
+        範圍涵蓋那天的股票。只有零星幾檔的舊日期（例如下市股殘留列）不插，免得整欄都是空。"""
     have = set(bt.get("dates") or [])
+    last = max(have) if have else None
     day_rows = {}
     for sid, by_date in price_hist.items():
         for d, r in by_date.items():
@@ -221,7 +274,11 @@ def bt_merge_from_price(bt, price_hist, window=BT_WINDOW):
                 "open": r[0], "max": r[1], "min": r[2], "close": r[3],
                 "Trading_Volume": r[4],
             }
-    return bt_merge_days(bt, day_rows, window)
+    old = {d: m for d, m in day_rows.items()
+           if last is not None and d < last and len(m) >= BT_INSERT_MIN_ROWS}
+    new = {d: m for d, m in day_rows.items() if last is None or d > last}
+    n = bt_insert_days(bt, old, window) if old else 0
+    return n + (bt_merge_days(bt, new, window) if new else 0)
 
 
 def bt_to_price_hist(bt):

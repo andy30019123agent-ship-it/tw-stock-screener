@@ -31,6 +31,8 @@ def _rows(sids, close=10.0):
 LISTED = [f"{1000 + i}" for i in range(gb.MIN_LISTED_ROWS + 5)]
 OTC = [f"{6000 + i}" for i in range(gb.MIN_OTC_ROWS + 5)]
 ALL = LISTED + OTC
+UNIVERSE = {"stocks": [{"id": s, "market": "上市"} for s in LISTED] + [{"id": s, "market": "上櫃"} for s in OTC]}
+MARKETS = {s["id"]: s["market"] for s in UNIVERSE["stocks"]}
 
 
 def _write(path, obj):
@@ -49,7 +51,8 @@ def _setup(tmp_path, days, missing, chip_days=None, bt_days=None):
         hs.append_chip(chip, d, {s: {"Foreign_Investor": 1, "Investment_Trust": 1} for s in ALL})
     bt = hs.bt_empty()
     hs.bt_merge_days(bt, {d: _rows(ALL) for d in (bt_days if bt_days is not None else have)})
-    paths = {k: str(tmp_path / f"{k}.json") for k in ("price", "chip", "div", "index", "bt", "state")}
+    paths = {k: str(tmp_path / f"{k}.json") for k in ("price", "chip", "div", "index", "bt", "state", "universe")}
+    _write(paths["universe"], UNIVERSE)
     _write(paths["price"], price)
     _write(paths["chip"], chip)
     _write(paths["index"], index)
@@ -61,12 +64,15 @@ def _setup(tmp_path, days, missing, chip_days=None, bt_days=None):
 class FakeNet:
     """可設定哪天哪個端點失敗/回空的假網路，順便記錄呼叫次數。"""
 
-    def __init__(self, days, fail=None, empty=None, div_fail=False, month_fail=()):
+    def __init__(self, days, fail=None, empty=None, div_fail=False, month_fail=(), div_empty=(),
+                 empty_months=()):
         self.days = set(days)
         self.fail = fail or {}        # {(kind, date): Exception}
         self.empty = empty or set()   # {(kind, date)}
         self.div_fail = div_fail
         self.month_fail = set(month_fail)
+        self.empty_months = set(empty_months)
+        self.div_empty = set(div_empty)   # {"listed","otc"}：該市場回 JSON 但 0 列（限流樣態）
         self.calls = []
 
     def _hit(self, kind, d):
@@ -80,6 +86,8 @@ class FakeNet:
             self.calls.append(("month", ym))
             if ym in self.month_fail:
                 raise RuntimeError("限流")
+            if ym in self.empty_months:
+                return {}
             return {d: 123.0 + i for i, d in enumerate(sorted(self.days)) if gb.month_of(d) == ym}
 
         def listed(d):
@@ -102,6 +110,10 @@ class FakeNet:
                 src["listed"], src["otc"] = True, False
                 return {}
             src["listed"] = src["otc"] = True
+            src["listed_rows"] = 0 if "listed" in self.div_empty else 2
+            src["otc_rows"] = 0 if "otc" in self.div_empty else 1
+            if self.div_empty:
+                return {}
             return {"1000": [{"date": start, "ratio": 0.97}], "1001": [{"date": "1999-01-01", "ratio": 0.5}]}
 
         return {"baseline_month": month, "listed_ohlc": listed, "otc_ohlc": otc,
@@ -246,6 +258,9 @@ def test_dividend_failure_blocks_price_days(tmp_path):
     st = _run(paths, FakeNet(DAYS, div_fail=True))
     assert st["filled_this_run"] == [] and gap in st["pending"]
     assert gap not in hs.load(paths["price"])["1000"]
+    # 是「除權息失敗」擋下的（算一次失敗、記錯誤），不是被當成 0 列未確認或斷路器順手擋掉
+    assert st["pending"][gap]["attempts"] == 1 and "dividends" in st["last_error"]
+    assert st["div_unconfirmed"] == {}
 
 
 def test_cap_per_run_and_resume(tmp_path):
@@ -264,8 +279,8 @@ def test_manual_old_dates_queue_until_done(tmp_path):
     st = _run(paths, FakeNet(DAYS), dates_arg=f"{old[0]}:{old[-1]}", max_days=2)
     assert st["filled_this_run"] == old[:2]
     assert st["queue"] == [old[2]]
-    # 下次不帶 --dates、而且基準月份抓不到 → 仍從佇列接著補
-    st2 = _run(paths, FakeNet(DAYS, month_fail={"202609", "202610"}))
+    # 下次不帶 --dates、基準月份「回空」（不是網路錯誤）→ 仍從佇列接著補
+    st2 = _run(paths, FakeNet(DAYS, empty_months={"202609", "202610"}))
     assert st2["filled_this_run"] == [old[2]]
 
 
@@ -335,3 +350,364 @@ def test_atomic_save_keeps_old_file_on_failure(tmp_path):
         hs.save(path, {"a": Bad()})                              # 序列化到一半失敗
     assert json.load(open(path)) == {"a": 1}                     # 舊檔完好
     assert not os.path.exists(path + ".tmp")                     # 暫存檔有清掉
+
+
+def test_atomic_save_never_opens_target_for_writing(tmp_path, monkeypatch):
+    # 原子寫入的前提：正式檔只會被 os.replace 整個換掉，從來不會被直接打開來寫（寫到一半就壞）
+    path = str(tmp_path / "h.json")
+    opened = []
+    real_open = open
+
+    def spy(p, mode="r", *a, **k):
+        if "w" in mode:
+            opened.append(str(p))
+        return real_open(p, mode, *a, **k)
+    monkeypatch.setattr(hs, "open", spy, raising=False)
+    hs.save(path, {"a": 1})
+    assert opened == [path + ".tmp"] and json.load(open(path)) == {"a": 1}
+
+
+# ── 驗收後修正（2026-11-13 第二輪）──────────────────────────────────────
+def test_backfill_bt_does_not_add_rows_for_late_included_stock(tmp_path):
+    # 🔴1：回補日早於某股的 bt 起點（晚收錄）→ 不能幫它寫孤立列；也不重篩、不增減股票
+    gap = DAYS[10]
+    paths = _setup(tmp_path, DAYS, {gap})
+    bt = hs.load(paths["bt"])
+    late = "1003"
+    i0 = bt["dates"].index(DAYS[20])
+    for j in range(5):                                           # 讓 1003 從 DAYS[20] 才開始有資料
+        bt["stocks"][late][j][:i0] = [None] * i0
+    _write(paths["bt"], bt)
+    before = hs.load(paths["bt"])
+    st = _run(paths, FakeNet(DAYS), dates_arg=gap)
+    assert st["filled_this_run"] == [gap]
+    after = hs.load(paths["bt"])
+    assert set(after["stocks"]) == set(before["stocks"])
+    k = after["dates"].index(gap)
+    assert after["stocks"][late][3][k] is None                  # 晚收錄 → 不補
+    assert after["stocks"]["1000"][3][k] == 20.0                # 涵蓋 → 補
+    for sid in before["stocks"]:                                # 回補日以外逐格不變
+        for d, i in ((d, i) for i, d in enumerate(before["dates"])):
+            assert [c[i] for c in before["stocks"][sid]] == [c[after["dates"].index(d)] for c in after["stocks"][sid]]
+
+
+def test_detect_otc_missing_day_is_gap_when_markets_known():
+    # 🟡6：某天只有上市（上櫃回空時 daily_update 只寫上市）→ 總數 >500 但要算缺口
+    price = {}
+    for d in DAYS:
+        hs.append_price(price, d, _rows(LISTED if d == DAYS[-3] else ALL))
+    base = {d: 1.0 for d in DAYS}
+    gaps, _ = gb.detect_gaps(base, price, {}, {d: 1 for d in DAYS}, hs.bt_empty(), markets=MARKETS)
+    assert DAYS[-3] in gaps and "price" in gaps[DAYS[-3]]
+    gaps, _ = gb.detect_gaps(base, price, {}, {d: 1 for d in DAYS}, hs.bt_empty())   # 沒市場別＝舊行為
+    assert DAYS[-3] not in gaps
+
+
+def test_half_market_day_gets_otc_filled(tmp_path):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, set())
+    price = hs.load(paths["price"])
+    for s in OTC:
+        del price[s][gap]
+    _write(paths["price"], price)
+    st = _run(paths, FakeNet(DAYS))
+    assert st["filled_this_run"] == [gap]
+    assert hs.load(paths["price"])["6000"][gap][3] == 30.0
+
+
+def test_dividend_zero_rows_is_unconfirmed_then_accepted(tmp_path):
+    # 🟡2：除權息回 0 列（限流樣態）→ 第一次不寫價格、記未確認；連續第 2 次才接受
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    before = {k: open(paths[k]).read() for k in ("price", "bt", "div")}
+    net = FakeNet(DAYS, div_empty={"listed"})
+    st = _run(paths, net)
+    assert st["filled_this_run"] == [] and gap in st["pending"]
+    assert st["div_unconfirmed"][gap]["runs"] == 1 and st["div_unconfirmed"][gap]["markets"] == ["listed"]
+    assert st["pending"][gap]["attempts"] == 0                    # 不算失敗
+    assert not [c for c in net.calls if c[0] in ("listed", "otc")]   # 價格這次不抓
+    for k, v in before.items():
+        assert open(paths[k]).read() == v
+    st2 = _run(paths, FakeNet(DAYS, div_empty={"listed"}))
+    assert st2["filled_this_run"] == [gap] and st2["div_unconfirmed"] == {}
+    assert st2["backfilled"][gap]["div_confirmed_empty"] == ["listed"]
+
+
+def test_dividend_accepted_empty_survives_price_fetch_failure(tmp_path):
+    # 已接受「確實沒有除權息」、但當次價格抓失敗 → 下次不必再從頭數 0 列次數
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    _run(paths, FakeNet(DAYS, div_empty={"otc"}))
+    st = _run(paths, FakeNet(DAYS, div_empty={"otc"}, empty={("listed", gap)}))
+    assert st["filled_this_run"] == [] and gap in st["div_unconfirmed"]
+    st3 = _run(paths, FakeNet(DAYS, div_empty={"otc"}))
+    assert st3["filled_this_run"] == [gap] and st3["backfilled"][gap]["div_confirmed_empty"] == ["otc"]
+
+
+def test_dividend_zero_then_real_events_next_run(tmp_path):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    _run(paths, FakeNet(DAYS, div_empty={"listed", "otc"}))
+    st = _run(paths, FakeNet(DAYS))                               # 第二次查到事件 → 照常寫，含事件
+    assert st["filled_this_run"] == [gap] and st["div_unconfirmed"] == {}
+    assert hs.load(paths["div"])["1000"] == {gap: 0.97}
+    assert "div_confirmed_empty" not in st["backfilled"][gap]
+
+
+def test_dividend_legacy_interface_without_row_counts(tmp_path):
+    # 沒回列數的 fetch（舊介面／驗收腳本的假網路）：整包 0 筆也要當未確認
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    net = FakeNet(DAYS)
+    f = net.fetchers()
+
+    def div(start, end, src):
+        src["listed"] = src["otc"] = True
+        return {}
+    f["dividends"] = div
+    st = gb.run(fetchers=f, sleep=lambda s: None, paths=paths)
+    assert st["filled_this_run"] == [] and gap in st["div_unconfirmed"]
+
+
+def test_breaker_stops_after_first_network_error(tmp_path):
+    # 🟡4：第一個網路錯誤就停掉本次回補；沒輪到的日子不算失敗次數
+    gaps = DAYS[-6:-3]
+    paths = _setup(tmp_path, DAYS, set(gaps))
+    net = FakeNet(DAYS, fail={("listed", gaps[0]): RuntimeError("取得失敗（1 次）：timeout")})
+    st = _run(paths, net)
+    assert [c for c in net.calls if c[0] == "listed"] == [("listed", gaps[0])]   # 之後一個都沒打
+    assert not [c for c in net.calls if c[0] in ("otc", "lchip", "ochip")]
+    assert st["pending"][gaps[0]]["attempts"] == 1
+    assert st["pending"][gaps[1]]["attempts"] == 0 and st["pending"][gaps[2]]["attempts"] == 0
+    assert "listed_ohlc" in st["breaker"]
+    st2 = _run(paths, FakeNet(DAYS))                              # 下次網路好了 → 全部補上
+    assert sorted(st2["filled_this_run"]) == sorted(gaps)
+
+
+def test_breaker_time_budget(tmp_path):
+    gaps = DAYS[-6:-3]
+    paths = _setup(tmp_path, DAYS, set(gaps))
+    net = FakeNet(DAYS)
+    t = {"now": 0.0}
+
+    def clock():
+        t["now"] += 40.0                                          # 每看一次錶就過 40 秒
+        return t["now"]
+    st = gb.run(fetchers=net.fetchers(), sleep=lambda s: None, paths=paths, clock=clock)
+    assert "預算" in st["breaker"]
+    assert not [c for c in net.calls if c[0] in ("listed", "otc")]
+    assert all(v["attempts"] == 0 for v in st["pending"].values())
+
+
+def test_budget_running_out_mid_day_does_not_count_as_failure(tmp_path):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    net = FakeNet(DAYS)
+    f = net.fetchers()
+    t = {"now": 0.0}
+    real_listed = f["listed_ohlc"]
+
+    def listed(d):                                                # 抓完上市後時間就用完了
+        t["now"] = 10_000.0
+        return real_listed(d)
+    f["listed_ohlc"] = listed
+    st = gb.run(fetchers=f, sleep=lambda s: None, paths=paths, clock=lambda: t["now"])
+    assert "預算" in st["breaker"] and st["pending"][gap]["attempts"] == 0
+    assert not [c for c in net.calls if c[0] == "otc"]
+
+
+def test_pending_since_kept_across_runs_and_warns_when_stale(tmp_path, monkeypatch, capsys):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    monkeypatch.setattr(gb, "now_taipei", lambda: "2026-11-01 18:30")
+    _run(paths, FakeNet(DAYS, empty={("listed", gap)}))
+    monkeypatch.setattr(gb, "now_taipei", lambda: "2026-11-05 18:30")
+    st = _run(paths, FakeNet(DAYS, empty={("listed", gap)}))
+    assert st["pending"][gap]["since"] == "2026-11-01 18:30"     # 第一次記下的時間，不會每天重設
+    assert f"待補超過 3 天還沒補上 ['{gap}']" in capsys.readouterr().out
+
+
+def test_baseline_empty_month_counts_as_failed():
+    # 突變 M7b：回空的月份要算「基準未知」，不能當 OK（否則整月會被當成休市）
+    base, ok, failed = gb.load_baseline(["202609", "202610"], lambda ym: {} if ym == "202610" else {"2026-09-01": 1.0},
+                                        sleep=lambda s: None)
+    assert ok == ["202609"] and failed == ["202610"]
+
+
+def test_baseline_uses_prefetched_month_without_request():
+    calls = []
+    base, ok, failed = gb.load_baseline(["202611"], lambda ym: calls.append(ym) or {},
+                                        sleep=lambda s: None, prefetched={"202611": {"2026-11-13": 1.0}})
+    assert calls == [] and ok == ["202611"] and "2026-11-13" in base
+
+
+def test_manual_date_with_unknown_baseline_is_retried_not_dropped(tmp_path):
+    # 🟡3＋突變 M7：手動日期所在月份基準抓不到 → 不可說「不是交易日」，要進 manual_retry 下次再試
+    old = DAYS[4]
+    paths = _setup(tmp_path, DAYS, {old})
+    st = _run(paths, FakeNet(DAYS, empty_months={"202609"}), dates_arg=old)
+    assert st["manual_not_trading_day"] == [] and old in st["manual_baseline_unknown"]
+    assert old in st["manual_retry"] and st["filled_this_run"] == []
+    st2 = _run(paths, FakeNet(DAYS))                              # 下次不帶日期也會再試
+    assert st2["filled_this_run"] == [old] and st2["manual_retry"] == {}
+
+
+def test_bad_manual_input_keeps_auto_check(tmp_path, capsys):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    st = _run(paths, FakeNet(DAYS), dates_arg="2026/08/18;rm -rf /")
+    assert st["filled_this_run"] == [gap]                         # 自動檢查照跑
+    assert st["manual_input_error"] and st["manual_requested"] == []
+    assert "::warning::手動回補日期沒有採用" in capsys.readouterr().out
+
+
+def test_too_wide_manual_range_rejected(tmp_path):
+    paths = _setup(tmp_path, DAYS, set())
+    st = _run(paths, FakeNet(DAYS), dates_arg="2025-01-01:2026-10-01")
+    assert st["manual_requested"] == [] and "個月" in st["manual_input_error"]
+
+
+def test_index_only_gap_is_written(tmp_path):
+    # 突變 M15：只缺指數的日子也要補（用基準的加權指數值）
+    paths = _setup(tmp_path, DAYS, set())
+    idx = hs.load(paths["index"])
+    del idx[DAYS[-4]]
+    _write(paths["index"], idx)
+    net = FakeNet(DAYS)
+    st = _run(paths, net)
+    assert st["filled_this_run"] == [DAYS[-4]]
+    assert DAYS[-4] in hs.load(paths["index"])
+    assert not [c for c in net.calls if c[0] in ("listed", "otc")]
+
+
+def test_bt_written_before_price(tmp_path, monkeypatch):
+    # 突變 M9：寫 bt 失敗時 price 還不能有那天（price 是缺口偵測依據，最後寫）
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    real = hs.save
+
+    def bad(path, obj):
+        if path == paths["bt"]:
+            raise OSError(28, "No space left on device")
+        return real(path, obj)
+    monkeypatch.setattr(hs, "save", bad)
+    with pytest.raises(OSError):
+        _run(paths, FakeNet(DAYS))
+    assert gap not in hs.load(paths["price"])["1000"]
+
+
+def test_state_write_failure_after_history_leaves_audit_and_no_duplicate(tmp_path, monkeypatch, capsys):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    real = hs.save
+
+    def bad(path, obj):
+        if path == paths["state"]:
+            raise OSError(28, "No space left on device")
+        return real(path, obj)
+    monkeypatch.setattr(hs, "save", bad)
+    assert gb.safe_run(fetchers=FakeNet(DAYS).fetchers(), sleep=lambda s: None, paths=paths) is None
+    out = capsys.readouterr().out
+    assert "回補稽核紀錄" in out and gap in out                   # 稽核紀錄留在 log
+    assert gap in hs.load(paths["price"])["1000"]
+    monkeypatch.setattr(hs, "save", real)
+    net = FakeNet(DAYS)
+    st = _run(paths, net)                                         # 下次：已有那天 → 不重複回補
+    assert st["gaps_detected"] == {} and not [c for c in net.calls if c[0] == "listed"]
+
+
+def test_warnings_and_maintenance_hint():
+    ok = {"checked_at": "2026-11-13 18:30", "pending": {"2026-11-12": {"since": "2026-11-13 18:30"}},
+          "gave_up": {}, "last_error": None}
+    assert gb.warning_lines(ok) == [] and gb.maintenance_hint(ok) == ""   # 剛記待補＝正常，不吵
+    bad = {"checked_at": "2026-11-13 18:30",
+           "pending": {"2026-11-05": {"since": "2026-11-09 18:30"}, "2026-11-12": {"since": "2026-11-13 18:30"}},
+           "gave_up": {"2026-08-19": {}}, "last_error": None}
+    lines = gb.warning_lines(bad)
+    assert any("放棄" in x for x in lines) and any("超過 3 天" in x and "2026-11-05" in x for x in lines)
+    assert gb.maintenance_hint(bad) == "資料回補：2 天待補、1 天已放棄（詳見 Actions log）"
+    assert "出錯" in gb.maintenance_hint({"last_error": "crash", "checked_at": "2026-11-13 18:30"})
+
+
+def test_run_prints_actions_warning_on_give_up(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(gb, "MAX_ATTEMPTS", 1)
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    _run(paths, FakeNet(DAYS, empty={("listed", gap)}))
+    assert "::warning::資料回補有 1 天已放棄" in capsys.readouterr().out
+
+
+def test_safe_run_crash_prints_actions_warning(tmp_path, capsys):
+    gap = DAYS[-4]
+    paths = _setup(tmp_path, DAYS, {gap})
+    gb.safe_run(fetchers=FakeNet(DAYS, fail={("listed", gap): KeyError("x")}).fetchers(),
+                sleep=lambda s: None, paths=paths)
+    assert "::warning::資料回補發生非預期錯誤" in capsys.readouterr().out
+
+
+def test_daily_update_survives_backfill_import_failure(monkeypatch, capsys):
+    # 🟢1：回補模組 import 失敗不可讓每日步驟掛掉
+    import builtins
+    import daily_update as du
+    monkeypatch.setattr(du, "update_latest", lambda: {})
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "gap_backfill":
+            raise SyntaxError("broken")
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    du.main([])
+    assert "::warning::漏抓回補模組載入失敗" in capsys.readouterr().out
+
+
+def test_check_stale():
+    import daily_update as du
+    calls = []
+
+    def month(ym):
+        calls.append(ym)
+        return {"2026-11-12": 1.0, "2026-11-13": 2.0}
+    assert du.check_stale("2026-11-13", today="2026-11-13", fetch_month=month) == (False, {})
+    assert calls == []                                            # 資料是今天的 → 不多打請求
+    stale, pre = du.check_stale("2026-11-12", today="2026-11-13", fetch_month=month)
+    assert stale is True and pre == {"202611": {"2026-11-12": 1.0, "2026-11-13": 2.0}}
+    # 今天不在官方清單（假日／盤中資料未出）→ 不判過期
+    assert du.check_stale("2026-11-13", today="2026-11-14", fetch_month=month)[0] is False
+
+    def boom(ym):
+        raise RuntimeError("timeout")
+    assert du.check_stale("2026-11-12", today="2026-11-13", fetch_month=boom) == (False, {})
+
+
+def _patch_daily(monkeypatch, tmp_path, listed_date, otc_n):
+    import daily_update as du
+    import market_sources as ms
+    for name in ("PRICE_PATH", "CHIP_PATH", "DIV_PATH", "INDEX_PATH", "FETCH_STATE_PATH"):
+        monkeypatch.setattr(du, name, str(tmp_path / f"{name}.json"))
+    monkeypatch.setattr(du, "today_taipei", lambda: "2026-11-13")
+    monkeypatch.setattr(ms, "fetch_listed_ohlc_latest", lambda: (listed_date, _rows(LISTED)))
+    monkeypatch.setattr(ms, "fetch_otc_ohlc", lambda d: _rows(OTC[:otc_n]))
+    monkeypatch.setattr(ms, "fetch_trading_days_month", lambda ym: {"2026-11-12": 1.0, "2026-11-13": 2.0})
+    monkeypatch.setattr(ms, "fetch_listed_chip", lambda d: {})
+    monkeypatch.setattr(ms, "fetch_otc_chip", lambda d: {})
+    monkeypatch.setattr(ms, "fetch_ex_dividend_events", lambda a, b: {})
+    monkeypatch.setattr(ms, "fetch_taiex_close", lambda d: 1.0)
+    return du
+
+
+def test_daily_update_marks_stale_when_official_data_is_old(monkeypatch, tmp_path):
+    # 🟡7：今天有開盤、端點卻回昨天的資料 → fetch_state 標過期；基準交給回補沿用
+    du = _patch_daily(monkeypatch, tmp_path, "2026-11-12", len(OTC))
+    pre = du.update_latest()
+    assert json.load(open(du.FETCH_STATE_PATH))["ok"] is False
+    assert "202611" in pre
+    du = _patch_daily(monkeypatch, tmp_path, "2026-11-13", len(OTC))
+    assert du.update_latest() == {}
+    assert json.load(open(du.FETCH_STATE_PATH))["ok"] is True
+
+
+def test_daily_update_otc_empty_marks_not_ok(monkeypatch, tmp_path):
+    du = _patch_daily(monkeypatch, tmp_path, "2026-11-13", 0)
+    du.update_latest()
+    assert json.load(open(du.FETCH_STATE_PATH))["ok"] is False
