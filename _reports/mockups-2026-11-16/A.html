@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>方向 A 先瘦身</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#F7F3F7;--surface:#FFFFFF;--surface-tint:#FDEEF4;--surface-deep:#2B0A20;--ink:#3D1130;--ink-body:#5A3B50;--ink-muted:#7E6274;--on-deep:#F7F3F7;--border:#ECDCE7;--border-strong:#DCC3D3;--primary:#FF4D8D;--primary-tint:#FFD6E5;--on-primary:#2B0A20;--accent:#FFC24B;--up:#BE2733;--down:#0A7650;--warn:#7A5200;--warn-bg:#FBF0D8;--warn-border:#E8CE94;--r-sm:10px;--r-md:16px;--r-lg:24px;--r-pill:999px;--shadow-sm:0 1px 2px rgba(61,17,48,.06);--shadow-md:0 6px 16px rgba(61,17,48,.08)}
+html{-webkit-text-size-adjust:100%}
+body{font-family:'Noto Sans TC',system-ui,-apple-system,'PingFang TC',sans-serif;background:var(--bg);color:var(--ink-body);line-height:1.6;font-size:16px;overflow-x:hidden}
+.wrap{max-width:430px;margin:0 auto;padding:0 16px 32px}
+.num,.chg{font-family:'Manrope','Noto Sans TC',sans-serif;font-variant-numeric:tabular-nums}
+b,strong{color:var(--ink);font-weight:700}
+.ico{flex:none;vertical-align:middle}
+.up{color:var(--up)}.dn{color:var(--down)}
+.chg{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:18px;line-height:1.3;white-space:nowrap}
+.dirtag{display:flex;justify-content:center;padding:8px 0 0}
+.dirtag span{background:var(--surface-deep);color:var(--on-deep);border-radius:var(--r-pill);padding:4px 14px;font-size:14px;font-weight:700}
+header{padding:16px 0 8px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+h1{font-size:22px;font-weight:800;color:var(--ink);line-height:1.25;font-family:'Manrope','Noto Sans TC',sans-serif}
+.date{font-size:14px;color:var(--ink-muted);white-space:nowrap}
+.mkt{background:#E7F4EE;border:1px solid #BFDDCF;border-radius:var(--r-md);color:var(--ink);margin:8px 0}
+.mkt summary{display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 16px;cursor:pointer;list-style:none;font-size:16px}
+.mkt summary::-webkit-details-marker{display:none}
+.mkt summary .grow{flex:1}
+.mkt .ico{color:var(--down)}
+.mkt p{padding:0 16px 12px;font-size:16px}
+.lead{font-size:16px;color:var(--ink);padding:8px 2px}
+.seg{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-pill);padding:4px;margin:8px 0}
+.seg span{flex:1;display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:var(--r-pill);font-weight:700;font-size:16px;color:var(--ink-body)}
+.seg .on{background:var(--primary);color:var(--on-primary)}
+h2{font-size:20px;font-weight:800;color:var(--ink);line-height:1.3;margin:16px 0 8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;box-shadow:var(--shadow-sm);margin-bottom:16px}
+.c-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.c-name{font-size:22px;font-weight:700;color:var(--ink);line-height:1.25}
+.c-sub{font-size:14px;color:var(--ink-muted);line-height:1.5}
+.c-price{text-align:right}
+.c-price .num{display:block;font-size:22px;font-weight:800;color:var(--ink);line-height:1.25}
+.pill{display:inline-flex;align-items:center;gap:4px;background:var(--primary-tint);color:var(--ink);border-radius:var(--r-pill);padding:2px 12px;font-size:14px;font-weight:700;margin-top:4px}
+.sep{height:1px;background:var(--border);margin:12px 0}
+.facts{list-style:none;display:grid;gap:4px}
+.facts li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:16px}
+.facts .k{color:var(--ink-muted);font-size:16px}
+.facts .v{color:var(--ink);font-weight:700;text-align:right}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tag{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:2px 12px;border-radius:var(--r-pill);font-size:14px;font-weight:700;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn)}
+.note{font-size:14px;color:var(--ink-muted);margin-top:12px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;margin-top:12px;border-radius:var(--r-pill);border:1px solid var(--border-strong);background:var(--surface);color:var(--ink);font-weight:700;font-size:16px;width:100%;font-family:inherit;cursor:pointer}
+.fold{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin:12px 0}
+.fold summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:8px 20px;cursor:pointer;list-style:none;font-weight:700;color:var(--ink)}
+.fold summary::-webkit-details-marker{display:none}
+.fold summary small{display:block;font-size:14px;font-weight:400;color:var(--ink-muted)}
+.fold[open] summary .ico{transform:rotate(180deg)}
+.fold .body{padding:0 20px 16px;font-size:16px}
+.fold ol,.fold ul{padding-left:22px;display:grid;gap:8px;margin:4px 0 12px}
+.fold p{margin-top:8px}
+.check{list-style:none;display:grid;gap:12px}
+.check li{display:flex;gap:12px;align-items:flex-start;font-size:16px;line-height:1.5}
+.check .ico{color:var(--down);margin-top:2px}
+.check .ico.ref{color:var(--ink-muted)}
+.check .k{display:block;font-size:14px;color:var(--ink-muted);line-height:1.4}
+.line{display:flex;gap:8px;align-items:flex-start;border-radius:var(--r-md);padding:8px 12px;font-size:16px;line-height:1.5;margin-top:12px}
+.line.good{background:var(--surface-tint);color:var(--ink)}
+.line.warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn)}
+.line.warn b{color:var(--warn)}
+.line .ico{margin-top:2px}
+.memo{margin-top:24px;font-size:14px;color:var(--ink-muted);border-top:1px dashed var(--border-strong);padding-top:12px}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+</style></head><body><svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="m8 12.3 2.8 2.8L16.2 9.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M8 12h8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m22 17-8.5-8.5-5 5L2 7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17h6v-6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/><path d="m7 15 4-5 3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="M4 21a2 2 0 0 1 2-2h13" fill="none" stroke="currentColor" stroke-width="1.75"/></symbol>
+</defs></svg><div class="wrap"><div class="dirtag"><span>方向 A：先瘦身</span></div>
+<header><h1>台股全市場選股</h1><span class="date">資料日 2026-11-13</span></header><details class="mkt"><summary><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-down"/></svg><span class="grow"><b>大盤明顯走弱</b>：只有 25% 的股票站在月線上</span><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></summary>
+<p>全市場 20 日報酬的中位數是 -13.0%。候選照常產生，要不要出手、出多少，自己斟酌。這是市場廣度的代理數字，不是大盤指數。</p></details><p class="lead"><b>相對優勢 48 檔</b>，歷史上單檔賺錢機率仍不到一半，排序不是推薦。</p><div class="seg" role="group" aria-label="檢視方式"><span class="on">卡片</span><span class="">清單</span></div><h2>今天的候選</h2><article class="card"><div class="c-head"><div><div class="c-name">冠西電</div><div class="c-sub"><span class="num">2466</span> · 光電</div></div><div class="c-price"><span class="num">393.0</span><span class="chg dn"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5 1 2h10z" fill="currentColor"/></svg>9.97%</span></div></div><div class="sep"></div><ul class="facts"><li><span class="k">60 天強弱</span><span class="v">贏過全市場 100%</span></li><li><span class="k">近 20 天比大盤</span><span class="v"><span class="up">多漲 94.3 個百分點</span></span></li><li><span class="k">離前高</span><span class="v">17.6%</span></li><li><span class="k">營收年增</span><span class="v"><span class="up">+54.2%</span></span></li></ul><div class="tags"><span class="tag"><svg class="ico" width="16" height="16" aria-hidden="true"><use href="#i-warn"/></svg>乖離大</span></div></article><article class="card"><div class="c-head"><div><div class="c-name">聯一光電</div><div class="c-sub"><span class="num">3441</span> · 光電</div><span class="pill">相對優勢</span></div><div class="c-price"><span class="num">198.0</span><span class="chg up"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 11 10H1z" fill="currentColor"/></svg>0.76%</span></div></div><div class="sep"></div><ul class="facts"><li><span class="k">60 天強弱</span><span class="v">贏過全市場 99.7%</span></li><li><span class="k">近 20 天比大盤</span><span class="v"><span class="dn">少漲 6.3 個百分點</span></span></li><li><span class="k">離前高</span><span class="v">32.5%</span></li><li><span class="k">營收年增</span><span class="v"><span class="up">+8.5%</span></span></li></ul></article><article class="card"><div class="c-head"><div><div class="c-name">濱川</div><div class="c-sub"><span class="num">1569</span> · 電腦及週邊設備</div><span class="pill">相對優勢</span></div><div class="c-price"><span class="num">97.3</span><span class="chg dn"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5 1 2h10z" fill="currentColor"/></svg>5.07%</span></div></div><div class="sep"></div><ul class="facts"><li><span class="k">60 天強弱</span><span class="v">贏過全市場 99.6%</span></li><li><span class="k">近 20 天比大盤</span><span class="v"><span class="up">多漲 26.1 個百分點</span></span></li><li><span class="k">離前高</span><span class="v">10.7%</span></li><li><span class="k">營收年增</span><span class="v"><span class="up">+133.5%</span></span></li></ul></article><p class="note" style="margin-top:0">上榜門檻：近 60、120 天都強過多數股票，而且今天至少亮一個訊號。</p><details class="fold"><summary><span>依據與限制<small>這份清單怎麼來的、要注意什麼</small></span><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="body">
+<p><b>一檔股票要過這幾關才會出現：</b></p>
+<ol><li>近 20 日平均成交量至少 500 張。</li><li>今天至少亮一個技術或籌碼訊號。</li><li>通過「強勢雙確認」：近 60 日和近 120 日都比多數股票強。</li><li>照近 60 日漲幅在全市場的排名排序。</li><li>成交金額排在今天候選前 1/3 的，另外標成重點那一組，叫「相對優勢」。</li></ol>
+<p><b>要注意：</b>歷史上「相對優勢」比其他候選賺錢機率多約 6 個百分點，但單檔賺錢機率是 46.5%，仍不到一半。排前面沒有證據比較會賺。這不是幫你配好的組合，挑哪檔你自己來。</p>
+</div></details><p class="memo">給 Andy 的備註：這張圖只示意版面。位置條、候選百分位、成交金額、月線與前高兩格都拿掉了。</p></div></body></html>

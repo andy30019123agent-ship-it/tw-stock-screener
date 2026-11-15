@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>方向 C 三分頁</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#F7F3F7;--surface:#FFFFFF;--surface-tint:#FDEEF4;--surface-deep:#2B0A20;--ink:#3D1130;--ink-body:#5A3B50;--ink-muted:#7E6274;--on-deep:#F7F3F7;--border:#ECDCE7;--border-strong:#DCC3D3;--primary:#FF4D8D;--primary-tint:#FFD6E5;--on-primary:#2B0A20;--accent:#FFC24B;--up:#BE2733;--down:#0A7650;--warn:#7A5200;--warn-bg:#FBF0D8;--warn-border:#E8CE94;--r-sm:10px;--r-md:16px;--r-lg:24px;--r-pill:999px;--shadow-sm:0 1px 2px rgba(61,17,48,.06);--shadow-md:0 6px 16px rgba(61,17,48,.08)}
+html{-webkit-text-size-adjust:100%}
+body{font-family:'Noto Sans TC',system-ui,-apple-system,'PingFang TC',sans-serif;background:var(--bg);color:var(--ink-body);line-height:1.6;font-size:16px;overflow-x:hidden}
+.wrap{max-width:430px;margin:0 auto;padding:0 16px 32px}
+.num,.chg{font-family:'Manrope','Noto Sans TC',sans-serif;font-variant-numeric:tabular-nums}
+b,strong{color:var(--ink);font-weight:700}
+.ico{flex:none;vertical-align:middle}
+.up{color:var(--up)}.dn{color:var(--down)}
+.chg{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:18px;line-height:1.3;white-space:nowrap}
+.dirtag{display:flex;justify-content:center;padding:8px 0 0}
+.dirtag span{background:var(--surface-deep);color:var(--on-deep);border-radius:var(--r-pill);padding:4px 14px;font-size:14px;font-weight:700}
+header{padding:16px 0 8px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+h1{font-size:22px;font-weight:800;color:var(--ink);line-height:1.25;font-family:'Manrope','Noto Sans TC',sans-serif}
+.date{font-size:14px;color:var(--ink-muted);white-space:nowrap}
+.mkt{background:#E7F4EE;border:1px solid #BFDDCF;border-radius:var(--r-md);color:var(--ink);margin:8px 0}
+.mkt summary{display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 16px;cursor:pointer;list-style:none;font-size:16px}
+.mkt summary::-webkit-details-marker{display:none}
+.mkt summary .grow{flex:1}
+.mkt .ico{color:var(--down)}
+.mkt p{padding:0 16px 12px;font-size:16px}
+.lead{font-size:16px;color:var(--ink);padding:8px 2px}
+.seg{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-pill);padding:4px;margin:8px 0}
+.seg span{flex:1;display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:var(--r-pill);font-weight:700;font-size:16px;color:var(--ink-body)}
+.seg .on{background:var(--primary);color:var(--on-primary)}
+h2{font-size:20px;font-weight:800;color:var(--ink);line-height:1.3;margin:16px 0 8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;box-shadow:var(--shadow-sm);margin-bottom:16px}
+.c-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.c-name{font-size:22px;font-weight:700;color:var(--ink);line-height:1.25}
+.c-sub{font-size:14px;color:var(--ink-muted);line-height:1.5}
+.c-price{text-align:right}
+.c-price .num{display:block;font-size:22px;font-weight:800;color:var(--ink);line-height:1.25}
+.pill{display:inline-flex;align-items:center;gap:4px;background:var(--primary-tint);color:var(--ink);border-radius:var(--r-pill);padding:2px 12px;font-size:14px;font-weight:700;margin-top:4px}
+.sep{height:1px;background:var(--border);margin:12px 0}
+.facts{list-style:none;display:grid;gap:4px}
+.facts li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:16px}
+.facts .k{color:var(--ink-muted);font-size:16px}
+.facts .v{color:var(--ink);font-weight:700;text-align:right}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tag{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding:2px 12px;border-radius:var(--r-pill);font-size:14px;font-weight:700;background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn)}
+.note{font-size:14px;color:var(--ink-muted);margin-top:12px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;margin-top:12px;border-radius:var(--r-pill);border:1px solid var(--border-strong);background:var(--surface);color:var(--ink);font-weight:700;font-size:16px;width:100%;font-family:inherit;cursor:pointer}
+.fold{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin:12px 0}
+.fold summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:8px 20px;cursor:pointer;list-style:none;font-weight:700;color:var(--ink)}
+.fold summary::-webkit-details-marker{display:none}
+.fold summary small{display:block;font-size:14px;font-weight:400;color:var(--ink-muted)}
+.fold[open] summary .ico{transform:rotate(180deg)}
+.fold .body{padding:0 20px 16px;font-size:16px}
+.fold ol,.fold ul{padding-left:22px;display:grid;gap:8px;margin:4px 0 12px}
+.fold p{margin-top:8px}
+.check{list-style:none;display:grid;gap:12px}
+.check li{display:flex;gap:12px;align-items:flex-start;font-size:16px;line-height:1.5}
+.check .ico{color:var(--down);margin-top:2px}
+.check .ico.ref{color:var(--ink-muted)}
+.check .k{display:block;font-size:14px;color:var(--ink-muted);line-height:1.4}
+.line{display:flex;gap:8px;align-items:flex-start;border-radius:var(--r-md);padding:8px 12px;font-size:16px;line-height:1.5;margin-top:12px}
+.line.good{background:var(--surface-tint);color:var(--ink)}
+.line.warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn)}
+.line.warn b{color:var(--warn)}
+.line .ico{margin-top:2px}
+.memo{margin-top:24px;font-size:14px;color:var(--ink-muted);border-top:1px dashed var(--border-strong);padding-top:12px}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-strong);margin:4px 0 8px}
+.tab{flex:1;min-height:48px;background:none;border:0;border-bottom:3px solid transparent;font:inherit;font-size:16px;font-weight:700;color:var(--ink-body);cursor:pointer}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--primary)}
+.panel[hidden]{display:none}
+.rows{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.row+.row{border-top:1px solid var(--border)}
+.row summary{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:72px;padding:8px 16px;cursor:pointer;list-style:none}
+.row summary::-webkit-details-marker{display:none}
+.r-n{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;color:var(--ink);line-height:1.3}
+.r-s{display:block;font-size:14px;color:var(--ink-muted);line-height:1.4}
+.r-r{text-align:right}.r-r .px{display:block;font-size:16px;font-weight:700;color:var(--ink);line-height:1.2}
+.dot{width:10px;height:10px;border-radius:50%;background:#B45309;display:inline-block;flex:none}
+.row[open]{background:var(--surface-tint)}
+.r-b{padding:4px 16px 16px}
+.legend{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-muted);padding:4px 2px 8px}
+.tool{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:64px;padding:12px 20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:12px;color:var(--ink);font-weight:700}
+.tool small{display:block;font-weight:400;font-size:14px;color:var(--ink-muted)}
+.sec{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 20px;margin-bottom:12px}
+.sec h3{font-size:18px;color:var(--ink);margin-bottom:4px}
+</style></head><body><svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="m8 12.3 2.8 2.8L16.2 9.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M8 12h8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="M12 9v4M12 17h.01" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m22 17-8.5-8.5-5 5L2 7" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 17h6v-6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/><path d="m7 15 4-5 3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="M4 21a2 2 0 0 1 2-2h13" fill="none" stroke="currentColor" stroke-width="1.75"/></symbol>
+</defs></svg><div class="wrap"><div class="dirtag"><span>方向 C：三分頁</span></div>
+<header><h1>台股全市場選股</h1><span class="date">資料日 2026-11-13</span></header><div class="tabs" role="tablist"><button class="tab" role="tab" data-p="today" aria-selected="true">今天</button><button class="tab" role="tab" data-p="basis" aria-selected="false">依據</button><button class="tab" role="tab" data-p="tools" aria-selected="false">工具</button></div><details class="mkt"><summary><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-down"/></svg><span class="grow"><b>大盤明顯走弱</b>：只有 25% 的股票站在月線上</span><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></summary>
+<p>全市場 20 日報酬的中位數是 -13.0%。候選照常產生，要不要出手、出多少，自己斟酌。這是市場廣度的代理數字，不是大盤指數。</p></details><section class="panel" id="p-today" role="tabpanel"><p class="lead">歷史上單檔賺錢機率仍不到一半，排前面不代表比較會賺，買不買你決定。</p>
+<div class="seg" role="group" aria-label="檢視方式"><span>卡片</span><span class="on">清單</span></div>
+<div class="legend"><span class="dot"></span>橘點＝有要小心的地方，點開看</div>
+<div class="rows"><details class="row"><summary><span class="r-l"><span class="r-n">冠西電<span class="dot" role="img" aria-label="有要小心的地方"></span></span><span class="r-s"><span class="num">2466</span> · 60 天贏過 100%</span></span><span class="r-r"><span class="num px">393.0</span><span class="chg dn"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5 1 2h10z" fill="currentColor"/></svg>9.97%</span></span></summary>
+<div class="r-b"><ul class="check"><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">強勢雙確認</span>60 天贏過 100%，120 天贏過 100%</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">今天亮的訊號</span>千張大戶增加</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">成交量夠</span>近 20 日平均 2,369 張</span></li></ul><div class="line warn"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-warn"/></svg><span><b>要小心：</b>乖離大，離月線已經很遠</span></div></div></details><details class="row"><summary><span class="r-l"><span class="r-n">聯一光電<span class="dot" role="img" aria-label="有要小心的地方"></span></span><span class="r-s"><span class="num">3441</span> · 60 天贏過 99.7%</span></span><span class="r-r"><span class="num px">198.0</span><span class="chg up"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 11 10H1z" fill="currentColor"/></svg>0.76%</span></span></summary>
+<div class="r-b"><ul class="check"><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">強勢雙確認</span>60 天贏過 99.7%，120 天贏過 99.9%</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">今天亮的訊號</span>破底翻、千張大戶增加</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">成交量夠</span>近 20 日平均 8,209 張</span></li></ul><div class="line good"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-check"/></svg><span><b>強在哪：</b>成交熱度排今天前 1/3</span></div><div class="line warn"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-warn"/></svg><span><b>要小心：</b>近 20 天輸大盤 6.3 個百分點；離前高還差 33%</span></div></div></details><details class="row"><summary><span class="r-l"><span class="r-n">濱川</span><span class="r-s"><span class="num">1569</span> · 60 天贏過 99.6%</span></span><span class="r-r"><span class="num px">97.3</span><span class="chg dn"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5 1 2h10z" fill="currentColor"/></svg>5.07%</span></span></summary>
+<div class="r-b"><ul class="check"><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">強勢雙確認</span>60 天贏過 99.6%，120 天贏過 97.7%</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">今天亮的訊號</span>千張大戶增加</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">成交量夠</span>近 20 日平均 15,177 張</span></li></ul><div class="line good"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-check"/></svg><span><b>強在哪：</b>成交熱度排今天前 1/3</span></div></div></details><details class="row"><summary><span class="r-l"><span class="r-n">晉泰</span><span class="r-s"><span class="num">6221</span> · 60 天贏過 99.6%</span></span><span class="r-r"><span class="num px">43.35</span><span class="chg up"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 11 10H1z" fill="currentColor"/></svg>1.05%</span></span></summary>
+<div class="r-b"><ul class="check"><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">強勢雙確認</span>60 天贏過 99.6%，120 天贏過 98.2%</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">今天亮的訊號</span>同業低估</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">成交量夠</span>近 20 日平均 8,850 張</span></li></ul></div></details><details class="row"><summary><span class="r-l"><span class="r-n">競國<span class="dot" role="img" aria-label="有要小心的地方"></span></span><span class="r-s"><span class="num">6108</span> · 60 天贏過 99.4%</span></span><span class="r-r"><span class="num px">41.0</span><span class="chg up"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 11 10H1z" fill="currentColor"/></svg>4.33%</span></span></summary>
+<div class="r-b"><ul class="check"><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">強勢雙確認</span>60 天贏過 99.4%，120 天贏過 98.9%</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">今天亮的訊號</span>千張大戶增加、同業低估</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">成交量夠</span>近 20 日平均 7,229 張</span></li></ul><div class="line warn"><svg class="ico" width="18" height="18" aria-hidden="true"><use href="#i-warn"/></svg><span><b>要小心：</b>乖離大，離月線已經很遠</span></div></div></details><details class="row"><summary><span class="r-l"><span class="r-n">律勝</span><span class="r-s"><span class="num">3354</span> · 60 天贏過 99.2%</span></span><span class="r-r"><span class="num px">44.05</span><span class="chg up"><svg class="tri" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5 11 10H1z" fill="currentColor"/></svg>0.80%</span></span></summary>
+<div class="r-b"><ul class="check"><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">強勢雙確認</span>60 天贏過 99.2%，120 天贏過 89.9%</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">今天亮的訊號</span>千張大戶增加</span></li><li><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-check"/></svg><span><span class="k">成交量夠</span>近 20 日平均 3,728 張</span></li></ul></div></details></div>
+<p class="note">今天 144 檔過關，先列前 6 檔，照近 60 天漲幅排。</p>
+<details class="fold"><summary><span>這份清單怎麼來的<small>過了哪幾關、要注意什麼</small></span><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="body">
+<p><b>一檔股票要過這幾關才會出現：</b></p>
+<ol><li>近 20 日平均成交量至少 500 張。</li><li>今天至少亮一個技術或籌碼訊號。</li><li>通過「強勢雙確認」：近 60 日和近 120 日都比多數股票強。</li><li>照近 60 日漲幅在全市場的排名排序。</li><li>成交金額排在今天候選前 1/3 的，另外標成重點那一組，叫「成交熱度前段」。</li></ol>
+<p><b>要注意：</b>歷史上「成交熱度前段」比其他候選賺錢機率多約 6 個百分點，但單檔賺錢機率是 46.5%，仍不到一半。排前面沒有證據比較會賺。這不是幫你配好的組合，挑哪檔你自己來。</p>
+</div></details></section><section class="panel" id="p-basis" role="tabpanel" hidden><div class="sec"><h3>結論</h3><p>一檔股票要過 3 關才出現，再照近 60 日漲幅排序。過關只代表「最近比較強」，不代表接下來會漲。</p></div>
+<div class="sec"><h3>證據</h3><p>歷史回測，成交熱度前段這組比其他候選賺錢機率多約 6 個百分點，單檔賺錢機率是 46.5%。</p></div>
+<div class="sec"><h3>限制</h3><ul style="padding-left:22px;display:grid;gap:8px;margin-top:4px"><li>單檔賺錢機率仍不到一半。</li><li>排前面沒有證據比較會賺。</li><li>「今天至少亮一個訊號」這一關，目前每種訊號在回測裡的加權都是 0。</li></ul></div>
+<details class="fold"><summary><span>完整的五關說明<small>從成交量到成交熱度</small></span><svg class="ico" width="20" height="20" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="body">
+<p><b>一檔股票要過這幾關才會出現：</b></p>
+<ol><li>近 20 日平均成交量至少 500 張。</li><li>今天至少亮一個技術或籌碼訊號。</li><li>通過「強勢雙確認」：近 60 日和近 120 日都比多數股票強。</li><li>照近 60 日漲幅在全市場的排名排序。</li><li>成交金額排在今天候選前 1/3 的，另外標成重點那一組，叫「成交熱度前段」。</li></ol>
+<p><b>要注意：</b>歷史上「成交熱度前段」比其他候選賺錢機率多約 6 個百分點，但單檔賺錢機率是 46.5%，仍不到一半。排前面沒有證據比較會賺。這不是幫你配好的組合，挑哪檔你自己來。</p>
+</div></details></section><section class="panel" id="p-tools" role="tabpanel" hidden><div class="tool"><span>進階篩選<small>自己設條件找股票</small></span><svg style='transform:rotate(-90deg)' class="ico" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></div><div class="tool"><span>市況建議<small>依今天大盤給的提醒</small></span><svg style='transform:rotate(-90deg)' class="ico" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></div><div class="tool"><span>訊號權重表<small>每種訊號回測的成績</small></span><svg style='transform:rotate(-90deg)' class="ico" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></div><div class="tool"><span>停損表<small>各種出場設定的歷史結果</small></span><svg style='transform:rotate(-90deg)' class="ico" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></div></section><p class="memo">給 Andy 的備註：研究工具與依據搬到另外兩頁；點「依據」「工具」可切換看看。要小心的橘點門檻是暫定。</p></div><script>
+(function(){var tabs=document.querySelectorAll('.tab');
+function show(id){tabs.forEach(function(t){var on=t.dataset.p===id;t.setAttribute('aria-selected',on);document.getElementById('p-'+t.dataset.p).hidden=!on;});}
+tabs.forEach(function(t){t.addEventListener('click',function(){show(t.dataset.p);});});})();
+</script></body></html>
