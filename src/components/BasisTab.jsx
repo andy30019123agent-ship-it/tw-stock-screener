@@ -1,17 +1,30 @@
-import { TrendingUp, AlertTriangle, Info, ListChecks, CircleCheck, CircleMinus } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Info, ListChecks, CircleCheck, CircleMinus, ChevronDown } from 'lucide-react'
 import { usablePair, winDiffText, evDiffText, edgeSentence, staleText, biasNote, evVerdictOf, normalizeTier } from '../lib/tierVerdict'
 import { fmtRange } from '../lib/fmtRange'
-import { signed, commonReasons, reasonView, sortRuleText, MIN_VOL_LOTS, GATE_LABELS } from '../lib/cardFacts'
+import { signed, commonReasons, reasonView, sortRuleText, MIN_VOL_LOTS, GATE_LABELS, RS_STRONG_PCT, RS_CONFIRM_120_PCT, EDGE_TEXT } from '../lib/cardFacts'
 
 // 「依據」分頁（2026-11-16 三分頁改版，Andy 核准方向 A＋C、卡片改方向 B）。由上而下：
 //   1. 這份清單怎麼來的（口語版；關卡叫法與卡片上的過關清單一一對應，共用 cardFacts.GATE_LABELS）
 //   2. 真實績效紀錄（成績單：實際發出的候選，不是回測）
 //   3. 回測結論與證據（原「這些數字怎麼來的」的結論／證據兩層，內容原樣搬來）
 //   4. 限制與但書（原「限制」層，內容原樣搬來）
-// 原本在主頁、預設收合；現在整頁就是依據，所以直接展開。
+// 「這份清單怎麼來的」與結論直接展開；成績單、證據、限制各自收成可展開區塊（預設收合，內容一字不少）。
 // 「條件層級的歷史分佈」照核准規格搬到「工具」分頁。
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
+
+// 可展開區塊：原生 details/summary（鍵盤、報讀器都免費支援）。標題講清楚裡面有什麼。
+function Fold({ title, hint, children, region }) {
+  return (
+    <details className="bt-fold" data-region={region}>
+      <summary>
+        <span><b>{title}</b>{hint && <small>{hint}</small>}</span>
+        <ChevronDown className="bt-fold-chev" size={20} strokeWidth={2} aria-hidden="true" />
+      </summary>
+      <div className="bt-fold-body">{children}</div>
+    </details>
+  )
+}
 
 const pct1 = v => (isNum(v) ? `${(v * 100).toFixed(1)}%` : '—')
 const sPct = (v, d = 1) => (isNum(v) ? `${signed(v, d)}%` : '—')
@@ -126,18 +139,20 @@ function BasisLayers({ tierStats, gate }) {
         <span className="opp-layer-k">結論</span>
         {conclusion}
       </div>
+      {stale && (
+        <p className="opp-basis-warn"><AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" />{stale}，數字可能過時</p>
+      )}
+      <Fold region="證據" title="證據：歷史對照表" hint="相對優勢和其他候選的賺錢機率、平均每筆、誤差範圍與樣本數">
       <div className="opp-layer">
         <span className="opp-layer-k">證據</span>
         {evidence || <p>歷史對照表暫時取不到。</p>}
-        {stale && (
-          <p className="opp-basis-warn"><AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" />{stale}，數字可能過時</p>
-        )}
         <p className="opp-basis-note">每一層的賺錢機率與誤差範圍，在「工具」分頁的「條件層級的歷史分佈」。</p>
       </div>
+      </Fold>
     </section>
 
     <section className="bt-sec" data-region="限制與但書">
-      <h2 className="bt-h">限制與但書</h2>
+      <Fold region="限制" title="限制與但書" hint="門檻放寬的日子、回測重播不了的條件、離前高、這不是購買組合等">
       <div className="opp-layer">
         <span className="opp-layer-k">限制</span>
         <ul className="opp-limits">
@@ -157,6 +172,7 @@ function BasisLayers({ tierStats, gate }) {
           <li><b>這些都是歷史回測</b>，未必代表未來；僅供研究參考，非投資建議。</li>
         </ul>
       </div>
+      </Fold>
     </section>
   </>)
 }
@@ -173,17 +189,17 @@ function HowMade({ opp, tierStats }) {
   const gateOn = gate?.applied !== false
   const steps = [
     { k: GATE_LABELS.strong, ok: gateOn, t: gateOn
-      ? <>近 60 天、近 120 天的漲幅都排在全市場前段（全市場漲幅前段、回測最穩的門檻）。卡片上寫這檔贏過全市場幾 %。</>
+      ? <>近 60 天漲幅贏過全市場 {Math.round(RS_STRONG_PCT * 100)}% 的股票，而且近 120 天也贏過 {Math.round(RS_CONFIRM_120_PCT * 100)}%（回測最穩的門檻）。</>
       : <>今天「{gate?.label || GATE_LABELS.strong}」門檻沒套用（過關的不足 {gate?.min_pool ?? 20} 檔或強弱資料算不出來），改看當日有訊號的全部股票。</> },
     { k: GATE_LABELS.signal, ok: true, t: <>當天至少亮一個技術或籌碼訊號，一個都沒亮的刷掉。卡片上列出亮了哪幾個（資料有寫才列）。</> },
     { k: GATE_LABELS.volume, ok: true, t: <>近 20 日平均成交量至少 {MIN_VOL_LOTS} 張。</> },
-    { k: GATE_LABELS.revenue, ok: true, t: <>最近一個月營收沒有年減；查不到營收的不剔除，卡片標「營收資料缺」。</> },
+    { k: GATE_LABELS.revenue, ok: true, t: <>最近一個月營收沒有年減；查不到營收的不剔除（卡片上這一行不打勾、照實寫查不到；系統標「營收資料缺」）。</> },
   ]
   return (
     <section className="bt-sec bt-how" data-region="這份清單怎麼來的">
       <h2 className="bt-h">這份清單怎麼來的</h2>
       <p className="bt-lead">
-        <span>{opp ? <>今天共 <b className="mono">{poolN}</b> 檔候選，每一檔都過了下面這幾關（卡片上的勾就是這幾關）：</> : <>每一檔候選都要過下面這幾關（卡片上的勾就是這幾關）：</>}</span>
+        <span>{opp ? <>今天共 <b className="mono">{poolN}</b> 檔候選，都是照下面這幾關挑出來的。</> : <>每一檔候選都是照下面這幾關挑出來的。</>}卡片上的過關清單用一樣的叫法，資料有寫的數字才列。</span>
       </p>
       <ol className="bt-steps">
         {steps.map(s => (
@@ -194,8 +210,8 @@ function HowMade({ opp, tierStats }) {
         ))}
       </ol>
       <p className="bt-lead"><ListChecks size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>排順序</b>：{sortRule}；排前面沒有證據比較會賺。</span></p>
-      <p className="bt-lead"><TrendingUp size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>相對優勢（卡片上的「強在哪」）</b>：成交金額排今天候選前 1/3 的另外分一組，跟漲得強不強無關；其他的叫「其他候選」，沒有分類稱號。</span></p>
-      <p className="bt-lead"><AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>要小心</b>：卡片上這一行只列既有標記（乖離大、乖離排前段、法說會將近、營收資料缺）和近 20 天輸大盤幾個百分點，不另外判斷好壞；清單上的橘點就是這一行有內容。</span></p>
+      <p className="bt-lead"><TrendingUp size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>相對優勢</b>：{EDGE_TEXT}的另外分一組，意思是成交熱絡，不是漲得比較強；其他的叫「其他候選」，沒有分類稱號。</span></p>
+      <p className="bt-lead"><AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>要小心與橘點</b>：卡片上「要小心」只列既有標記（乖離大、乖離排前段、法說會將近）和近 20 天輸大盤幾個百分點，不另外判斷好壞。清單上的橘點只看硬狀況：系統標的風險（乖離大、營收資料缺）或法說會將近。</span></p>
       {common && (
         <p className="bt-lead"><Info size={16} strokeWidth={1.75} aria-hidden="true" />
           <span>今天 {poolN} 檔候選的理由都一樣：「{common.map(r => reasonView(r).text).join('、')}」，所以卡片上不重複列。</span></p>
@@ -211,7 +227,7 @@ function Scoreboard({ board }) {
   if (!board) return null
   return (
     <section className="bt-sec" data-region="真實績效紀錄">
-      <h2 className="bt-h">真實績效紀錄</h2>
+      <Fold region="成績單" title="真實績效紀錄（成績單）" hint="網站實際發出過的候選，入選後的賺錢機率與平均報酬">
       <p className="bt-lead"><span>這是網站實際發出過的候選、入選後真的走完的結果，不是回測。</span></p>
         <div className="opp-board">
           <span className="opp-board-title"><TrendingUp size={16} strokeWidth={1.75} />候選情報成績單</span>
@@ -227,6 +243,7 @@ function Scoreboard({ board }) {
             <span className="opp-muted">樣本累積中——每天留檔，滿 {board.forward_days || 20} 交易日的舊 picks 才計入實績。</span>
           )}
         </div>
+      </Fold>
     </section>
   )
 }

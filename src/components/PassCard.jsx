@@ -1,9 +1,9 @@
 import { AlertTriangle, CircleCheck, CircleMinus, ChevronDown, LineChart, TrendingUp } from 'lucide-react'
-import { signed, beatPct, dirOf, reasonView, passChecks, strengthLine, cautionList, hasCaution, highGapLine } from '../lib/cardFacts'
+import { signed, beatText, dirOf, reasonView, passChecks, edgeLine, cautionList, hasRiskDot, highGapLine } from '../lib/cardFacts'
 
 // 「過關清單」卡片（2026-11-16 Andy 核准：分頁照方向 C、卡片改方向 B）。
 // 卡片檢視的每張卡、清單展開後的內容都用 PassBody 這同一個元件：
-//   過關清單（每關一行、帶這檔的實際數字）→ 強在哪（只有相對優勢）→ 要小心（有才出現）
+//   過關清單（每關一行、帶這檔的實際數字）→ 相對優勢（只有那一組才有，卡片內只講這一次）→ 要小心（有才出現）
 //   → 離前高（中性事實）→ 看 K 線。
 // 事實全部由 lib/cardFacts.js 的純函式組裝（有單測）；新欄位缺時那幾行自動省略或改成不帶數字的說法。
 // 卡片本體不再可點（審計 U1：卡片點了開 K 線、清單點了展開，行為不一致），K 線只由按鈕開。
@@ -40,7 +40,7 @@ export function Price({ p, full, compact = false }) {
 // 一檔的內容（卡片與清單展開共用）
 export function PassBody({ p, gate, onChart, showReasons }) {
   const checks = passChecks(p, gate)
-  const strong = strengthLine(p)
+  const edge = edgeLine(p)
   const cautions = cautionList(p)
   const gap = highGapLine(p.close, p.recent_high20)
   // 每檔理由不一樣時才列（理由全同的那天，「依據」分頁講一次就好）；回測權重分 > 0 才列
@@ -64,8 +64,8 @@ export function PassBody({ p, gate, onChart, showReasons }) {
           </li>
         ))}
       </ul>
-      {strong && (
-        <p className="pc-line pc-strong"><TrendingUp size={16} strokeWidth={2} aria-hidden="true" /><span><b>強在哪：</b>{strong}</span></p>
+      {edge && (
+        <p className="pc-line pc-strong"><TrendingUp size={16} strokeWidth={2} aria-hidden="true" /><span><b>相對優勢：</b>{edge}</span></p>
       )}
       {cautions.length > 0 && (
         <p className="pc-line pc-caution"><AlertTriangle size={16} strokeWidth={2} aria-hidden="true" /><span><b>要小心：</b>{cautions.join('、')}</span></p>
@@ -79,7 +79,6 @@ export function PassBody({ p, gate, onChart, showReasons }) {
 
 // 卡片檢視：不放名次號碼、不做「領先卡」特殊放大——這批清單不是排行榜。
 export function CandidateCard({ p, full, gate, first, onOpen, showReasons }) {
-  const edge = !!strengthLine(p)
   return (
     <article className="opp-card" aria-label={`${p.name}（${p.id}）`} {...(first ? { 'data-first-pick': '' } : {})}>
       <div className="opp-card-head">
@@ -90,7 +89,6 @@ export function CandidateCard({ p, full, gate, first, onOpen, showReasons }) {
             {full?.market && <>・{full.market}</>}
             {full?.industry && <>・{full.industry}</>}
           </div>
-          {edge && <span className="pc-edge">相對優勢</span>}
         </div>
         <Price p={p} full={full} />
       </div>
@@ -99,12 +97,11 @@ export function CandidateCard({ p, full, gate, first, onOpen, showReasons }) {
   )
 }
 
-// 清單檢視：一行一檔＝名稱、代號、60 天贏過 X%、現價漲跌；「要小心」有內容時名稱旁一個橘點。
+// 清單檢視：一行一檔＝名稱、代號、60 天漲幅贏過 X%、現價漲跌；有硬狀況（risk_flags、法說會將近）時名稱旁一個橘點。
 // 點一下就地展開同一份 PassBody（不跳頁），再點收合。
 export function CandidateRow({ p, full, gate, first, open, onToggle, onOpen, showReasons }) {
-  const beat = beatPct(p.rs_pct_60)
-  const dot = hasCaution(p)
-  const edge = !!strengthLine(p)
+  const beat = beatText(p.rs_pct_60)
+  const dot = hasRiskDot(p)
   const detailId = `opp-row-${p.id}`
   return (
     <li className={`opp-row${open ? ' open' : ''}`} data-pick-row {...(first ? { 'data-first-pick': '' } : {})}>
@@ -112,22 +109,17 @@ export function CandidateRow({ p, full, gate, first, open, onToggle, onOpen, sho
         <span className="opp-row-main">
           <span className="opp-row-top">
             <span className="opp-row-name" data-pick-name>{p.name}</span>
-            {dot && <><span className="opp-dot" aria-hidden="true" data-risk-dot /><span className="sr-only">（有要小心的地方）</span></>}
-          </span>
-          <span className="opp-row-sub">
             <span className="mono opp-row-code" data-pick-code>{p.id}</span>
-            {beat != null && <> · 60 天贏過 <b className="mono">{beat}%</b></>}
+            {dot && <><span className="opp-dot" aria-hidden="true" data-risk-dot /><span className="sr-only">（有風險標記）</span></>}
           </span>
+          {beat != null && <span className="opp-row-sub">60 天漲幅贏過 <b className="mono">{beat}</b></span>}
         </span>
         <Price p={p} full={full} compact />
         <ChevronDown className={`opp-row-chev${open ? ' is-open' : ''}`} size={18} strokeWidth={2} aria-hidden="true" />
       </button>
       {open && (
         <div className="opp-row-detail" id={detailId}>
-          <p className="opp-card-sub">
-            {[full?.market, full?.industry].filter(Boolean).join('・')}
-            {edge && <span className="pc-edge pc-edge-inline">相對優勢</span>}
-          </p>
+          {(full?.market || full?.industry) && <p className="opp-card-sub">{[full?.market, full?.industry].filter(Boolean).join('・')}</p>}
           <PassBody p={p} gate={gate} onChart={onOpen} showReasons={showReasons} />
         </div>
       )}

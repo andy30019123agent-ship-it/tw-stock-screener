@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { AlertTriangle, ChevronRight, ChevronDown, LayoutGrid, List, ListChecks } from 'lucide-react'
+import { AlertTriangle, ChevronRight, ChevronDown, LayoutGrid, List } from 'lucide-react'
 import { CandidateCard, CandidateRow } from './PassCard'
 import { edgeWinHeadline, staleText, gateNote, normalizeTier } from '../lib/tierVerdict'
 import { readView, writeView } from '../lib/viewPref'
@@ -146,13 +146,13 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
         <h2 className="opp-listtitle">相對優勢 <span className="mono">{tiered.edge.length}</span> 檔</h2>
         <ViewToggle view={view} onChange={changeView} />
       </div>
+      {/* 圖例併成一段：分組意思＋排序＋（清單檢視才有的）橘點說明 */}
       <p className="opp-legend opp-legend-sm">
-        <ListChecks size={16} strokeWidth={1.75} aria-hidden="true" />
-        <span>成交金額排今天候選前 1/3・{sortRule}</span>
+        <span>
+          ＝成交金額排今天候選前 1/3，{sortRule}。
+          {anyDot && <span className="opp-dot-legend"><span className="opp-dot" aria-hidden="true" />橘點＝有風險標記，點開看</span>}
+        </span>
       </p>
-      {anyDot && (
-        <p className="opp-dot-legend"><span className="opp-dot" aria-hidden="true" />橘點＝有要小心的地方，點開看</p>
-      )}
 
       {tiered.edge.length > 0
         ? <TierBlock list={tiered.edge} view={view} byId={byId} gate={opp.gate} onPick={handlePick} previewN={previewN}
