@@ -9,7 +9,9 @@ import opportunities as opp
 # feat_pct／tier 於 2026-07-26 加入（候選情報三分類，取代固定 Top N 購買組合語意）。
 CONTRACT_KEYS = {"id", "name", "score", "reasons", "close", "support_ma20",
                  "recent_high20", "rs20", "rs_pct_60", "revenue_yoy", "earnings_date", "risk_flags",
-                 "feat_pct", "tier", "bias_high"}
+                 "feat_pct", "tier", "bias_high",
+                 # 2026-11-16 加：卡片「過關清單」用（只加欄位，既有欄位不動）
+                 "fired_labels", "rs_pct_120", "avg_vol_lots"}
 
 # 簡化權重表：糾結轉強 3 分、爆量突破 2 分、其餘預設 1
 WEIGHTS = {"signals": {
@@ -36,6 +38,27 @@ def test_contract_keys_and_score_sum():
     assert p["reasons"] == ["糾結轉強", "爆量突破"]
     assert p["revenue_yoy"] == 10.0
     assert p["support_ma20"] == 95.0
+
+
+def test_過關清單欄位_列出所有亮的引擎訊號含權重0的():
+    # sn_break_low_recover（破底翻）不在 WEIGHTS → 權重 0 → 不進 reasons，但它確實讓這檔過了
+    # 「當天至少亮一個訊號」這一關，所以 fired_labels 必須列出來。
+    # 檔尾有同名 _stock 會蓋掉上面那個，且預設帶 sn_squeeze_breakout → 這裡明確關掉
+    results = [_stock("1212", signal_ma=True, sn_break_low_recover=True, sn_squeeze_breakout=False,
+                      rs_pct_120=0.91, avg_vol_lots=1234)]
+    o = opp.build_opportunities(results, WEIGHTS, {"1212": {"yoy": 1.0}}, "2026-07-02")
+    p = o["picks"][0]
+    assert p["reasons"] == ["糾結轉強"]
+    assert set(p["fired_labels"]) == {"糾結轉強", "破底翻"}
+    assert p["rs_pct_120"] == 0.91
+    assert p["avg_vol_lots"] == 1234
+
+
+def test_過關清單欄位_缺資料時為None不報錯():
+    results = [_stock("1313", signal_ma=True, sn_squeeze_breakout=False, rs_pct_120=None)]
+    p = opp.build_opportunities(results, WEIGHTS, {"1313": {"yoy": 1.0}}, "2026-07-02")["picks"][0]
+    assert p["rs_pct_120"] is None
+    assert p["fired_labels"] == ["糾結轉強"]
 
 
 def test_revenue_yoy_negative_dropped():

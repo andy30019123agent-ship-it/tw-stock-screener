@@ -220,6 +220,12 @@ def build_opportunities(results, weights, revenue, data_date):
             "recent_high20": recent_high20,
             "rs20": r.get("rs20"),
             "rs_pct_60": r.get("rs_pct_60"),      # 排序依據（全市場 60 日報酬百分位）
+            # 2026-11-16 加（只加欄位）：卡片「過關清單」要照實列出這檔過了哪幾關、帶實際數字。
+            # fired_labels＝當天亮的**引擎訊號**全部（含權重 0 的），與 reasons（只列有權重的）不同：
+            # 這裡回答的是「它憑什麼過『當天至少亮一個訊號』這一關」，不是「哪個訊號加了分」。
+            "fired_labels": [bt.SIGNAL_LABELS[k] for k in fired if k in bt.SIGNAL_LABELS],
+            "rs_pct_120": r.get("rs_pct_120"),    # 強勢雙確認的另一半（全市場 120 日報酬百分位）
+            "avg_vol_lots": r.get("avg_vol_lots"),  # 過 MIN_VOL_LOTS 那一關的實際數字（20 日均量，張）
             "revenue_yoy": yoy,
             "earnings_date": r.get("earnings_date"),
             "risk_flags": risk,
@@ -336,6 +342,9 @@ def update_picks_history(opp):
             "picks": [{"id": p["id"], "name": p["name"],
                        "close": p["close"], "score": p["score"],
                        "reasons": p.get("reasons"),        # 當時的加權訊號（權重會隨重算改變）
+                       # 2026-11-16 加：當天亮了哪些引擎訊號（含權重 0 的）。日後要評估「至少亮一個
+                       # 訊號」這一關該不該留、哪個訊號帶進來的候選表現差，只能靠這欄；當天不存補不回來。
+                       "fired_labels": p.get("fired_labels"),
                        "rs20": p.get("rs20"),
                        "rs_pct_60": p.get("rs_pct_60"),
                        "risk_flags": p.get("risk_flags"),
