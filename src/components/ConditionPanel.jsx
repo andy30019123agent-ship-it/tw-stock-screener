@@ -111,7 +111,7 @@ export default function ConditionPanel({
 }) {
   const c = conditions
   // 說明文字裡的戰績數字一律讀 signal_weights.json（不寫死，資料每週重算會變）；取不到就不顯示數字
-  const fmtPp = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}pp`
+  const fmtPp = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)} 個百分點`
   const isNum = v => typeof v === 'number' && Number.isFinite(v)
   const shishiNet = isNum(weights?.signals?.signal_shishi?.net_excess) ? weights.signals.signal_shishi.net_excess : null
   const bestSn = Object.entries(weights?.signals || {})
@@ -170,7 +170,7 @@ export default function ConditionPanel({
                     title={st?._isBest
                       ? `成本後超額。注意：這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
                       : '成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的'}>
-                    {btnScore >= 0 ? '+' : ''}{btnScore}<small>pp</small>
+                    {btnScore >= 0 ? '+' : ''}{btnScore}<small> 個百分點</small>
                     {st?._isBest && <em className="score-best" title="顯示的是最佳形態的成績">＊</em>}</span>}
                   {tm && <sup className={tm.cls}>{tm.mark}</sup>}
                 </button>
@@ -190,8 +190,8 @@ export default function ConditionPanel({
                     <th title="典型的一筆交易結果（中位數）。訊號報酬極度右偏：平均被少數飆股拉高，中位數才是「大多數時候」的樣子">中位數</th>
                     <th title="扣掉成本後仍贏過同日大盤的比例。低於 50% 代表多數交易是輸給大盤的，靠少數大贏撐整體">贏大盤</th>
                     <th title="沒扣成本、沒扣大盤的原始超額報酬（僅供對照，別拿它當決策依據）">平均超額</th>
-                    <th title="平均獲利 ÷ 平均虧損。<1 代表賺小賠大、勝率再高也危險">賺賠比</th>
-                    <th>勝率</th><th>樣本</th></tr></thead>
+                    <th title="平均獲利 ÷ 平均虧損。<1 代表賺小賠大、賺錢機率再高也危險">賺賠比</th>
+                    <th title="沒扣成本、只減掉同日全市場平均後，贏過大盤的比例（跟前面「贏大盤」不同：那欄是扣完成本才算）">贏大盤機率</th><th>樣本</th></tr></thead>
                   <tbody>
                     {orderedPresets.map(p => {
                       const s = presetStat(p.key, weights)
@@ -207,7 +207,7 @@ export default function ConditionPanel({
                             // ⚠️ 2026-07-26 修正：title 直接放在 SVG 元素上不會出現 tooltip（Blink 只認
                             // <title> 子元素，實測 svgEl.title 是 undefined）——用 <span title> 包住才會有
                             // hover 提示，並補 aria-label 讓螢幕報讀器也讀得到（icon 本身沒有可見文字）。
-                            <span className="trap-flag-wrap" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了" aria-label="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了">
+                            <span className="trap-flag-wrap" title="高賺錢機率陷阱：賺錢機率高但扣成本後贏不過大盤，別被賺錢機率騙了" aria-label="高賺錢機率陷阱：賺錢機率高但扣成本後贏不過大盤，別被賺錢機率騙了">
                               <AlertTriangle size={13} strokeWidth={2} className="trap-flag" aria-hidden="true" />
                             </span>}
                             {!q?.high_win_trap && q?.loses_to_market &&
@@ -215,14 +215,14 @@ export default function ConditionPanel({
                                 <AlertTriangle size={13} strokeWidth={2} className="trap-flag" aria-hidden="true" />
                               </span>}</td>
                           <td className={ne > 0 ? 'good' : ne < 0 ? 'bad' : ''}>
-                            {ne != null ? `${ne >= 0 ? '+' : ''}${ne}pp` : s ? '—' : '尚無回測'}</td>
+                            {ne != null ? `${ne >= 0 ? '+' : ''}${ne}` : s ? '—' : '尚無回測'}</td>
                           <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
                           <td className={q?.median_net_excess > 0 ? 'good' : q?.median_net_excess < 0 ? 'bad' : ''}>
-                            {q?.median_net_excess != null ? `${q.median_net_excess >= 0 ? '+' : ''}${q.median_net_excess}pp` : '—'}</td>
+                            {q?.median_net_excess != null ? `${q.median_net_excess >= 0 ? '+' : ''}${q.median_net_excess}` : '—'}</td>
                           <td className={q?.beat_market_rate != null && q.beat_market_rate < 0.5 ? 'combo-weak' : ''}>
                             {q?.beat_market_rate != null ? `${Math.round(q.beat_market_rate * 100)}%` : '—'}</td>
                           <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
-                            {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '—'}</td>
+                            {s ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}` : '—'}</td>
                           <td className={q && q.payoff_ratio != null && q.payoff_ratio < 1 ? 'bad' : ''}>
                             {q && q.payoff_ratio != null ? q.payoff_ratio : '—'}</td>
                           <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
@@ -234,6 +234,7 @@ export default function ConditionPanel({
                 </table>
               </div>
               <p className="strategy-note">
+                表中成本後超額、中位數、平均超額的單位都是個百分點。
                 平均超額＝進場後 20 交易日報酬減去同日全市場平均（衡量比隨便買強多少）；
                 <b>樣本外</b>＝只用過去 1 年資料算、再拿之後沒看過的日子驗，「穩健」才是真本事、「過擬合」是背答案；
                 <b>成本後超額</b>＝扣掉手續費證交稅、再扣掉大盤後真正多賺的（最重要），<b>賺賠比 &lt;1</b> 代表賺小賠大、
@@ -263,7 +264,7 @@ export default function ConditionPanel({
               <summary>新訊號研究：相對強弱＋產業輪動（樣本外驗證中）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>新訊號</th><th>平均超額</th><th>樣本外</th><th>勝率</th><th>樣本</th></tr></thead>
+                  <thead><tr><th>新訊號</th><th>平均超額（個百分點）</th><th>樣本外</th><th title="沒扣成本、只減掉同日全市場平均後，贏過大盤的比例">贏大盤機率</th><th>樣本</th></tr></thead>
                   <tbody>
                     {XSECT_SIGNALS.map(x => {
                       const s = weights.signals[x.key]
@@ -272,7 +273,7 @@ export default function ConditionPanel({
                         <tr key={x.key}>
                           <td title={x.hint}>{x.label}</td>
                           <td className={s && s.avg_excess > 0 ? 'good' : s && s.avg_excess < 0 ? 'bad' : ''}>
-                            {s && s.avg_excess != null ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '尚無回測'}</td>
+                            {s && s.avg_excess != null ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}` : '尚無回測'}</td>
                           <td>{ob ? <span className={`oos-badge ${ob.cls}`} title={ob.title}>{ob.text}</span> : '—'}</td>
                           <td>{s && s.excess_win_rate != null ? `${Math.round(s.excess_win_rate * 100)}%` : '—'}</td>
                           <td>{s && s.samples ? s.samples : '—'}</td>
@@ -297,15 +298,15 @@ export default function ConditionPanel({
               <summary>出場分析：持有多久最划算（已扣交易成本）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>出場方式</th><th>淨報酬</th><th>淨超額</th><th>勝率</th><th>賺賠比</th><th>平均持有</th></tr></thead>
+                  <thead><tr><th>出場方式</th><th>淨報酬（個百分點）</th><th>淨超額（個百分點）</th><th title="扣成本後最後賺錢的比例">賺錢機率</th><th>賺賠比</th><th>平均持有</th></tr></thead>
                   <tbody>
                     {exits.strategies.filter(s => s.samples > 0).map(s => (
                       <tr key={s.key} className={s.key === exits.control ? 'exit-control' : ''}>
                         <td>{s.label}{s.key === exits.control && <small>（現行）</small>}</td>
                         <td className={s.avg_net_return > 0 ? 'good' : s.avg_net_return < 0 ? 'bad' : ''}>
-                          {s.avg_net_return >= 0 ? '+' : ''}{s.avg_net_return}pp</td>
+                          {s.avg_net_return >= 0 ? '+' : ''}{s.avg_net_return}</td>
                         <td className={s.avg_net_excess > 0 ? 'good' : s.avg_net_excess < 0 ? 'bad' : ''}>
-                          {s.avg_net_excess != null ? `${s.avg_net_excess >= 0 ? '+' : ''}${s.avg_net_excess}pp` : '—'}</td>
+                          {s.avg_net_excess != null ? `${s.avg_net_excess >= 0 ? '+' : ''}${s.avg_net_excess}` : '—'}</td>
                         <td>{Math.round(s.net_win_rate * 100)}%</td>
                         <td>{s.payoff_ratio != null ? s.payoff_ratio : '—'}</td>
                         <td>{s.avg_holding_days}日</td>
@@ -329,7 +330,7 @@ export default function ConditionPanel({
               <summary>市況分層：訊號在多頭/盤整/空頭各自表現</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table regime-table">
-                  <thead><tr><th>訊號</th>{REGIME_COLS.map(([k, l]) => <th key={k} title="平均超額(pp)｜下方為樣本數">{l}</th>)}</tr></thead>
+                  <thead><tr><th>訊號</th>{REGIME_COLS.map(([k, l]) => <th key={k} title="平均超額（個百分點）｜下方為樣本數">{l}</th>)}</tr></thead>
                   <tbody>
                     {REGIME_SHOW.map(k => regime.signals[k]).filter(Boolean).map(s => (
                       <tr key={s.label}>
@@ -348,7 +349,7 @@ export default function ConditionPanel({
                 </table>
               </div>
               <p className="strategy-note">
-                每格＝該訊號在「當時市況」的平均超額（pp），下方小字為樣本數。市況用<b>市場廣度</b>判
+                每格＝該訊號在「當時市況」的平均超額（個百分點），下方小字為樣本數。市況用<b>市場廣度</b>判
                 （綠＝多數股站上月線、紅＝多數在月線下），且用<b>當下能看到的資料</b>判（不偷看未來）。
                 看一個訊號是<b>「全天候」（紅黃綠都正）還是「只有多頭有效」（綠正、紅負）</b>——後者在空頭要小心。
                 樣本 &lt;30 淡色僅參考。空頭天數少，紅市況樣本本來就偏少。
@@ -402,9 +403,9 @@ export default function ConditionPanel({
               checked={c.signalMa} onChange={v => set('signalMa', v)} accent />
             <Toggle label="爆量突破起漲" hint="悶久→帶量突破創高" icon={Rocket}
               checked={c.breakout} onChange={v => set('breakout', v)} accent />
-            <Toggle label="多頭排列" hint="MA5>10>20>60"
+            <Toggle label="多頭排列" hint="5、10、20、60 日線依序排高"
               checked={c.bullAligned} onChange={v => set('bullAligned', v)} />
-            <Toggle label="近期黃金交叉" hint="MA5 上穿 MA20"
+            <Toggle label="近期黃金交叉" hint="5 日線上穿月線"
               checked={c.goldenCross} onChange={v => set('goldenCross', v)} />
             <Toggle label="均線上彎" hint="均線翻揚"
               checked={c.maRising} onChange={v => set('maRising', v)} />

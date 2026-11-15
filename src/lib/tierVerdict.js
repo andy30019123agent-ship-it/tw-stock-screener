@@ -117,6 +117,16 @@ export function edgeWinRateText(tierStats) {
   return wr < 0.5 ? `但單檔賺錢機率只有 ${t}%，不到一半` : `單檔賺錢機率 ${t}%，過半也不代表穩賺`
 }
 
+// 首屏唯一一句的前半（2026-11-16 快修）：相對優勢單檔賺錢機率，數字讀資料、不寫死。
+// 與 edgeWinRateText 同判斷（<0.5 照實講不到一半），但是獨立成句、不以「但」開頭；不可用回 null。
+export function edgeWinHeadline(tierStats) {
+  if (!tierStats || tierStats.stale) return null
+  const wr = tierStats.categories?.edge?.win_rate
+  if (!isNum(wr)) return null
+  const t = (wr * 100).toFixed(1)
+  return wr < 0.5 ? `相對優勢這群歷史上單檔賺錢機率只有 ${t}%，不到一半` : `相對優勢這群歷史上單檔賺錢機率 ${t}%，過半也不代表穩賺`
+}
+
 // 統計過期的可見字樣；沒過期回 null。stale 時檔案裡的 date 是上一次成功重算的日期。
 export function staleText(tierStats) {
   if (!tierStats?.stale) return null

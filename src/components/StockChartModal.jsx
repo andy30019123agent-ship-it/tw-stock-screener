@@ -255,9 +255,9 @@ export default function StockChartModal({ stock, onClose }) {
         {/* 圖例 ＋ 時間範圍切換（同一列/相鄰列，不橫向捲動）*/}
         <div className="modal-toolbar">
           <div className="ma-legend">
-            <span className="lg-ma5">MA5</span>
-            <span className="lg-ma20">MA20</span>
-            <span className="lg-ma60">MA60</span>
+            <span className="lg-ma5">5 日線</span>
+            <span className="lg-ma20">月線</span>
+            <span className="lg-ma60">季線</span>
             {/* 有還原才顯示：圖上價位會跟券商的原始線圖不同，不說清楚會被當成資料錯誤 */}
             {adjusted && (
               <span className="lg-adj" title="這檔近期有除權息。圖上價位已還原權息，才能跟均線放在同一個 Y 軸比較；點圖上任一天可看當天的原始成交價。">
@@ -284,7 +284,7 @@ export default function StockChartModal({ stock, onClose }) {
         <div className="modal-levels">
           <span>支撐 <b>{levels ? levels.support : '—'}</b></span>
           <span>壓力 <b>{levels ? levels.resistance : '—'}</b></span>
-          <span>MA20 <b>{stock.ma20 ?? '—'}</b></span>
+          <span>月線 <b>{stock.ma20 ?? '—'}</b></span>
           <span>近20高 <b>{stock.recent_high20 ?? '—'}</b></span>
           <span className="lv-note">支撐＝近60日低、壓力＝近60日高，參考位非建議</span>
         </div>

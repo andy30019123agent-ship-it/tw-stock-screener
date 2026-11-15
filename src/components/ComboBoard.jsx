@@ -105,7 +105,7 @@ export default function ComboBoard({ combos, weights = null }) {
         <div className="combo-scroll">
           <table className="combo-table">
             <thead><tr>
-              <th>組合</th><th>平均超額</th>
+              <th>組合</th><th>平均超額（個百分點）</th>
               <th title="樣本數感知的保守下界（平均超額 − 1 標準誤）。樣本越少/越波動壓越低，用來分辨「又高又穩」與「小樣本巧合」">穩健下界</th>
               <th>跑贏率</th><th>樣本</th>
               <th title="這個組合有幾個成分訊號通過樣本外驗證（在沒訓練過的時期也站得住）。分母＝成分數">過驗證</th>
@@ -133,9 +133,9 @@ export default function ComboBoard({ combos, weights = null }) {
                       })}
                     </td>
                     <td className={c.avg_excess > 0 ? 'good' : c.avg_excess < 0 ? 'bad' : ''}>
-                      {c.avg_excess >= 0 ? '+' : ''}{c.avg_excess}pp</td>
+                      {c.avg_excess >= 0 ? '+' : ''}{c.avg_excess}</td>
                     <td className={`combo-lb ${c.excess_lb > 0 ? 'good' : c.excess_lb < 0 ? 'bad' : ''}`}>
-                      {c.excess_lb != null ? `${c.excess_lb >= 0 ? '+' : ''}${c.excess_lb}pp` : '—'}</td>
+                      {c.excess_lb != null ? `${c.excess_lb >= 0 ? '+' : ''}${c.excess_lb}` : '—'}</td>
                     <td>{Math.round(c.excess_win_rate * 100)}%</td>
                     <td className={weak ? 'combo-weak' : ''}>{c.samples}{weak && <small> 參考</small>}</td>
                     <td className={`combo-rel combo-rel-${rel.overall}`}
@@ -174,7 +174,7 @@ export default function ComboBoard({ combos, weights = null }) {
                         const v = c ? c.avg_excess : null
                         return (
                           <td key={cs} style={{ background: heatBg(v) }}
-                            title={c ? `${sigLabel[rs]}＋${sigLabel[cs]}：超額 ${v}pp、樣本 ${c.samples}` : '樣本不足'}>
+                            title={c ? `${sigLabel[rs]}＋${sigLabel[cs]}：超額 ${v} 個百分點、樣本 ${c.samples}` : '樣本不足'}>
                             {v == null ? '' : v}
                           </td>
                         )

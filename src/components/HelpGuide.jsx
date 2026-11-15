@@ -2,6 +2,7 @@ import { ArrowLeft, BookOpen, AlertTriangle } from 'lucide-react'
 import ExitDefense from './ExitDefense'
 import { okNum, signalSummary } from '../lib/signalSummary'
 import { edgeSentence, edgeWinRateText, staleText, biasNote } from '../lib/tierVerdict'
+import { ENGINE_KEYS, MIN_VOL_LOTS, engineWeightsAllZero } from '../lib/cardFacts'
 
 // 使用說明書（Andy 2026-07-25 要求，選「做進網站」＋「寫給自己看（術語附白話）」）。
 //
@@ -76,6 +77,13 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
   const helpPairs = head
     ? <>{head}{wr ? `。${wr}` : ''}（{tsDate} 用歷史候選池重算）。這是看完資料才選的比較方式，還需要新資料再驗證。</>
     : <>相對優勢跟其他候選的同日比較數字暫時取不到{stale ? `（${stale}）` : ''}，有分類也可能虧錢。</>
+  // 排序規則的說法要看資料：引擎訊號權重全 0 才是「純照 60 天漲幅」，有權重就是先比分數
+  const wZero = engineWeightsAllZero(weights?.signals)
+  const signalSortNote = wZero === true
+    ? `目前這 ${ENGINE_KEYS.length} 種訊號的權重全是 0，所以亮了哪個都不影響排第幾`
+    : wZero === false
+      ? '訊號有權重時會先比權重分，所以亮了哪個可能影響排序（權重看「各訊號回測戰績」表）'
+      : '亮了哪個會不會影響排序，要看「各訊號回測戰績」表的權重'
   const medians = ['high', 'mid', 'low'].map(k => turn[k]?.median_pct).filter(okNum)
   return (
     <div className="help">
@@ -83,9 +91,9 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
         <button className="help-back" onClick={onBack}>
           <ArrowLeft size={16} strokeWidth={2} />回選股頁
         </button>
-        <span className="badge-pill"><BookOpen size={14} strokeWidth={1.75} />使用說明書</span>
+        <span className="badge-pill"><BookOpen size={14} strokeWidth={1.75} />使用說明</span>
         <h1>這個網站怎麼用</h1>
-        <p className="subtitle">最後更新 2026-11-13 · 站上哪些數字扣過成本、哪些沒扣，第 4 章有對照表</p>
+        <p className="subtitle">最後更新 2026-11-16 · 站上哪些數字扣過成本、哪些沒扣，第 4 章有對照表</p>
       </header>
 
       <nav className="help-toc" aria-label="目錄">
@@ -122,7 +130,7 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
           </li>
           <li>
             <b>要買就隔天開盤買。</b>這是網站上所有回測數字用的口徑——訊號當天收盤後才發榜，最快隔天開盤才買得到。
-            <span className="help-why">盤中追高、或拖到第三天才買，等於換了一把不同的尺，網站上的勝率／賺賠幅度數字就跟你的實際結果無關了。</span>
+            <span className="help-why">盤中追高、或拖到第三天才買，等於換了一把不同的尺，網站上的賺錢機率／賺賠幅度數字就跟你的實際結果無關了。</span>
           </li>
           <li>
             <b>放 20 個交易日再檢視。</b>這是回測結算的口徑，不是叫你一定要抱滿或一定要出場。
@@ -160,7 +168,8 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
       </Section>
 
       <Section id="s2" title="候選清單是怎麼選出來的">
-        <p>三層漏斗，每一層都有回測數字支撐：</p>
+        <p>一關一關篩下來。<b>不是每一關都有回測數字支撐</b>：強勢雙確認有；營收剔除在歷史回測裡重播不了；
+          技術訊號那一關，各訊號有沒有優勢以「各訊號回測戰績」表為準：</p>
         <ol className="help-steps">
           <li>
             <b>全市場</b>（有成交量的上市＋上櫃，已排除 ETF；檔數每天略有變動）
@@ -170,14 +179,19 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
             <span className="help-why">為什麼用這個當第一關：它是所有訊號裡唯一「去掉最極端的樣本後還是賺」而且「拿沒訓練過的時期驗證也站得住」的。</span>
           </li>
           <li>
+            <b>→ 當天至少要亮一個技術或籌碼訊號</b>（{ENGINE_KEYS.length} 種之一，例如糾結轉強、爆量突破、縮口帶量突破、破底翻、外資連買、千張大戶增加）。
+            <b>一個都沒亮的就被刷掉</b>，不是只拿來排序。
+            <span className="help-why">這一關是入場條件，不是加分；{signalSortNote}。</span>
+          </li>
+          <li>
             {/* 2026-07-26 修正：①「今日 N 檔」是舊 UI 標籤，畫面上現在叫「今日候選」；
                 ②寫死的 140~170 檔範圍會過期——2026-07-26 實測只剩 132 檔，已經低於這個範圍，
                 改成不寫死具體數字的講法，避免文案跟實際數字對不上。 */}
-            <b>→ 再剔除成交量太小、營收年減的，剩下能通過門檻的檔數</b>（畫面上「今日候選」顯示的就是這個數，每天隨市況變動，不是固定範圍）
+            <b>→ 再剔除 20 日均量不到 {MIN_VOL_LOTS} 張、營收年減的，剩下能通過門檻的檔數</b>（抓不到營收的不剔除，卡片上標「營收資料缺」）（畫面上「今日候選」顯示的就是這個數，每天隨市況變動，不是固定範圍）
           </li>
           <li>
-            <b>→ 全部列出來，依「近 60 天漲幅在全市場的排名」由高到低排</b>：漲得越強的排越前面（第一關門檻取消的日子，會先看訊號分數、再看這個排名）。
-            <span className="help-why">為什麼不是用技術訊號（糾結轉強、縮口帶量突破等）排序：它們扣掉交易成本後，歷史上平均都沒有穩定贏過大盤，所以目前沒有拿它們加分，實際上就是按相對強弱排。哪些訊號有沒有加分，以「各訊號回測勝率」那張表為準，每週會重算。<b>注意這是「排前面」不是「硬篩掉」</b>——候選不會被砍成固定檔數，通過門檻的都照樣列出；卡片的理由若寫「僅符合門檻，按相對強弱排序」，就是這個意思；而如果那天過門檻的不到 20 檔，系統會取消第一關、改看所有有技術訊號的股票，這時理由會直接寫「今天沒套用強勢雙確認門檻…未經強勢篩選」（前面帶一個警示圖示）——看到這句就知道這檔連第一關都沒過。</span>
+            <b>→ 全部列出來，依「近 60 天漲幅在全市場的排名」由高到低排</b>：漲得越強的排越前面（精確說是先比訊號權重分、同分再比這個排名；{wZero === true ? '目前訊號權重全是 0，所以實際只剩這個排名' : wZero === false ? '目前有訊號帶權重，所以分數高的會排前面' : '目前權重是否全 0 要看「各訊號回測戰績」表'}）。
+            <span className="help-why">為什麼不是用技術訊號（糾結轉強、縮口帶量突破等）排序：它們扣掉交易成本後，歷史上平均都沒有穩定贏過大盤，所以目前沒有拿它們加分，實際上就是按相對強弱排。哪些訊號有沒有加分，以「各訊號回測戰績」那張表為準，每週會重算。<b>注意：技術訊號在這裡是上面第 3 步的入場條件（沒亮就刷掉），不是排序依據；「排前面」只決定順序</b>——候選不會被砍成固定檔數，通過所有關卡的都照樣列出；卡片的理由若寫「僅符合門檻，按相對強弱排序」，就是這個意思；而如果那天過門檻的不到 20 檔，系統會取消第一關、改看所有有技術訊號的股票，這時理由會直接寫「今天沒套用強勢雙確認門檻…未經強勢篩選」（前面帶一個警示圖示）——看到這句就知道這檔連第一關都沒過。</span>
           </li>
           <li>
             <b>→ 通過的全部列出來，不再砍成固定幾檔</b>，並依「成交金額」與「20 日乖離」在當天候選池裡的
@@ -243,7 +257,7 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
             <li><b>已扣成本</b>（可以直接信）：快速套用按鈕上的數字、「各策略回測戰績」表的「成本後超額」欄、組合戰績排行榜。</li>
             <li>
               <b>還沒扣成本</b>（要自己心裡扣掉約 0.8%）：
-              <b>「本週市況建議」卡</b>、「市況分層」表、「勝率榜／多時間窗」表。
+              <b>「今日市況建議」卡</b>、「市況分層」表、「各訊號回測戰績／多時間窗」表。
             </li>
           </ul>
           <p className="help-why">
@@ -271,7 +285,7 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
         </Term>
         <Term word="RS（卡片與表格上那個）">
           <b>這個是「個股近 20 天報酬 － 加權指數近 20 天報酬」。</b>
-          看到「RS +21.5%」＝這 20 天贏大盤 21.5 個百分點。正值綠、負值紅。
+          看到「RS +21.5%」＝這 20 天贏大盤 21.5 個百分點。正值紅、負值綠（紅漲綠跌）。
           <span className="help-why"><AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" />別跟下面那個「全市場排名」搞混——站上有兩種相對強弱，算法不同。候選卡上寫成「近 20 天報酬比大盤 ±X 個百分點」。</span>
         </Term>
         <Term word="全市場排名（強勢雙確認用的）">
@@ -281,7 +295,7 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
           算不了 60/120 天的比較，所以改用排名繞開。候選卡上的「強弱」寫成「近 60 天漲幅贏過全市場 X% 的股票」，就是這個數字。
         </Term>
         <Term word="乖離">
-          現價離 20 日均線多遠。
+          現價離月線（20 日均線）多遠。
           <span className="help-why">
             <AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" /><b>這裡有一個常見說法被資料推翻了，值得記住。</b>
             一般都說「乖離太大＝漲一大段了，追進去風險高」，我原本也照這個假設在快報裡對高乖離扣分。
@@ -354,7 +368,7 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
       </Section>
 
       <Section id="s7" title="這個系統的已知限制">
-        <p>不寫這段的說明書不能信，所以照實列：</p>
+        <p>不寫這段的說明不能信，所以照實列：</p>
         <ul className="help-limits">
           <li>
             <b>回測歷史不長</b>{okNum(regimeDays) && regimeDays > 0 ? `（約 ${regimeDays} 個交易日）` : ''}。沒經歷過完整的大牛市或金融危機，
@@ -391,7 +405,7 @@ export default function HelpGuide({ onBack, tierStats, exitSummary, weights, com
         <button className="help-back" onClick={onBack}>
           <ArrowLeft size={16} strokeWidth={2} />回選股頁
         </button>
-        <p>資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議</p>
+        <p>資料來源：TWSE／TPEX 官方公開資料</p>
       </footer>
     </div>
   )

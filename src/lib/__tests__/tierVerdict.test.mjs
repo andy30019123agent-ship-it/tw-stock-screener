@@ -1,4 +1,4 @@
-import { usablePair, verdictOf, pairSentence, pairShort, winDiffText, evDiffText, evVerdictOf, edgeSentence, edgeWinShort, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier } from '../tierVerdict.js'
+import { usablePair, verdictOf, pairSentence, pairShort, winDiffText, evDiffText, evVerdictOf, edgeSentence, edgeWinShort, edgeWinHeadline, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier } from '../tierVerdict.js'
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  ❌', msg) } }
 const P = (win, wci, ev, eci) => ({ win_pp: win, win_ci90: wci, ev_pp: ev, ev_ci90: eci })
@@ -54,5 +54,8 @@ ok(edgeWinShort({ paired: { cat_edge_vs_rest: P(5.97, [2.9, 8.6], 2.05, [0.6, 3.
 ok(/量不出差別（誤差範圍 −0\.8～\+3\.0）/.test(edgeWinShort({ paired: { cat_edge_vs_rest: P(1.2, [-0.8, 3.0], 0, null) } })), '首屏短句 nodiff')
 ok(/少約 2\.0 個百分點/.test(edgeWinShort({ paired: { cat_edge_vs_rest: P(-2, [-3, -1], 0, null) } })), '首屏短句 worse')
 ok(edgeWinShort({ stale: true, paired: { cat_edge_vs_rest: P(5.97, [2.9, 8.6], 0, null) } }) === null && edgeWinShort(null) === null, '首屏短句 stale／缺 → null')
+ok(edgeWinHeadline(TS) === '相對優勢這群歷史上單檔賺錢機率只有 47.1%，不到一半', '首屏前半句：不到一半、數字讀資料')
+ok(/過半也不代表穩賺/.test(edgeWinHeadline({ categories: { edge: { win_rate: 0.512 } } })) && !/不到一半/.test(edgeWinHeadline({ categories: { edge: { win_rate: 0.512 } } })), '首屏前半句：過半照實講')
+ok(edgeWinHeadline({ ...TS, stale: true }) === null && edgeWinHeadline(null) === null && edgeWinHeadline({ categories: { edge: { win_rate: null } } }) === null, '首屏前半句：stale／缺／null → null')
 console.log(`tierVerdict: ${pass} pass, ${fail} fail`)
 if (fail) process.exit(1)
