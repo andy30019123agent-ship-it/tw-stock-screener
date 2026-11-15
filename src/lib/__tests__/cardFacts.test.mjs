@@ -1,4 +1,5 @@
-import { sortRuleText, engineWeightNote, ENGINE_KEYS } from '../cardFacts.js'
+import { readFileSync } from 'node:fs'
+import { sortRuleText, engineWeightNote, ENGINE_KEYS, MIN_VOL_LOTS, engineWeightsAllZero } from '../cardFacts.js'
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  ❌', msg) } }
 
@@ -21,5 +22,19 @@ const n1 = engineWeightNote([{ key: 'signal_breakout', label: '爆量突破', w:
 ok(n1.includes('目前有權重的是：爆量突破 3') && !n1.includes('權重全部是 0'), '引擎訊號有權重 → 列出')
 ok(!/NaN|undefined|null/.test(n0 + n1 + engineWeightNote(null)), '輸出沒有 NaN／undefined')
 ok(ENGINE_KEYS.length === 11 && ENGINE_KEYS.every(k => !k.startsWith('rs_')), '計分名單 11 種且不含 rs_*（對照 pipeline/backtest_signals.py ENGINE_SIGNALS）')
+
+// ENGINE_KEYS／MIN_VOL_LOTS 是抄自 pipeline 的：直接讀 .py 對照，pipeline 改了這裡就會紅
+const py = name => readFileSync(new URL(`../../../pipeline/${name}`, import.meta.url), 'utf8')
+const bt = py('backtest_signals.py')
+const m = bt.match(/^ENGINE_SIGNALS\s*=\s*\[([\s\S]*?)\]/m)
+const pyKeys = m ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]) : []
+ok(pyKeys.length > 0, '解析得到 ENGINE_SIGNALS')
+ok(JSON.stringify([...pyKeys].sort()) === JSON.stringify([...ENGINE_KEYS].sort()), 'ENGINE_KEYS 與 pipeline ENGINE_SIGNALS 完全相同')
+const mv = py('opportunities.py').match(/^MIN_VOL_LOTS\s*=\s*(\d+)/m)
+ok(mv && Number(mv[1]) === MIN_VOL_LOTS, 'MIN_VOL_LOTS 與 pipeline/opportunities.py 相同')
+
+ok(engineWeightsAllZero({ signal_ma: { weight: 0 }, signal_breakout: { weight: 0 }, rs_strong_60: { weight: 1 } }) === true, '引擎訊號全 0（rs_* 不算）→ true')
+ok(engineWeightsAllZero({ signal_ma: { weight: 2 } }) === false, '有權重 → false')
+ok(engineWeightsAllZero(null) === null && engineWeightsAllZero({}) === null, '缺資料 → null')
 console.log(`cardFacts: ${pass} pass, ${fail} fail`)
 if (fail) process.exit(1)

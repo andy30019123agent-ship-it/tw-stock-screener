@@ -5,7 +5,7 @@ import OutcomeShape from './OutcomeShape'
 import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinHeadline, staleText, gateNote, biasNote, normalizeTier, evVerdictOf } from '../lib/tierVerdict'
 import { fmtRange } from '../lib/fmtRange'
 import { readView, writeView } from '../lib/viewPref'
-import { signed, rankFront, beatPct, gapToHigh, gapText, maSide, dirOf, commonReasons, reasonView, sortRuleText, ENGINE_KEYS, engineWeightNote } from '../lib/cardFacts'
+import { signed, rankFront, beatPct, gapToHigh, gapText, maSide, dirOf, commonReasons, reasonView, sortRuleText, ENGINE_KEYS, engineWeightNote, MIN_VOL_LOTS } from '../lib/cardFacts'
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
@@ -239,7 +239,7 @@ function usableTier(v) {
 function selfVerdict(s) {
   const ev = Number.isFinite(s.ev_pct) ? s.ev_pct : s.win_rate * s.avg_win_pct + (1 - s.win_rate) * s.avg_loss_pct
   const okEvCi = Array.isArray(s.ci90_ev) && isNum(s.ci90_ev[0]) && isNum(s.ci90_ev[1])
-  const r = okEvCi ? `（誤差範圍 ${fmtRange(s.ci90_ev)}）` : ''
+  const r = okEvCi ? `（誤差範圍 ${fmtRange(s.ci90_ev, { digits: 1 })}）` : ''
   // 幅度宣稱規則（tierVerdict 檔頭）：下限 ≥0.5 才講優勢、0~0.5 用保守說法，一律附誤差範圍
   let tail
   if (ev <= 0) tail = `扣完成本平均沒有賺${r}`
@@ -564,7 +564,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
       </div>
       <p className="opp-legend">
         <ListChecks size={16} strokeWidth={1.75} aria-hidden="true" />
-        <span>成交金額排今天候選前 1/3・{sortRule}，排前面沒有證據比較會賺</span>
+        <span>成交金額排今天候選前 1/3・{sortRule}</span>
       </p>
 
       {tiered.edge.length > 0
@@ -581,7 +581,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
               {opp.gate?.applied
                 ? <>今天共 {poolN} 檔候選，都先過「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻）</>
                 : <>今天共 {poolN} 檔候選（{opp.gate?.label ? `「${opp.gate.label}」門檻未套用，` : ''}當日有訊號者）</>}
-              ，已過濾營收年減／低量。
+              ，並且當天至少亮一個技術／籌碼訊號、20 日均量至少 {MIN_VOL_LOTS} 張、營收沒有年減（查不到營收的不剔除，卡片標「營收資料缺」）。
             </span>
           </p>
           {common && (

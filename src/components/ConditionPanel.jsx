@@ -170,7 +170,7 @@ export default function ConditionPanel({
                     title={st?._isBest
                       ? `成本後超額。注意：這是 ${st._ofN} 個形態裡「最好的那一個」（${st.label}）的成績，不是勾選後篩到的整批的平均`
                       : '成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的'}>
-                    {btnScore >= 0 ? '+' : ''}{btnScore}<small>個百分點</small>
+                    {btnScore >= 0 ? '+' : ''}{btnScore}<small> 個百分點</small>
                     {st?._isBest && <em className="score-best" title="顯示的是最佳形態的成績">＊</em>}</span>}
                   {tm && <sup className={tm.cls}>{tm.mark}</sup>}
                 </button>
@@ -190,8 +190,8 @@ export default function ConditionPanel({
                     <th title="典型的一筆交易結果（中位數）。訊號報酬極度右偏：平均被少數飆股拉高，中位數才是「大多數時候」的樣子">中位數</th>
                     <th title="扣掉成本後仍贏過同日大盤的比例。低於 50% 代表多數交易是輸給大盤的，靠少數大贏撐整體">贏大盤</th>
                     <th title="沒扣成本、沒扣大盤的原始超額報酬（僅供對照，別拿它當決策依據）">平均超額</th>
-                    <th title="平均獲利 ÷ 平均虧損。<1 代表賺小賠大、勝率再高也危險">賺賠比</th>
-                    <th>勝率</th><th>樣本</th></tr></thead>
+                    <th title="平均獲利 ÷ 平均虧損。<1 代表賺小賠大、賺錢機率再高也危險">賺賠比</th>
+                    <th title="沒扣成本、只減掉同日全市場平均後，贏過大盤的比例（跟前面「贏大盤」不同：那欄是扣完成本才算）">贏大盤機率</th><th>樣本</th></tr></thead>
                   <tbody>
                     {orderedPresets.map(p => {
                       const s = presetStat(p.key, weights)
@@ -207,7 +207,7 @@ export default function ConditionPanel({
                             // ⚠️ 2026-07-26 修正：title 直接放在 SVG 元素上不會出現 tooltip（Blink 只認
                             // <title> 子元素，實測 svgEl.title 是 undefined）——用 <span title> 包住才會有
                             // hover 提示，並補 aria-label 讓螢幕報讀器也讀得到（icon 本身沒有可見文字）。
-                            <span className="trap-flag-wrap" title="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了" aria-label="高勝率陷阱：勝率高但扣成本後贏不過大盤，別被勝率騙了">
+                            <span className="trap-flag-wrap" title="高賺錢機率陷阱：賺錢機率高但扣成本後贏不過大盤，別被賺錢機率騙了" aria-label="高賺錢機率陷阱：賺錢機率高但扣成本後贏不過大盤，別被賺錢機率騙了">
                               <AlertTriangle size={13} strokeWidth={2} className="trap-flag" aria-hidden="true" />
                             </span>}
                             {!q?.high_win_trap && q?.loses_to_market &&
@@ -264,7 +264,7 @@ export default function ConditionPanel({
               <summary>新訊號研究：相對強弱＋產業輪動（樣本外驗證中）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>新訊號</th><th>平均超額（個百分點）</th><th>樣本外</th><th>勝率</th><th>樣本</th></tr></thead>
+                  <thead><tr><th>新訊號</th><th>平均超額（個百分點）</th><th>樣本外</th><th title="沒扣成本、只減掉同日全市場平均後，贏過大盤的比例">贏大盤機率</th><th>樣本</th></tr></thead>
                   <tbody>
                     {XSECT_SIGNALS.map(x => {
                       const s = weights.signals[x.key]
@@ -298,7 +298,7 @@ export default function ConditionPanel({
               <summary>出場分析：持有多久最划算（已扣交易成本）</summary>
               <div className="strategy-scroll">
                 <table className="strategy-table">
-                  <thead><tr><th>出場方式</th><th>淨報酬（個百分點）</th><th>淨超額（個百分點）</th><th>勝率</th><th>賺賠比</th><th>平均持有</th></tr></thead>
+                  <thead><tr><th>出場方式</th><th>淨報酬（個百分點）</th><th>淨超額（個百分點）</th><th title="扣成本後最後賺錢的比例">賺錢機率</th><th>賺賠比</th><th>平均持有</th></tr></thead>
                   <tbody>
                     {exits.strategies.filter(s => s.samples > 0).map(s => (
                       <tr key={s.key} className={s.key === exits.control ? 'exit-control' : ''}>
@@ -403,9 +403,9 @@ export default function ConditionPanel({
               checked={c.signalMa} onChange={v => set('signalMa', v)} accent />
             <Toggle label="爆量突破起漲" hint="悶久→帶量突破創高" icon={Rocket}
               checked={c.breakout} onChange={v => set('breakout', v)} accent />
-            <Toggle label="多頭排列" hint="MA5>10>20>60"
+            <Toggle label="多頭排列" hint="5、10、20、60 日線依序排高"
               checked={c.bullAligned} onChange={v => set('bullAligned', v)} />
-            <Toggle label="近期黃金交叉" hint="MA5 上穿 MA20"
+            <Toggle label="近期黃金交叉" hint="5 日線上穿月線"
               checked={c.goldenCross} onChange={v => set('goldenCross', v)} />
             <Toggle label="均線上彎" hint="均線翻揚"
               checked={c.maRising} onChange={v => set('maRising', v)} />

@@ -105,3 +105,16 @@ export function engineWeightNote(rows) {
   parts.push('權重是 0 的原因：平均超額 ≤ 0 或樣本不足。')
   return parts.join('')
 }
+
+// 20 日均量門檻（張）＝pipeline/opportunities.py 的 MIN_VOL_LOTS（候選入場條件）。
+// opportunities.json 沒帶這個數，前端只能抄；改 pipeline 時要一起改（cardFacts.test.mjs 會讀 .py 對照）。
+export const MIN_VOL_LOTS = 500
+
+// 引擎計分訊號的權重是不是全 0？rows＝signal_weights.json 的 signals（{key:{weight}}）。
+// 缺資料回 null（呼叫端不下結論），全 0 回 true，任何一個 >0 回 false。
+export function engineWeightsAllZero(signals) {
+  if (!signals || typeof signals !== 'object') return null
+  const ws = ENGINE_KEYS.map(k => signals[k]?.weight)
+  if (ws.every(w => w == null)) return null
+  return ws.every(w => !(isNum(w) && w > 0))
+}
