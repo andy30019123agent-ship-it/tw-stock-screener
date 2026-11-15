@@ -6,22 +6,24 @@ const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  �
 const mem = () => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v) }, _m: m } }
 const throwing = { getItem() { throw new Error('SecurityError') }, setItem() { throw new Error('QuotaExceeded') } }
 
-// ── 檢視偏好 ──
-ok(DEFAULT_VIEW === 'cards', '預設是卡片')
-ok(readView(mem()) === 'cards', '空儲存 → 卡片')
-ok(readView(null) === 'cards', '沒有 storage → 卡片')
-ok(readView(throwing) === 'cards', 'getItem 丟例外 → 卡片，不往外丟')
+// ── 檢視偏好（2026-11-16 起沒存過偏好的預設是清單；存過的照舊）──
+ok(DEFAULT_VIEW === 'list', '預設是清單')
+ok(readView(mem()) === 'list', '空儲存 → 清單')
+ok(readView(null) === 'list', '沒有 storage → 清單')
+ok(readView(throwing) === 'list', 'getItem 丟例外 → 清單，不往外丟')
+const old = mem(); old._m[VIEW_KEY] = 'cards'
+ok(readView(old) === 'cards', '既有使用者存過「卡片」→ 尊重原偏好')
 const s = mem()
 ok(writeView('list', s) === true && s._m[VIEW_KEY] === 'list', '寫入清單')
 ok(readView(s) === 'list', '讀回清單')
-ok(writeView('cards', s) && readView(s) === 'cards', '切回卡片')
+ok(writeView('cards', s) && readView(s) === 'cards', '切到卡片後讀回卡片')
 s._m[VIEW_KEY] = 'grid'
-ok(readView(s) === 'cards', '不認得的值 → 卡片')
-ok(writeView('weird', s) && s._m[VIEW_KEY] === 'cards', '寫入不認得的值 → 存成預設')
+ok(readView(s) === 'list', '不認得的值 → 預設清單')
+ok(writeView('weird', s) && s._m[VIEW_KEY] === 'list', '寫入不認得的值 → 存成預設')
 ok(writeView('list', throwing) === false, 'setItem 丟例外 → 回 false、不往外丟')
 ok(writeView('list', null) === false, '沒有 storage → 回 false')
 // 沒傳 storage 時在 Node 沒有 localStorage → 仍回預設、不炸
-ok(readView() === 'cards', 'Node 環境無 localStorage → 卡片')
+ok(readView() === 'list', 'Node 環境無 localStorage → 清單')
 
 // ── 卡片事實句 ──
 ok(signed(1.234) === '+1.2' && signed(-1.25, 2) === '−1.25' && signed(0.04) === '0.0' && signed(null) === '—', 'signed 正負號與全形減號')

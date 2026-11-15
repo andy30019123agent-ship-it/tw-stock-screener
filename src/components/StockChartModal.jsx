@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createChart, LineStyle } from 'lightweight-charts'
 import { X } from 'lucide-react'
+import { maSide } from '../lib/cardFacts'
 
 function ma(closes, n) {
   const out = []
@@ -44,7 +45,8 @@ function applyRange(chart, len, range) {
   chart.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: len - 0.5 })
 }
 
-export default function StockChartModal({ stock, onClose }) {
+// pick＝從候選清單開的那一筆（opportunities.json）；從進階篩選開的沒有 pick。
+export default function StockChartModal({ stock, pick = null, onClose }) {
   const wrapRef = useRef(null)
   const modalRef = useRef(null)
   const lastActiveRef = useRef(null)       // 關閉後把 focus 還原到開窗前的元素
@@ -234,6 +236,10 @@ export default function StockChartModal({ stock, onClose }) {
 
   if (!stock) return null
   const priceUp = stock.change >= 0
+  // 月線與近 20 日前高：2026-11-16 起從候選卡片收進這裡（卡片只留「離前高還差 X%」）
+  const ma20 = stock.ma20 ?? pick?.support_ma20 ?? null
+  const high20 = stock.recent_high20 ?? pick?.recent_high20 ?? null
+  const side = maSide(stock.close, ma20)
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -280,13 +286,14 @@ export default function StockChartModal({ stock, onClose }) {
           <span>20日均量 <b>{stock.avg_vol_lots?.toLocaleString() ?? '—'}</b> 張</span>
         </div>
 
-        {/* 參考價位：支撐／壓力＋MA20＋近20高，最後獨立一句「參考位非建議」 */}
+        {/* 參考價位：支撐／壓力＋月線＋近 20 日前高，最後獨立一句「參考位非建議」 */}
         <div className="modal-levels">
           <span>支撐 <b>{levels ? levels.support : '—'}</b></span>
           <span>壓力 <b>{levels ? levels.resistance : '—'}</b></span>
-          <span>月線 <b>{stock.ma20 ?? '—'}</b></span>
-          <span>近20高 <b>{stock.recent_high20 ?? '—'}</b></span>
+          <span>月線 <b>{ma20 ?? '—'}</b>{side && <>（{side}）</>}</span>
+          <span>近 20 日前高 <b>{high20 ?? '—'}</b></span>
           <span className="lv-note">支撐＝近60日低、壓力＝近60日高，參考位非建議</span>
+          {pick && <span className="lv-note">為什麼在名單上：關掉視窗看這檔的過關清單，每一關都寫了這檔的數字。</span>}
         </div>
 
         <div className="tv-chart">
