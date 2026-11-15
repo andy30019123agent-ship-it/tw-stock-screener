@@ -31,7 +31,7 @@ const FEATURES = [
   },
   {
     key: 'bias20_pct', label: '20 日乖離', usedFor: '「乖離排前段」標籤依據（純描述，不代表比較好）',
-    hint: '現價偏離 20 日均線的百分比，當日候選池內切三分位',
+    hint: '現價偏離月線（20 日均線）的百分比，當日候選池內切三分位',
   },
   {
     key: 'high20_gap', label: '距 20 日前高', usedFor: null, caution: true,
@@ -48,7 +48,9 @@ const LEVELS = [['high', '高（前 1/3）'], ['mid', '中（中間 1/3）'], ['
 // 也不能讓 toFixed 丟 TypeError 把整個候選區換成錯誤卡。
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 const signedPct = v => (isNum(v) ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` : '—')
-const ciText = ci => fmtRange(ci, { sign: false })
+// 小數位統一：賺錢機率與誤差範圍一律 1 位小數，跟上面「證據」表（Opportunities.Basis）同一寫法
+const pct1 = v => `${(v * 100).toFixed(1)}%`
+const ciText = ci => fmtRange(ci, { sign: false, digits: 1 })
 
 function FeatureBlock({ meta, data }) {
   if (!data) return null
@@ -94,7 +96,7 @@ function FeatureBlock({ meta, data }) {
             <div className="os-level-card" key={lvKey}>
               <div className="os-level-card-head">
                 <span className="os-level-name">{lvLabel}</span>
-                <span className="os-level-win">{Math.round(d.win_rate * 100)}%<small className="os-level-winlabel"> 賺錢機率</small></span>
+                <span className="os-level-win">{pct1(d.win_rate)}<small className="os-level-winlabel"> 賺錢機率</small></span>
               </div>
               <div className="os-level-rows">
                 <div className="os-level-row"><span>賺時平均</span><b className="good">{signedPct(d.avg_win_pct)}</b></div>
@@ -129,7 +131,7 @@ function FeatureBlock({ meta, data }) {
               return (
                 <tr key={lvKey}>
                   <td>{lvLabel}</td>
-                  <td><b>{Math.round(d.win_rate * 100)}%</b></td>
+                  <td><b>{pct1(d.win_rate)}</b></td>
                   <td className="os-ci">{d.blocks ?? '—'} 批 · {ciText(d.ci90)}</td>
                   <td className="good">{signedPct(d.avg_win_pct)}</td>
                   <td className="bad">{signedPct(d.avg_loss_pct)}</td>
@@ -165,13 +167,8 @@ export default function OutcomeShape({ tierStats }) {
             資料日期 <b>{tierStats.date || '—'}</b>｜持有 <b>{tierStats.forward_days ?? 20}</b> 個交易日再檢視｜
             數字已扣來回交易成本 <b>{tierStats.cost_pct}%</b>（手續費＋證交稅＋滑價）。
             <br />
-            <b>不是個股勝率。</b>這裡只顯示「這個條件層級」歷史上的分佈，不顯示任何一檔股票自己的精確勝率——
-            樣本是歷史上每一天「照今天同一套流程選出候選、在候選池內切三層」之後，同一層所有股票的統計，
-            不是這檔股票單獨的成績。
-            {Array.isArray(tierStats.meta?.not_replayed) && tierStats.meta.not_replayed.length > 0 && (<>
-              <br />
-              歷史上重播不了、所以沒套用的：{tierStats.meta.not_replayed.map(x => x.item).join('、')}。
-            </>)}
+            這裡只顯示「這個條件層級」歷史上的分佈：樣本是歷史上每一天「照今天同一套流程選出候選、在候選池內切三層」之後，
+            同一層所有股票的統計（另外兩點——這是整群統計、哪些條件歷史重播不了——見上面「證據」與「限制」）。
           </p>
           {tierStats.stale && (
             <p className="os-warn">

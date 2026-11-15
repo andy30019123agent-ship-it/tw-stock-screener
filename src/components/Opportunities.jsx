@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Info, LayoutGrid, List, LineChart, Scale, ListChecks } from 'lucide-react'
+import { TrendingUp, Calendar, AlertTriangle, ChevronRight, ChevronDown, Info, LayoutGrid, List, LineChart, ListChecks } from 'lucide-react'
 import PositionPlan from './PositionPlan'
 import OutcomeShape from './OutcomeShape'
-import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinShort, edgeWinRateText, staleText, gateNote, biasNote, normalizeTier, evVerdictOf } from '../lib/tierVerdict'
+import { usablePair, winDiffText, evDiffText, edgeSentence, edgeWinHeadline, staleText, gateNote, biasNote, normalizeTier, evVerdictOf } from '../lib/tierVerdict'
 import { fmtRange } from '../lib/fmtRange'
 import { readView, writeView } from '../lib/viewPref'
-import { signed, rankFront, beatPct, gapToHigh, gapText, maSide, dirOf, commonReasons, reasonView } from '../lib/cardFacts'
+import { signed, rankFront, beatPct, gapToHigh, gapText, maSide, dirOf, commonReasons, reasonView, sortRuleText, ENGINE_KEYS, engineWeightNote } from '../lib/cardFacts'
 
 const isNum = v => typeof v === 'number' && Number.isFinite(v)
 
@@ -18,7 +18,7 @@ const isNum = v => typeof v === 'number' && Number.isFinite(v)
 // 只剩一個有證據的分類「相對優勢」（成交金額在當日候選池前 1/3）；「乖離排前段」是純描述標籤。
 // 結論句不寫死：由 tierVerdict 讀 tier_stats.json 的 paired.cat_edge_vs_rest 決定；
 // 缺欄位／null／stale 時退成不帶數字的中性句。
-const NEUTRAL = '歷史上跟其他候選的比較數字暫時取不到，有分類也可能虧錢'
+const NEUTRAL = '歷史數字暫時取不到，有分類也可能虧錢'
 
 // ── 2026-11-13 可讀性改版（Andy 核准方向 3「先看股票」＋可切換清單）──────────────
 // 🔴 MASTER.md 硬約束：誠實性內容不刪、不藏到要點兩下才看得到。做法是「縮短並貼在對應數字旁」：
@@ -96,19 +96,17 @@ function PickFacts({ p }) {
         {gap && (
           <div className="opp-fact">
             <span className="opp-fact-k">離前高</span>
-            <PosBar v={fp.high20_gap} />
             <p className="opp-fact-v">
               {gap.atHigh
                 ? <>已在近 20 日高點</>
-                : <>離近 20 日前高還差 <b className="mono">{gapText(gap)}</b>{isNum(fp.high20_gap) && <>，比今天 {Math.round(fp.high20_gap * 100)}% 的候選遠</>}</>}
+                : <>離近 20 日前高 <span className="mono">{p.recent_high20}</span> 還差 <b className="mono">{gapText(gap)}</b></>}
             </p>
           </div>
         )}
       </div>
-      {(side || (gap && !gap.atHigh)) && (
+      {side && (
         <dl className="opp-obs">
-          {side && <div><dt>月線</dt><dd className="mono">{p.support_ma20}<small>{side}</small></dd></div>}
-          {gap && !gap.atHigh && <div><dt>近 20 日前高</dt><dd className="mono">{p.recent_high20}<small>距 {gapText(gap)}</small></dd></div>}
+          <div><dt>月線</dt><dd className="mono">{p.support_ma20}<small>{side}</small></dd></div>
         </dl>
       )}
     </>
@@ -247,14 +245,14 @@ function selfVerdict(s) {
   if (ev <= 0) tail = `扣完成本平均沒有賺${r}`
   else {
     const v = okEvCi ? evVerdictOf(s.ci90_ev) : null
-    if (v === 'better') tail = `平均每筆是正的${r}，優勢在賺賠幅度，不是在勝率`
+    if (v === 'better') tail = `平均每筆是正的${r}，優勢在賺賠幅度，不是在賺錢機率`
     else if (v === 'marginal') tail = `平均每筆略正${r}，但接近量不出`
     else tail = `平均看起來略正，但誤差範圍跨過 0${r}，還不能說這群自己會賺`
   }
   return { ev, tail }
 }
 
-function Basis({ tierStats, gate }) {
+function Basis({ tierStats, gate, open, onToggle }) {
   const t = tierStats?.features?.turnover
   const edge = usableTier(tierStats?.categories?.edge) ? tierStats.categories.edge : t?.high
   const rest = tierStats?.categories?.rest
@@ -270,7 +268,7 @@ function Basis({ tierStats, gate }) {
   if (!ready || tierStats?.stale) {
     conclusion = (
       <p>
-        條件層級的歷史分佈{stale ? `${stale}，先不引用數字` : '暫時取不到'}，候選清單本身仍正常——買哪幾檔、買不買由你決定。
+        條件層級的歷史分佈{stale ? `${stale}，先不引用數字` : '暫時取不到'}，候選清單本身仍正常。
       </p>
     )
   } else {
@@ -332,18 +330,21 @@ function Basis({ tierStats, gate }) {
         相對優勢共 <b className="mono">{isNum(edge.samples) ? edge.samples.toLocaleString('en-US') : '—'}</b> 筆；
         持有 {tierStats.forward_days ?? 20} 個交易日互相重疊，約等於 <b className="mono">{edge.blocks ?? '—'}</b> 批獨立進場，所以誤差範圍很寬。
         {isNum(tierStats.cost_pct) && <>已扣來回交易成本 {tierStats.cost_pct}%。</>}
-        這是整群的統計，<b>不是任何一檔自己的勝率</b>。（{tierStats.date || '—'} 重算）
+        這是整群的統計，<b>不是任何一檔自己的賺錢機率</b>。（{tierStats.date || '—'} 重算）
       </p>
     </>)
   }
 
   return (
     <section className="opp-basis" id="basis" data-region="這些數字怎麼來的">
-      <div className="opp-basis-head">
-        <span className="badge-pill"><Scale size={14} strokeWidth={1.75} />依據與限制</span>
-        <h2 className="opp-section-title">這些數字怎麼來的</h2>
-      </div>
-
+      {/* 2026-11-16 起預設收合（沿用「其他候選」的 opp-fold 收合鈕），內容一字不少，點開才看 */}
+      <h2 className="opp-basis-h">
+        <button className="opp-fold" onClick={onToggle} aria-expanded={open} aria-controls="basis-body">
+          <span>這些數字怎麼來的<small>依據、歷史對照表與限制（點開看）</small></span>
+          {open ? <ChevronDown size={20} strokeWidth={2} /> : <ChevronRight size={20} strokeWidth={2} />}
+        </button>
+      </h2>
+      {open && <div id="basis-body">
       <div className="opp-layer">
         <span className="opp-layer-k">結論</span>
         {conclusion}
@@ -373,14 +374,16 @@ function Basis({ tierStats, gate }) {
           )}
           <li><b>「離前高」方向不穩定</b>：重算後跟舊研究方向相反，卡片上只當位置看，不代表離前高越遠或越近越好。卡片上的「近 20 日前高」也只是技術觀察位，不是目標價或預期報酬。</li>
           <li><b>大盤狀態</b>是市場廣度代理（站上月線的比例），不是大盤指數，不會改變選股結果。</li>
+          <li><b>這不是幫你配好的購買組合</b>，清單只是整理候選。</li>
           <li><b>這些都是歷史回測</b>，未必代表未來；僅供研究參考，非投資建議。</li>
         </ul>
       </div>
+      </div>}
     </section>
   )
 }
 
-// 勝率榜一格：主數字＝平均超額（pp，權重依據），次行＝超額勝率與樣本。
+// 勝率榜一格：主數字＝平均超額（單位個百分點，權重依據），次行＝超額勝率與樣本。
 // 樣本不足（validated=false）整格轉灰＋提示，提醒「別信這個數字」；無資料顯示「—」。
 function WinCell({ c, minS, active }) {
   const cls = `wq-cell${active ? ' wq-active' : ''}`
@@ -392,8 +395,8 @@ function WinCell({ c, minS, active }) {
   return (
     <td className={`${cls}${weak ? ' wq-weak' : ''}`}
       title={weak ? `樣本 ${c.samples}，不足 ${minS}，僅供參考` : `超額勝率 ${wr}%、樣本 ${c.samples}`}>
-      <span className={`wq-exc ${excCls}`}>{exc >= 0 ? '+' : ''}{exc}<small>pp</small></span>
-      <span className="wq-sub">勝 {wr != null ? `${wr}%` : '—'} · {c.samples}</span>
+      <span className={`wq-exc ${excCls}`}>{exc >= 0 ? '+' : ''}{exc}</span>
+      <span className="wq-sub">贏大盤 {wr != null ? `${wr}%` : '—'} · {c.samples}</span>
     </td>
   )
 }
@@ -445,6 +448,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
   const [sortWin, setSortWin] = useState('all')   // 目前聚焦／排序的時間窗欄
   const [showWeights, setShowWeights] = useState(false)
   const [showOther, setShowOther] = useState(false)   // 「其他候選（沒有分類稱號）」收合區
+  const [showBasis, setShowBasis] = useState(false)   // 「這些數字怎麼來的」收合（2026-11-16 起預設收合）
   // 卡片／清單檢視（記住上次選擇；讀寫失敗一律退回卡片，見 lib/viewPref.js）
   const [view, setView] = useState(() => readView())
   const changeView = v => { setView(v); writeView(v) }
@@ -507,9 +511,9 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
         return bx - ax
       })
     : []
-  const activeWeights = win
-    ? Object.values(win.signals).map(r => ({ label: r.label, w: r.all?.weight || 0 }))
-        .filter(x => x.w > 0).sort((a, b) => b.w - a.w)
+  const weightRows = win
+    ? Object.entries(win.signals).map(([key, r]) => ({ key, label: r.label, w: r.all?.weight || 0 }))
+        .sort((a, b) => b.w - a.w)
     : []
 
   const poolN = opp.pool_n ?? opp.picks.length
@@ -520,9 +524,14 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
   const stale = staleText(tierStats)
   const anyBias = opp.picks.some(p => normalizeTier(p).biasHigh)
   const common = commonReasons(opp.picks)
-  const short = edgeWinShort(tierStats)
-  const wr = edgeWinRateText(tierStats)
-  const hist = tierStats?.stale ? null : tierStats?.categories?.edge
+  const headline = edgeWinHeadline(tierStats)
+  const sortRule = sortRuleText(opp.picks)
+  // 「看依據與限制」：依據預設收合，連結要先展開再捲過去
+  const openBasis = e => {
+    e.preventDefault()
+    setShowBasis(true)
+    requestAnimationFrame(() => document.getElementById('basis')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
 
   return (
     <section className="opp" data-region="候選情報">
@@ -530,17 +539,8 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
           卡片與清單兩種檢視都在這句之下，所以清單上方同樣看得到。 */}
       <div className="opp-today">
         <p className="opp-today-main">
-          <b className="mono">{tiered.edge.length}</b> 檔相對優勢
-          {short ? <>：{short}</> : <>（成交金額排在當天候選前 1/3）：{NEUTRAL}</>}
-          {wr ? <>，{wr}</> : ''}。
-          <b>這不是購買組合</b>，買哪幾檔、買不買，由你決定。
-        </p>
-        <p className="opp-today-src">
-          <Info size={16} strokeWidth={1.75} aria-hidden="true" />
-          <span>
-            歷史回測{tierStats?.date && !tierStats.stale ? `（${tierStats.date} 重算${isNum(hist?.blocks) ? `，約 ${hist.blocks} 批獨立進場` : ''}）` : ''}，未必代表未來。
-            <a className="opp-basis-link" href="#basis">看依據與限制</a>
-          </span>
+          {headline || NEUTRAL}；<b>排前面不代表比較會賺，買不買你決定</b>。
+          <a className="opp-basis-link" href="#basis" onClick={openBasis}>看依據與限制</a>
         </p>
         {/* 門檻沒套上時要看得出來，不能靜默（降級警示留在最上面）；正常日的門檻說明挪到清單下方 */}
         {opp.gate && !opp.gate.applied && (opp.gate.reason === 'rs_unavailable' || opp.gate.reason === 'pool_too_small') && (
@@ -564,7 +564,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
       </div>
       <p className="opp-legend">
         <ListChecks size={16} strokeWidth={1.75} aria-hidden="true" />
-        <span>成交金額排今天候選前 1/3・照候選清單原始順序，<b>不是好壞排名</b></span>
+        <span>成交金額排今天候選前 1/3・{sortRule}，排前面沒有證據比較會賺</span>
       </p>
 
       {tiered.edge.length > 0
@@ -581,7 +581,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
               {opp.gate?.applied
                 ? <>今天共 {poolN} 檔候選，都先過「{opp.gate.label}」（全市場漲幅前段、回測最穩的門檻）</>
                 : <>今天共 {poolN} 檔候選（{opp.gate?.label ? `「${opp.gate.label}」門檻未套用，` : ''}當日有訊號者）</>}
-              ，已過濾營收年減／低量；清單順序主要看近 60 天漲幅在全市場的排名。
+              ，已過濾營收年減／低量。
             </span>
           </p>
           {common && (
@@ -602,14 +602,14 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
             {showOther ? <ChevronDown size={20} strokeWidth={2} /> : <ChevronRight size={20} strokeWidth={2} />}
           </button>
           {showOther && (<>
-            <p className="opp-legend">照候選清單原始順序，<b>不是好壞排名</b>。歷史數字見下面「證據」表的「其他候選」欄。</p>
+            <p className="opp-legend">排序規則同上。歷史數字見下面「依據與限制」裡「證據」表的「其他候選」欄。</p>
             <TierBlock list={tiered.other} view={view} byId={byId} onPick={handlePick} previewN={previewN}
               showReasons={!common} markFirst={false} moreLabel="其他候選" />
           </>)}
         </div>
       )}
 
-      <Basis tierStats={tierStats} gate={opp.gate} />
+      <Basis tierStats={tierStats} gate={opp.gate} open={showBasis} onToggle={() => setShowBasis(v => !v)} />
 
       {/* 個股觀察位（2026-07-25 加，2026-07-26 誠實化）：2026-11-13 前高已放進每張卡，
           這裡只留集中度警示、績效檢視日與防守價代價表（審計 A2：原本 46 列表格在手機切掉關鍵欄）。
@@ -625,7 +625,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
           <span className="opp-board-title"><TrendingUp size={16} strokeWidth={1.75} />候選情報成績單</span>
           {board.samples > 0 ? (
             <div className="opp-board-stats">
-              <span>勝率 <b>{Math.round(board.win_rate * 100)}%</b></span>
+              <span>賺錢機率 <b>{Math.round(board.win_rate * 100)}%</b></span>
               <span>平均報酬 <b className={board.avg_ret >= 0 ? 'good' : 'bad'}>{board.avg_ret >= 0 ? '+' : ''}{board.avg_ret}%</b></span>
               <span>樣本 <b>{board.samples}</b></span>
               <span className="opp-muted">（入選後 {board.forward_days} 交易日）</span>
@@ -641,12 +641,12 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
         <div className="opp-weights">
           <button className="opp-weights-toggle" onClick={() => setShowWeights(v => !v)} aria-expanded={showWeights}>
             {showWeights ? <ChevronDown size={16} strokeWidth={2} /> : <ChevronRight size={16} strokeWidth={2} />}
-            各訊號回測勝率（權重依據，透明化）
+            各訊號回測戰績（權重依據，透明化）
           </button>
           {showWeights && (win ? (
             <div className="opp-weights-body">
               <p className="opp-muted">
-                每格＝訊號成立後 {win.forward_days} 交易日的<b>平均超額報酬</b>（減去同日全市場平均，
+                每格＝訊號成立後 {win.forward_days} 交易日的<b>平均超額報酬</b>（單位：個百分點；減去同日全市場平均，
                 衡量「有沒有比隨便買強」）。<b>點欄位標題</b>可切換排序聚焦；三角形＝近半年比歷史變強／變弱；
                 <span className="wq-weak-inline">灰字</span>＝樣本不足 {minS}，僅供參考。
                 權重 = 平均超額 ×2 取 1~5（≤0 或樣本不足＝0）。
@@ -686,11 +686,9 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
                   </tbody>
                 </table>
               </div>
-              {activeWeights.length > 0 && (
+              {weightRows.length > 0 && (
                 <p className="opp-muted opp-weights-note">
-                  目前候選情報引擎採用「歷史」欄權重排序：
-                  {activeWeights.map(x => `${x.label} ${x.w}`).join('、')}。
-                  其餘（含外資／投信連買、千張大戶、同業低估）平均超額 ≤0 或樣本不足 → 權重 0。
+                  {engineWeightNote(weightRows)}
                   回測母體＝約兩年長歷史（{win.as_of} 為止）。
                 </p>
               )}
@@ -700,12 +698,12 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
               <p className="opp-muted">
                 回測訊號成立日的下 {weights.forward_days} 交易日報酬，並減去「同一天全市場的平均報酬」
                 得到超額報酬——只看有沒有漲，多頭時亂選也會贏，那是大盤的功勞不是訊號的。
-                權重 = 平均超額（百分點）×2，取 1~5；平均超額 ≤ 0 或樣本 &lt; {weights.min_sample || 30} 一律 0。
+                權重 = 平均超額（個百分點）×2，取 1~5；平均超額 ≤ 0 或樣本 &lt; {weights.min_sample || 30} 一律 0。
               </p>
               <div className="opp-weights-scroll">
                 <table className="opp-weights-table">
                   <thead>
-                    <tr><th>訊號</th><th>勝率</th><th>平均報酬</th><th>平均超額</th><th>樣本</th><th>權重</th></tr>
+                    <tr><th>訊號</th><th>賺錢機率</th><th>平均報酬</th><th>平均超額（個百分點）</th><th>樣本</th><th>權重</th></tr>
                   </thead>
                   <tbody>
                     {Object.values(weights.signals)
@@ -715,7 +713,7 @@ export default function Opportunities({ stocks, onPick, onCount, engineStatus, t
                           <td>{s.label}</td>
                           <td>{s.win_rate != null ? `${Math.round(s.win_rate * 100)}%` : '—'}</td>
                           <td className={s.avg_ret >= 0 ? 'good' : ''}>{s.avg_ret != null ? `${s.avg_ret >= 0 ? '+' : ''}${s.avg_ret}%` : '—'}</td>
-                          <td className={s.avg_excess > 0 ? 'good' : ''}>{s.avg_excess != null ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}pp` : '—'}</td>
+                          <td className={s.avg_excess > 0 ? 'good' : ''}>{s.avg_excess != null ? `${s.avg_excess >= 0 ? '+' : ''}${s.avg_excess}` : '—'}</td>
                           <td>{s.samples || '—'}</td>
                           <td><b>{s.weight}</b></td>
                         </tr>

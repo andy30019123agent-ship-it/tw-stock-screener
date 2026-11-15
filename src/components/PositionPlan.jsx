@@ -43,7 +43,7 @@ export default function PositionPlan({ picks, dataDate, exitSummary }) {
         <CalendarClock size={14} strokeWidth={2} />
         <span>
           <b>20 日績效檢視日：{until || '—'}</b>（訊號日起 {HOLD_DAYS} 個交易日後）。
-          這是回測結算的口徑，<b>不是建議賣出日</b>——買不買、抱多久由你決定。
+          這是回測結算的口徑，<b>不是建議賣出日</b>。
         </span>
       </p>
 

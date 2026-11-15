@@ -158,6 +158,34 @@ export function countActiveConditions(c) {
   return n
 }
 
+// 目前套用中的條件，逐條寫成白話（給進階篩選打開時的第一行用；與 countActiveConditions 同一組判斷）。
+const BOOL_LABELS = [
+  ['signalMa', '糾結後黃金交叉→多頭發散'], ['breakout', '爆量突破起漲'], ['bullAligned', '多頭排列'],
+  ['goldenCross', '近期黃金交叉'], ['maRising', '均線上彎'], ['strongerThanMarket', '強於大盤'],
+  ['bigHolderRising', '千張大戶增加'], ['shishiAny', '小詩選股（任一形態）'], ['snSqueezeBreakout', '縮口帶量突破'],
+  ['snLowerReversal', '破下軌翻紅'], ['snBreakLowRecover', '破底翻'], ['snImmortalGuide', '仙人指路'],
+  ['snVolumeSupport', '大量撐'], ['undervalued', '同業低估'], ['rsStrong60', '強勢股（60 日）'],
+  ['rsConfirmed', '強勢雙確認'], ['industryHot', '熱門產業'],
+]
+export function describeActiveConditions(c) {
+  const out = []
+  for (const [k, label] of BOOL_LABELS) if (c[k]) out.push(label)
+  const both = c.foreignDays > 0 && c.trustDays > 0
+  if (c.foreignDays > 0) out.push(`外資連買 ${c.foreignDays} 天以上`)
+  if (c.trustDays > 0) out.push(`投信連買 ${c.trustDays} 天以上${both ? (c.chipLogic === 'or' ? '（跟外資擇一成立即可）' : '（跟外資兩個都要成立）') : ''}`)
+  if (c.minYield > 0) out.push(`殖利率 ≥ ${c.minYield}%`)
+  if (c.maxPe > 0) out.push(`本益比 ≤ ${c.maxPe}`)
+  if (c.maxPb > 0) out.push(`本淨比 ≤ ${c.maxPb}`)
+  if (c.divFill && c.divFill !== 'all') out.push(c.divFill === 'filled' ? '已填息' : '尚未填息')
+  if (c.maxFillDays > 0) out.push(`${c.maxFillDays} 天內填息`)
+  if (c.market && c.market !== 'all') out.push(c.market)
+  if (c.industry && c.industry !== 'all') out.push(c.industry)
+  if (c.minMoney > 0) out.push(`20 日均成交額 ≥ ${c.minMoney} 億`)
+  if (c.excludeRunaway) out.push('排除極端暴走股')
+  if (c.keyword && c.keyword.trim()) out.push(`關鍵字「${c.keyword.trim()}」`)
+  return out
+}
+
 export const SORTS = {
   signal: (a, b) => (b.signal_ma - a.signal_ma) || (b.foreign_streak - a.foreign_streak),
   breakout: (a, b) => (b.signal_breakout - a.signal_breakout) || (topVr(b) - topVr(a)),

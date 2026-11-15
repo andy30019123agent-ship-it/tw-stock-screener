@@ -73,3 +73,35 @@ export function reasonView(r) {
   const m = s.match(/^\s*⚠️?\uFE0F?\s*/u)
   return m && m[0].includes('⚠') ? { warn: true, text: s.slice(m[0].length) } : { warn: false, text: s }
 }
+
+// ── 2026-11-16 快修 ──────────────────────────────────────────────
+// 清單排序規則的一句話（只講真的在發生的）：pipeline/opportunities.py 排序鍵是
+// (-score, -rs_pct_60)；今天所有候選 score 都是 0 時，實際上就是照近 60 天漲幅排。
+export function sortRuleText(picks) {
+  const anyScore = Array.isArray(picks) && picks.some(p => isNum(p?.score) && p.score > 0)
+  return anyScore ? '先照訊號權重分、同分再照近 60 天漲幅由高到低排' : '照近 60 天漲幅由高到低排'
+}
+
+// 進引擎計分的訊號清單＝pipeline/backtest_signals.py ENGINE_SIGNALS（前端只用來判斷「有權重的訊號到底進不進計分」，
+// 權重本身一律讀 signal_windows.json，不在這裡寫死）。
+export const ENGINE_KEYS = [
+  'signal_ma', 'signal_breakout', 'sn_squeeze_breakout', 'sn_lower_reversal', 'sn_break_low_recover',
+  'sn_immortal_guide', 'sn_volume_support', 'foreign_buy', 'trust_buy', 'holder_rising', 'undervalued',
+]
+
+// 權重表下方那句說明。rows＝[{key,label,w}]（全部訊號，含權重 0）。
+// 修正 G4：舊句把「強勢股60日、強勢雙確認」當成排序用的權重，但它們不在計分名單裡。
+export function engineWeightNote(rows) {
+  const list = Array.isArray(rows) ? rows : []
+  const eng = list.filter(r => ENGINE_KEYS.includes(r.key) && r.w > 0)
+  const other = list.filter(r => !ENGINE_KEYS.includes(r.key) && r.w > 0)
+  const fmt = a => a.map(x => `${x.label} ${x.w}`).join('、')
+  const parts = [eng.length
+    ? `候選清單排序的計分只算 ${ENGINE_KEYS.length} 種技術／籌碼訊號，目前有權重的是：${fmt(eng)}。`
+    : `候選清單排序的計分只算 ${ENGINE_KEYS.length} 種技術／籌碼訊號，目前它們的權重全部是 0，所以實際上是照近 60 天漲幅排。`]
+  if (other.length) {
+    parts.push(`${fmt(other)} 雖然有權重，但不在計分名單裡，沒有拿來排序${other.some(r => r.key === 'rs_confirmed_60_120') ? '（強勢雙確認是入場門檻）' : ''}。`)
+  }
+  parts.push('權重是 0 的原因：平均超額 ≤ 0 或樣本不足。')
+  return parts.join('')
+}

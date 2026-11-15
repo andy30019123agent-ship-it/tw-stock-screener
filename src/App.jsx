@@ -8,7 +8,7 @@ import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
 import MarketAdvice from './components/MarketAdvice'
 import { readDense, writeDense } from './lib/safeStorage'
-import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions } from './lib/filters'
+import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions, describeActiveConditions } from './lib/filters'
 
 export default function App() {
   // 使用說明書用 hash 路由（#help）：零新依賴、可加書籤、GitHub Pages 不必改設定。
@@ -55,6 +55,7 @@ export default function App() {
   const closeModal = useCallback(() => setPicked(null), [])
 
   const activeConds = useMemo(() => countActiveConditions(conditions), [conditions])
+  const activeCondText = useMemo(() => describeActiveConditions(conditions), [conditions])
   const resetAll = () => { setConditions(DEFAULT_CONDITIONS); setSortKey('signal'); setPanelOpen(false) }
   // 本週市況建議「套用」：從乾淨預設疊上該訊號條件、展開進階篩選＋面板、捲到清單。
   // 進階篩選現在預設收合（DOM 裡還沒有 #cond-panel），要等 advancedOpen 觸發的那次渲染
@@ -193,7 +194,7 @@ export default function App() {
               <p className="mkt-detail" id="mkt-detail">
                 {label}——全市場僅 <b>{Math.round(mb.breadth20 * 100)}%</b> 的股票站上月線
                 （20 日報酬中位 {mb.median_ret20_pct >= 0 ? '+' : ''}{mb.median_ret20_pct}%）。
-                候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。（此為市場廣度代理、非大盤指數；僅供參考、不改選股）
+                候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。
               </p>
             )}
           </div>
@@ -220,7 +221,7 @@ export default function App() {
           {hasAdvice && (
             <>
               <h2 className="opp-section-title">想直接套用歷史最強的訊號？</h2>
-              <ErrorBoundary name="advice" label="本週市況建議">
+              <ErrorBoundary name="advice" label="今日市況建議">
                 <MarketAdvice breadth={data.market_breadth} regime={regime} onApply={applyAdvice} />
               </ErrorBoundary>
             </>
@@ -244,6 +245,12 @@ export default function App() {
             </p>
             {advancedOpen && (
               <div id="advanced-tools-body">
+                {/* 打開的第一行：寫出目前套用中的條件（預設就有條件時，使用者才知道清單為什麼這麼短） */}
+                {activeCondText.length > 0 && (
+                  <p className="advanced-active" data-active-conds>
+                    目前套用了 <b>{activeConds}</b> 個條件：{activeCondText.join('、')}。工具列的重設鈕可以全部清掉。
+                  </p>
+                )}
                 {/* 手機常駐（sticky）單一工具列：篩選數｜符合檔數｜排序（點開選單）｜重設。 */}
                 <div className="mobile-toolbar">
                   <button className={`mtb-btn ${panelOpen ? 'on' : ''}`} onClick={() => setPanelOpen(o => !o)}
@@ -323,9 +330,9 @@ export default function App() {
       </ErrorBoundary>
 
       <footer className="app-footer">
-        <a className="help-link" href="#help"><BookOpen size={16} strokeWidth={1.75} />使用說明書</a>
+        <a className="help-link" href="#help"><BookOpen size={16} strokeWidth={1.75} />使用說明</a>
         <span className="footer-sep">·</span>
-        資料來源：TWSE／TPEX 官方公開資料 · 僅供研究參考，非投資建議；歷史回測未必代表未來
+        資料來源：TWSE／TPEX 官方公開資料
       </footer>
     </div>
   )
