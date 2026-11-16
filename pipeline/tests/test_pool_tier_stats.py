@@ -206,7 +206,9 @@ def test_paired_同日配對差手算():
 def test_by_gate_門檻套用與退回分開算():
     """門檻退回（過門檻候選 < 20）的日子池子大、權重大，必須能分開看。"""
     applied = [_row(f"A{i:02d}", i + 1, 0.05, gate=True) for i in range(op.GATE_MIN_POOL)]
-    fallback = [_row(f"F{i:02d}", i + 1, -0.05, gate=False) for i in range(30)]
+    # 2026-11-16 起資料正常但過關不足 20 檔＝只列過關的（gate 仍算套用）；會退回全體的只剩
+    # 「強弱資料算不出來」（rs_unavailable），所以退回日的夾具要把 rs 設成缺值。
+    fallback = [_row(f"F{i:02d}", i + 1, -0.05, gate=False, rs=None) for i in range(30)]
     out = ts.compute_pool_tier_stats({"2025-03-03": applied, "2025-03-04": fallback},
                                      net_fn=ID, n_boot=20)
     assert out["meta"]["days_gate_applied"] == 1

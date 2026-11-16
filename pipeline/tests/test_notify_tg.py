@@ -273,3 +273,24 @@ def test_四捨五入與網站同規則():
     """網站 tierVerdict.js 用 floor(|x|×10+0.5)；Python 預設是銀行家進位（1.25→1.2），會差 0.1。"""
     s = nt.tier_disclaimer({"paired": {"cat_edge_vs_rest": {"win_pp": 1.25, "win_ci90": [0.25, 2.25]}}})
     assert "多約 1.3 個百分點（誤差範圍 +0.3～+2.3）" in s
+
+
+def test_強勢股太少日_快報講只有N檔過關_少於5檔與0檔都不壞(tmp_path, monkeypatch):
+    """2026-11-16：弱勢日只列過關的（gate.reason＝applied_small_pool），快報加一句、其餘不動。"""
+    _write_tiers(tmp_path, monkeypatch, TS)
+    opp_p = tmp_path / "opportunities.json"
+    monkeypatch.setattr(nt, "OPP_PATH", str(opp_p))
+    ids = ["9001", "9002", "9003"]
+    opp_p.write_text(json.dumps({"date": "2026-07-24",
+                                 "gate": {"applied": True, "reason": "applied_small_pool", "pool": 3},
+                                 "picks": [{"id": i, "tier": None} for i in ids]}), encoding="utf-8")
+    text, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock(id=i) for i in ids]})
+    assert "⚠️ 今天強勢股太少，只有 3 檔過關。" in text
+    assert "門檻已放寬" not in text
+    assert nt.gate_note({"applied": True, "reason": "applied"}, TS) == ""
+
+    opp_p.write_text(json.dumps({"date": "2026-07-24",
+                                 "gate": {"applied": True, "reason": "applied_small_pool", "pool": 0},
+                                 "picks": []}), encoding="utf-8")
+    text0, _ = nt.build_message({"data_date": "2026-07-24", "count": 925, "stocks": [_stock()]})
+    assert "沒有個股通過門檻" in text0 and "管線" not in text0
