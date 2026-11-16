@@ -256,9 +256,13 @@ export default function App() {
             const mb = data.market_breadth
             const label = mb.status === 'severe_red' ? '大盤明顯走弱' : mb.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'
             return (
-              <div className={`mkt ${mb.status === 'yellow' ? 'mkt-warn' : 'mkt-down'}`} role="status">
+              // 嚴重度三級（2026-11-16 專業看盤小修）：明顯走弱＝粗琥珀框＋警示三角；轉弱＝琥珀底；中性偏弱＝白底。
+              // 一律不用漲跌紅綠（那是行情語意）。
+              <div className={`mkt ${mb.status === 'yellow' ? 'mkt-warn' : mb.status === 'severe_red' ? 'mkt-down mkt-severe' : 'mkt-down'}`} role="status">
                 <button className="mkt-sum" onClick={() => setMktOpen(o => !o)} aria-expanded={mktOpen} aria-controls="mkt-detail">
-                  <TrendingDown size={18} strokeWidth={1.75} aria-hidden="true" />
+                  {mb.status === 'severe_red'
+                    ? <AlertTriangle size={18} strokeWidth={2} aria-hidden="true" />
+                    : <TrendingDown size={18} strokeWidth={1.75} aria-hidden="true" />}
                   <span><b>{label}</b>：僅 {Math.round(mb.breadth20 * 100)}% 站上月線，請自行斟酌降低曝險</span>
                   <ChevronDown className={`chevron ${mktOpen ? 'up' : ''}`} size={18} strokeWidth={2} aria-hidden="true" />
                 </button>

@@ -30,6 +30,7 @@ function hexToRgba(hex, a) {
 // 時間範圍（交易日數）：半年 = 給滿全部可用歷史（chart json 約 110 根）。預設半年、日 K。
 const RANGES = [['1m', '近1月', 22], ['3m', '近3月', 66], ['6m', '半年', 9999]]
 const DEFAULT_RANGE = '6m'
+const RIGHT_PAD = 3
 
 // 十字準星日期格式化：資料的 time 是 'YYYY-MM-DD' 字串，lightweight-charts 可能回字串或 BusinessDay 物件
 function fmtDate(t) {
@@ -42,7 +43,8 @@ function fmtDate(t) {
 function applyRange(chart, len, range) {
   const bars = RANGES.find(r => r[0] === range)?.[2] ?? 9999
   const from = Math.max(0, len - bars)
-  chart.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: len - 0.5 })
+  // 右邊多留 RIGHT_PAD 根空位：最右的日期刻度才不會被價格軸切掉
+  chart.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: len - 0.5 + RIGHT_PAD })
 }
 
 // pick＝從候選清單開的那一筆（opportunities.json）；從進階篩選開的沒有 pick。
@@ -56,6 +58,7 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
   const [range, setRange] = useState(DEFAULT_RANGE)
   const [readout, setReadout] = useState(null)     // 十字準星讀數 {date,o,h,l,c,up}
   const [levels, setLevels] = useState(null)       // 支撐/壓力 {support, resistance}
+  const [levelPos, setLevelPos] = useState(null)   // 支撐/壓力標籤在圖上的位置 {r, s, axisW}（像素）
   const [adjusted, setAdjusted] = useState(false)  // 這檔的圖是否經過權息還原（要提示，否則對不上券商看盤）
 
   // 拆圖的唯一入口：以 chartRef.current 為真相，拆完立刻設 null → 重複呼叫是安全的。
@@ -71,7 +74,7 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
   // K 線按需載入（charts/<id>.json）；把「載入中／無資料／載入失敗」分成三態
   const load = useCallback(() => {
     if (!stock) return
-    setStatus('loading'); setOhlc(null); setReadout(null); setLevels(null); setAdjusted(false)  // 清掉上一檔的支撐壓力，別讓載入時閃現舊值
+    setStatus('loading'); setOhlc(null); setReadout(null); setLevels(null); setLevelPos(null); setAdjusted(false)  // 清掉上一檔的支撐壓力，別讓載入時閃現舊值
     let alive = true
     fetch(`${import.meta.env.BASE_URL}data/charts/${stock.id}.json`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('http'))))
@@ -108,10 +111,12 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
 
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: inkMuted, fontFamily: numFont },
+      // 等寬數字比原本的比例字寬：軸字級縮到 11px、價格軸只畫完整的刻度（entireTextOnly），
+      // 時間軸右邊留 3 根 K 棒的空，最右的日期不會被價格軸切掉（2026-11-16 驗收：390 寬重疊、截字）。
+      layout: { background: { color: 'transparent' }, textColor: inkMuted, fontFamily: numFont, fontSize: 11 },
       grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-      rightPriceScale: { borderColor: border },
-      timeScale: { borderColor: border, timeVisible: false },
+      rightPriceScale: { borderColor: border, entireTextOnly: true, scaleMargins: { top: 0.12, bottom: 0.22 } },
+      timeScale: { borderColor: border, timeVisible: false, rightOffset: RIGHT_PAD },
       crosshair: { mode: 0 },
       localization: {
         locale: 'zh-TW',
@@ -140,7 +145,8 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
     setAdjusted(bars.some(b => Math.abs(b.f - 1) > 0.002))   // 有還原才提示，沒除息的股不必囉嗦
     candle.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })))
 
-    const vol = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' } })
+    // 成交量不掛最後值框與水平虛線（那個框會疊在價格軸刻度上，量的數字也不是這張圖要讀的重點）
+    const vol = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
     // 成交量顏色用原始 c/o 判紅綠：整列同乘一個係數，漲跌方向不會變，用哪個都一樣
     vol.setData(ohlc.map(d => ({ time: d.t, value: d.v, color: d.c >= d.o ? hexToRgba(up, 0.4) : hexToRgba(down, 0.4) })))
@@ -161,8 +167,21 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
     const resistance = Math.round(Math.max(...recent.map(d => d.high)) * 100) / 100
     const support = Math.round(Math.min(...recent.map(d => d.low)) * 100) / 100
     setLevels({ support, resistance })
-    candle.createPriceLine({ price: resistance, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '壓力' })
-    candle.createPriceLine({ price: support, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '支撐' })
+    // 支撐／壓力的名稱與數值改成圖內的小標籤（下方 .lv-tag），不在價格軸再掛數值框：
+    // 軸上的框會蓋住相鄰刻度（等寬字更寬，390 寬必撞；2026-11-16 驗收）。
+    candle.createPriceLine({ price: resistance, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '壓力' })
+    candle.createPriceLine({ price: support, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '支撐' })
+
+    // 標籤跟著價格軸縮放移動：可視範圍或圖表大小一變就重算位置（自動縮放在下一個畫格才生效，所以用 rAF）
+    const placeLevels = () => requestAnimationFrame(() => {
+      if (chartRef.current?.chart !== chart) return
+      setLevelPos({
+        r: candle.priceToCoordinate(resistance), s: candle.priceToCoordinate(support),
+        axisW: chart.priceScale('right').width(),
+      })
+    })
+    chart.timeScale().subscribeVisibleLogicalRangeChange(placeLevels)
+    chart.timeScale().subscribeSizeChange(placeLevels)
 
     // 十字準星讀數：手指點到哪天就顯示那天日期＋開高低收
     chart.subscribeCrosshairMove(param => {
@@ -177,6 +196,7 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
 
     chartRef.current = { chart, candle }
     applyRange(chart, ohlc.length, range)
+    placeLevels()
     // 🔑 cleanup 必須經由 chartRef.current 拆圖，不可用 closure 捕獲的 `chart`。
     // 原因（2026-07-25 實測的整頁白畫面 bug）：關窗時下面那個 effect 已經拆過圖並把 ref 設為
     // null；開下一檔時本 effect 的 deps（status/ohlc）改變會執行**這個** cleanup，若它用捕獲的
@@ -302,6 +322,13 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
 
         <div className="tv-chart">
           <div className="tv-canvas" ref={wrapRef} />
+          {status === 'ready' && levels && levelPos && [['r', '壓力', levels.resistance], ['s', '支撐', levels.support]].map(([k, name, v]) => (
+            levelPos[k] == null ? null : (
+              <span key={k} className="lv-tag" aria-hidden="true" style={{ top: levelPos[k], right: levelPos.axisW + 4 }}>
+                {name} <b className="mono">{v}</b>
+              </span>
+            )
+          ))}
           {readout && (
             <div className="chart-readout">
               <span className="ro-date">{readout.date}</span>

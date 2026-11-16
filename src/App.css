@@ -43,6 +43,9 @@
   --warn-border:#D3AE57;   /* 警示塊的裝飾框線（不是控制項） */
   /* 清單列風險橘點：圖形用色，對白 4.5:1、對 --surface-tint 4.3:1（≥3:1），不拿來當文字 */
   --risk-dot:#C2570C;
+  /* 錯誤（資料抓取失敗等）：比「要小心」更重，但紅色只給漲跌，所以用最深的中性色當實邊＋圖示，
+     靠粗框（2px＋左 6px）跟琥珀警示區分。對白 18.7:1。 */
+  --error-edge:#0B1220;
 
   /* ===== K 線圖（lightweight-charts 從這裡讀色，canvas 不吃 var()）===== */
   --chart-grid:#E3E7ED;    /* 格線刻意比分隔線淡：只當參考，不搶 K 棒 */
@@ -90,14 +93,15 @@ h1, h2, h3 { font-family: var(--font-cjk); color: var(--ink); }
 
 .app { max-width: 1200px; margin: 0 auto; padding: 0 32px 64px; }
 
-/* ===== 通用 pill 徽章 ===== */
+/* ===== 區塊小標（class 名沿用 badge-pill）=====
+   2026-11-16 專業看盤小修：原本實心深色塊看起來像可按的按鈕，其實只是標題標籤。
+   改成無底色、無框的粗體小標，一看就知道不能按。 */
 .badge-pill {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--surface-deep); color: var(--on-deep);
-  border-radius: var(--r-pill); padding: 8px 16px;
-  font-size: .875rem; font-weight: 700; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; color: var(--ink-body); border: none; padding: 0;
+  font-size: .875rem; font-weight: 700; letter-spacing: .04em; line-height: 1.5; white-space: nowrap;
 }
-.badge-pill svg { flex: none; }
+.badge-pill svg { flex: none; color: var(--ink-body); }
 
 /* ===== hero（2026-11-16 專業看盤：滿版深色條＋標題＋一行資料列，壓到約 70px 讓股票進第一屏）=====
    底色用 box-shadow＋clip-path 延伸到整個視窗寬（與分頁列同一招），不撐出橫向捲動。 */
@@ -138,6 +142,9 @@ h1, h2, h3 { font-family: var(--font-cjk); color: var(--ink); }
 /* 大盤偏弱是「要小心」不是漲跌：紅綠只給漲跌，所以明顯走弱用琥珀底、中性偏弱用白底，兩者都有左側琥珀條 */
 .mkt-down { background: var(--warn-bg); }
 .mkt-warn { background: var(--surface); }
+/* 明顯走弱（severe_red）：整圈加粗琥珀框、左條加寬、標題轉琥珀深字（對 --warn-bg 7.4:1）、圖示換警示三角 */
+.mkt-severe { border: 2px solid var(--warn); border-left-width: 6px; }
+.mkt-severe .mkt-sum b { color: var(--warn); font-weight: 800; }
 .mkt-sum {
   display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
   padding: 8px 16px; background: none; border: none; text-align: left;
@@ -160,8 +167,8 @@ h1, h2, h3 { font-family: var(--font-cjk); color: var(--ink); }
 .banner b { font-weight: 700; }
 .banner-warn { background: var(--warn-bg); border-color: var(--warn-border); border-left: 4px solid var(--warn); color: var(--ink); }
 .banner-warn svg { color: var(--warn); }
-.banner-error { background: var(--surface); border-color: var(--border-strong); border-left: 4px solid var(--up); color: var(--ink); }
-.banner-error svg { color: var(--up); }
+.banner-error { background: var(--surface); border: 2px solid var(--error-edge); border-left-width: 6px; color: var(--ink); font-weight: 500; }
+.banner-error svg { color: var(--error-edge); }
 
 /* ===== loading state ===== */
 .center-state {
@@ -1575,10 +1582,59 @@ h1, h2, h3 { font-family: var(--font-cjk); color: var(--ink); }
 .opp-fail { border-left: 4px solid var(--warn); }
 .help-note { border: 1px solid var(--border); }
 
-/* 頁首在寬螢幕：內容與分頁列同一條中線（「今天」清單也是置中限寬） */
 @media (min-width: 721px) {
-  .hero { text-align: center; padding: 16px 0 14px; }
-  .hero-meta { justify-content: center; }
+  .hero { padding-top: 16px; padding-bottom: 14px; }
 }
 
 /* 動畫：只留既有的展開箭頭旋轉、彈窗滑入，一律 ≤400ms；prefers-reduced-motion 在檔案開頭全關 */
+
+/* ---- 2026-11-16 專業看盤小修（獨立驗收後）---- */
+/* 收合標題一律同一個樣子：整列白底＋控制項深框、主要文字色粗體、箭頭對比 ≥3:1，一看就知道可以點開。
+   按鈕型（opp-weights／os／combo）用 lucide 箭頭；<details> 型用 CSS 畫的同款箭頭。 */
+.opp-weights-toggle, .os-toggle, .combo-toggle, .strategy-board > summary, .pp-exit > summary {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px;
+  padding: 10px 12px; text-align: left; list-style: none; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  font-family: inherit; font-size: 1rem; font-weight: 700; line-height: 1.5; color: var(--ink);
+}
+.opp-weights-toggle:hover, .os-toggle:hover, .combo-toggle:hover, .strategy-board > summary:hover, .pp-exit > summary:hover {
+  color: var(--ink); text-decoration: none; border-color: var(--ink); background: var(--surface-tint);
+}
+.opp-weights-toggle[aria-expanded=true], .os-toggle[aria-expanded=true], .combo-toggle[aria-expanded=true],
+.strategy-board[open] > summary, .pp-exit[open] > summary { background: var(--surface-tint); }
+.opp-weights-toggle > svg, .os-toggle > svg, .combo-toggle > svg { flex: none; color: var(--ink-body); }
+.strategy-board > summary::-webkit-details-marker, .pp-exit > summary::-webkit-details-marker { display: none; }
+.strategy-board > summary::before, .pp-exit > summary::before {
+  content: ""; flex: none; width: 8px; height: 8px; margin: 0 4px 0 3px;
+  border-right: 2px solid var(--ink-body); border-bottom: 2px solid var(--ink-body);
+  transform: rotate(-45deg); transition: transform 200ms ease;
+}
+.strategy-board[open] > summary::before, .pp-exit[open] > summary::before { transform: rotate(45deg); }
+.strategy-board[open] > summary, .pp-exit[open] > summary { margin-bottom: 8px; }
+.pp-exit { border-top: none; padding-top: 0; }
+.os, .combo-board { border-top: none; }
+/* 狀態記號圖示（Marks.jsx）：跟著文字基線、顏色沿用所在處的文字色 */
+/* position: relative 讓裡面的 sr-only（絕對定位）留在這個框內；否則在可橫捲的表格裡它會以整頁為定位基準，
+   跑到表格捲動範圍外、撐出整頁橫向捲動（2026-11-16 實測 390 寬 scrollWidth 768） */
+.mark-ico { position: relative; display: inline-flex; align-items: center; vertical-align: -2px; }
+.mark-ico svg { flex: none; }
+
+/* 寬螢幕：頁首標題、分頁列、狀態橫幅都對齊目前分頁的內容欄（今天 680、依據 880、工具滿寬） */
+.app { --col-w: 680px; }
+.app:has(#panel-basis:not([hidden])) { --col-w: 880px; }
+.app:has(#panel-tools:not([hidden])) { --col-w: 100%; }
+@media (min-width: 721px) {
+  .hero { text-align: left; padding-left: max(0px, calc((100% - var(--col-w)) / 2)); padding-right: max(0px, calc((100% - var(--col-w)) / 2)); }
+  .hero-meta { justify-content: flex-start; }
+  .tabbar-inner { max-width: var(--col-w); grid-template-columns: repeat(3, 144px); }
+  .tabpanel-today, .bt { max-width: var(--col-w); }
+  .app > .banner, .app > .center-state { max-width: var(--col-w); margin-left: auto; margin-right: auto; }
+}
+
+/* K 線圖內的支撐／壓力標籤：貼在虛線上方、價格軸左邊，不壓到軸上的刻度 */
+.lv-tag {
+  position: absolute; z-index: 2; pointer-events: none; transform: translateY(calc(-100% - 2px));
+  padding: 0 6px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface);
+  font-size: .875rem; line-height: 1.5; color: var(--ink-body); white-space: nowrap;
+}
+.lv-tag b { color: var(--ink); font-weight: 700; }
