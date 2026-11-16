@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronRight, ChevronDown, LayoutGrid, List } from 'luci
 import { CandidateCard, CandidateRow } from './PassCard'
 import { edgeWinHeadline, staleText, gateNote } from '../lib/tierVerdict'
 import { readView, writeView } from '../lib/viewPref'
-import { commonReasons, sortRuleText, splitMain, smallPoolText } from '../lib/cardFacts'
+import { commonReasons, sortRuleText, splitMain, smallPoolText, allEdge } from '../lib/cardFacts'
 
 // 「今天」分頁的候選清單（2026-11-16 三分頁改版，Andy 核准方向 A＋C、卡片改方向 B）。
 // 這裡只放股票：一句關鍵事實＋狀態型警示（一律首屏可見）＋卡片／清單切換＋兩組候選。
@@ -17,7 +17,7 @@ import { commonReasons, sortRuleText, splitMain, smallPoolText } from '../lib/ca
 // 卡片與清單兩種檢視吃同一個陣列、同一個切片。
 const NEUTRAL = '歷史數字暫時取不到，有分類也可能虧錢'
 
-function PickList({ list, view, byId, gate, onPick, showReasons, markFirst }) {
+function PickList({ list, view, byId, gate, onPick, showReasons, markFirst, hideEdgeTag }) {
   const [openIds, setOpenIds] = useState(() => new Set())
   const toggle = id => setOpenIds(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   if (view === 'list') {
@@ -25,7 +25,7 @@ function PickList({ list, view, byId, gate, onPick, showReasons, markFirst }) {
       <ul className="opp-rows">
         {list.map((p, i) => (
           <CandidateRow key={p.id} p={p} full={byId.get(p.id)} gate={gate} first={markFirst && i === 0}
-            open={openIds.has(p.id)} onToggle={() => toggle(p.id)} onOpen={() => onPick(p)} showReasons={showReasons} />
+            open={openIds.has(p.id)} onToggle={() => toggle(p.id)} onOpen={() => onPick(p)} showReasons={showReasons} hideEdgeTag={hideEdgeTag} />
         ))}
       </ul>
     )
@@ -104,6 +104,7 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
   const headline = edgeWinHeadline(tierStats)
   const sortRule = sortRuleText(opp.picks)
   const anyDot = view === 'list'
+  const mainAllEdge = allEdge(main)   // 主名單全是相對優勢 → 列上不重複掛小標，圖例講一次
 
   return (
     <section className="opp" data-region="候選情報">
@@ -139,12 +140,13 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
       {/* 圖例一句：排序依據（不寫戰績數字，會被每週重算推翻）＋（清單檢視才有的）橘點說明 */}
       <p className="opp-legend opp-legend-sm">
         <span>
+          {mainAllEdge && <b data-main-all-edge>這 {main.length} 檔都是相對優勢。</b>}
           {sortRule}。
           {anyDot && <span className="opp-dot-legend"><span className="opp-dot" aria-hidden="true" />橘點＝有風險標記，點開看</span>}
         </span>
       </p>
 
-      <PickList list={main} view={view} byId={byId} gate={opp.gate} onPick={handlePick} showReasons={!common} markFirst />
+      <PickList list={main} view={view} byId={byId} gate={opp.gate} onPick={handlePick} showReasons={!common} markFirst hideEdgeTag={mainAllEdge} />
 
       {other.length > 0 && (
         <div className="opp-other">

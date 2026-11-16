@@ -99,10 +99,12 @@ export function CandidateCard({ p, full, gate, first, onOpen, showReasons }) {
 
 // 清單檢視：一行一檔＝名稱、代號、60 天漲幅贏過 X%、現價漲跌；有硬狀況（risk_flags、法說會將近）時名稱旁一個橘點。
 // 點一下就地展開同一份 PassBody（不跳頁），再點收合。
-export function CandidateRow({ p, full, gate, first, open, onToggle, onOpen, showReasons }) {
+export function CandidateRow({ p, full, gate, first, open, onToggle, onOpen, showReasons, hideEdgeTag }) {
   const beat = beatText(p.rs_pct_60)
   const dot = hasRiskDot(p)
-  const edge = edgeLine(p)     // 2026-11-16：清單不再按分類分組，相對優勢改在列上標（樣式同卡片那行：無底粗體）
+  // 2026-11-16：清單不再按分類分組，相對優勢改在列上標（樣式同卡片那行：無底粗體）。
+  // hideEdgeTag＝整段名單每檔都是相對優勢時由上層關掉（名單上方講一次就好）；展開後的內容照舊會寫。
+  const edge = hideEdgeTag ? null : edgeLine(p)
   const detailId = `opp-row-${p.id}`
   return (
     <li className={`opp-row${open ? ' open' : ''}`} data-pick-row {...(first ? { 'data-first-pick': '' } : {})}>

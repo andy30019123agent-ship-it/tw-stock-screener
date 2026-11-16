@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { sortRuleText, engineWeightNote, ENGINE_KEYS, MIN_VOL_LOTS, engineWeightsAllZero, RS_STRONG_PCT, RS_CONFIRM_120_PCT, MAIN_LIST_N, splitMain, smallPoolText } from '../cardFacts.js'
+import { sortRuleText, engineWeightNote, ENGINE_KEYS, MIN_VOL_LOTS, engineWeightsAllZero, RS_STRONG_PCT, RS_CONFIRM_120_PCT, MAIN_LIST_N, splitMain, smallPoolText, allEdge } from '../cardFacts.js'
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  ❌', msg) } }
 
@@ -20,6 +20,11 @@ const s2 = splitMain(ps, undefined)
 ok(s2.main.length === MAIN_LIST_N && s2.other.length === 25 - MAIN_LIST_N, '缺 main_n → 前端常數')
 ok(splitMain(ps.slice(0, 3), 20).other.length === 0 && splitMain(null, 20).main.length === 0, '不足 20 檔、缺資料不 crash')
 ok(splitMain(ps, 0).main.length === MAIN_LIST_N && splitMain(ps, 'x').main.length === MAIN_LIST_N, '壞值 → 前端常數')
+
+// 主名單全是相對優勢 → 列上不掛小標（上方講一次）；混了兩種、空名單 → 照舊掛
+const e = { tier: 'edge' }, n = { tier: null }
+ok(allEdge([e, e, { tier: 'win' }]) === true, '全是相對優勢（含舊值 win）')
+ok(allEdge([e, n]) === false && allEdge([]) === false && allEdge(null) === false, '混兩種／空／缺資料 → false')
 
 // 弱勢日一句話
 const sp = { applied: true, reason: 'applied_small_pool' }

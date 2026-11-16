@@ -92,6 +92,12 @@ export function sortRuleText(picks) {
 // 今晚排程前的舊資料沒有 main_n，前端用這個常數；改 pipeline 時要一起改（cardFacts.test.mjs 會讀 .py 對照）。
 export const MAIN_LIST_N = 20
 
+// 主名單是不是「每一檔都是相對優勢」。是的話列上的小標每列都一樣、等於沒區分（Andy 2026-11-16 選 2），
+// 清單列就不掛小標、改在名單上方講一次；主名單混了兩種時回 false，小標照舊顯示才分得出來。
+export function allEdge(list) {
+  return Array.isArray(list) && list.length > 0 && list.every(p => isEdge(p))
+}
+
 // 前 mainN 檔是主名單、其餘收進「其他候選」。只是畫面分段，順序照 JSON 原樣、不重排。
 export function splitMain(picks, mainN) {
   const list = Array.isArray(picks) ? picks : []
