@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台股選股 風格示意 S2：專業看盤</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* 方向 2「專業看盤」：以下變數就是之後要轉成專案 token 的全部顏色與尺寸 */
+:root{
+  --bg:#EEF1F5;
+  --surface:#FFFFFF;
+  --open:#F7F9FB;
+  --hero:#1B2028;
+  --tabbg:#FFFFFF;
+  --ink:#0B1220;
+  --ink2:#3B4656;
+  --muted:#566274;
+  --line:#C3CBD6;
+  --line-strong:#6B7787;
+  --accent:#1457D6;
+  --accent-text:#1457D6;
+  --on-accent:#FFFFFF;
+  --up:#C1121F;
+  --down:#0A7A4B;
+  --orange:#C2570C;
+  --check:#0B1220;
+  --warn:#6B4700;
+  --warn-bg:#FBF1D9;
+  --hero-ink:#FFFFFF;
+  --hero-ink2:#C5CDD8;
+  --ok-dot:#3DDC97;
+  --font-cjk:'Noto Sans TC';
+  --font-num:'JetBrains Mono';
+  --r:2px;
+  --r-sm:2px;
+  --r-pill:2px;
+  --row-h:60px;
+  --row-pad:8px;
+  --px-size:22px;
+  --num-w:800;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:var(--font-cjk),'PingFang TC','Microsoft JhengHei',system-ui,sans-serif;background:var(--bg);color:var(--ink2);line-height:1.6;font-size:16px;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;text-align:left}
+.num{font-family:var(--font-num),var(--font-cjk),system-ui,sans-serif;font-variant-numeric:tabular-nums}
+.ic{flex:none;display:inline-block;vertical-align:middle}
+.tri{flex:none}
+.tag{background:var(--ink);color:var(--bg);font-size:14px;font-weight:700;padding:6px 16px;letter-spacing:.02em}
+.wrap{max-width:480px;margin:0 auto;background:var(--bg);min-height:100vh}
+.hero{background:var(--hero);padding:20px 16px 16px}
+.hero h1{font-size:24px;line-height:1.3;color:var(--hero-ink)}
+.meta{margin-top:6px;font-size:14px;color:var(--hero-ink2);display:flex;flex-wrap:wrap;gap:2px 8px;align-items:center}
+.meta b{color:var(--hero-ink)}
+.okdot{width:8px;height:8px;border-radius:50%;background:var(--ok-dot);display:inline-block}
+.tabbar{display:flex;background:var(--tabbg);border-bottom:1px solid var(--line)}
+.tab{flex:1;min-height:48px;text-align:center;font-weight:700;font-size:16px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--accent-text);border-bottom-color:var(--accent)}
+.market{display:flex;align-items:center;gap:10px;width:calc(100% - 32px);margin:16px 16px 0;min-height:56px;padding:10px 12px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface);color:var(--ink);font-size:16px;line-height:1.5}
+.market .ic{color:var(--warn)}
+.market b{font-weight:700}
+.market span.t{flex:1}
+.keyfact{padding:14px 16px 0;color:var(--ink2);font-size:16px}
+.keyfact b{color:var(--ink)}
+.keyfact a{display:inline-block;padding:10px 4px;color:var(--accent-text);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.listhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 16px 0}
+.listhead h2{font-size:20px;color:var(--ink);line-height:1.3}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-pill);padding:2px;background:var(--surface)}
+.seg button{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:var(--r-pill);font-size:16px;font-weight:700;color:var(--ink2)}
+.seg button.on{background:var(--accent);color:var(--on-accent)}
+.legend{padding:4px 16px 12px;font-size:16px;color:var(--ink2)}
+.legend .dot{vertical-align:-1px;margin:0 6px 0 4px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block;flex:none}
+.rows{list-style:none;margin:0 16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.row{border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row-btn{display:flex;align-items:center;gap:8px;width:100%;min-height:var(--row-h);padding:var(--row-pad) 12px 10px 14px}
+.row-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.row-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row-name{font-size:18px;font-weight:700;color:var(--ink);line-height:1.35}
+.row-code{font-size:14px;font-weight:700;color:var(--muted)}
+.row-sub{font-size:16px;color:var(--ink2)}
+.row-sub b{color:var(--ink);font-weight:var(--num-w)}
+.row-px{display:flex;flex-direction:column;align-items:flex-end;line-height:1.35}
+.px-close{font-size:var(--px-size);font-weight:var(--num-w);color:var(--ink)}
+.chg{display:inline-flex;align-items:center;gap:4px;font-size:16px;font-weight:var(--num-w)}
+.chg.up{color:var(--up)}.chg.down{color:var(--down)}
+.chev{color:var(--ink2)}
+.row.open{background:var(--open)}
+.detail{padding:4px 14px 16px}
+.sub-meta{font-size:14px;color:var(--muted);margin-bottom:8px}
+.checks{list-style:none;display:flex;flex-direction:column;gap:12px}
+.checks li{display:flex;gap:10px;align-items:flex-start}
+.chk{color:var(--check);margin-top:2px}
+.ck{display:flex;flex-direction:column}
+.ck-k{font-size:14px;font-weight:700;color:var(--ink2);line-height:1.5}
+.ck-v{font-size:16px;color:var(--ink);line-height:1.5}
+.line{display:flex;gap:8px;align-items:flex-start;margin-top:14px;font-size:16px;color:var(--ink);line-height:1.5}
+.line .ic{margin-top:4px}
+.line.strong .ic{color:var(--accent-text)}
+.line.caution{background:var(--warn-bg);color:var(--warn);padding:8px 10px;border-radius:var(--r-sm)}
+.line.caution .ic{color:var(--warn)}
+.gap{margin-top:12px;font-size:16px;color:var(--ink2)}
+.kbtn{margin-top:14px;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-weight:700;font-size:16px;color:var(--ink);background:var(--surface)}
+.bottom{height:32px}
+.hero{padding:14px 16px 12px}
+.hero h1{font-size:20px;font-weight:700}
+.tabbar{background:var(--surface)}
+.market{border-radius:2px;border-left:4px solid var(--warn);margin-top:12px;background:var(--surface)}
+.keyfact{padding-top:12px}
+.rows{margin:0 12px;border-radius:2px;border-color:var(--line-strong)}
+.market{width:calc(100% - 24px);margin-left:12px;margin-right:12px}
+.keyfact,.listhead,.legend{padding-left:12px;padding-right:12px}
+.row-btn{padding-top:8px;padding-bottom:8px}
+.row-name{font-size:18px}
+.row-sub{font-size:16px}
+.row-sub b{font-size:16px}
+.chg{font-size:17px}
+.seg{border-radius:2px}.seg button{border-radius:2px}
+.kbtn,.line.caution{border-radius:2px}
+.row.open{border-left:4px solid var(--accent)}
+.row.open .row-btn{padding-left:10px}.row.open .detail{padding-left:10px}
+.row-px{min-width:92px}
+.tag{background:var(--hero);color:#fff}
+.legend{padding-top:4px}
+.ck-v,.gap,.line b+*{}
+</style>
+</head>
+<body>
+<div class="tag">方向 2・專業看盤（示意圖）</div>
+<div class="wrap">
+<header class="hero"><h1>台股全市場選股</h1>
+<p class="meta"><span class="okdot"></span><span>資料日 <b class="num">2026-11-13</b></span><span>・</span><span>掃描 <b class="num">778</b> 檔</span><span>・</span><span>候選 <b class="num">144</b> 檔</span></p></header>
+<nav class="tabbar" role="tablist"><button class="tab on" role="tab" aria-selected="true">今天</button><button class="tab" role="tab">依據</button><button class="tab" role="tab">工具</button></nav>
+<button class="market"><svg class="ic " width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 17h6v-6"/><path d="m22 17-8.5-8.5-5 5L2 7"/></svg><span class="t"><b>大盤明顯走弱</b>：僅 25% 站上月線，請自行斟酌降低曝險</span><svg class="ic " width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+<p class="keyfact">相對優勢這群歷史上單檔賺錢機率只有 46.5%，不到一半；<b>排前面不代表比較會賺，買不買你決定</b>。<a href="#basis">看依據</a></p>
+<div class="listhead"><h2>相對優勢 <span class="num">48</span> 檔</h2>
+<div class="seg" role="group" aria-label="候選顯示方式"><button class="on" aria-pressed="true"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></svg>清單</button><button aria-pressed="false"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>卡片</button></div></div>
+<p class="legend">＝成交金額排今天候選前 1/3，照近 60 天漲幅由高到低排。<span class="dot" aria-hidden="true"></span>橘點＝有風險標記，點開看</p>
+<ul class="rows">
+<li class="row"><button class="row-btn" aria-expanded="false">
+<span class="row-main"><span class="row-top"><span class="row-name">聯一光電</span><span class="num row-code">3441</span></span>
+<span class="row-sub">60 天漲幅贏過 <b class="num">99.7%</b></span></span>
+<span class="row-px"><span class="num px-close">198</span><span class="chg up num"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg>+0.8%</span></span>
+<svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+<li class="row"><button class="row-btn" aria-expanded="false">
+<span class="row-main"><span class="row-top"><span class="row-name">濱川</span><span class="num row-code">1569</span></span>
+<span class="row-sub">60 天漲幅贏過 <b class="num">99.6%</b></span></span>
+<span class="row-px"><span class="num px-close">97.3</span><span class="chg down num"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg>−5.1%</span></span>
+<svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+<li class="row open"><button class="row-btn" aria-expanded="true">
+<span class="row-main"><span class="row-top"><span class="row-name">倉和</span><span class="num row-code">6538</span><span class="dot" aria-hidden="true"></span></span>
+<span class="row-sub">60 天漲幅贏過 <b class="num">99.0%</b></span></span>
+<span class="row-px"><span class="num px-close">293.5</span><span class="chg down num"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg>−10.0%</span></span>
+<svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg></button>
+<div class="detail"><p class="sub-meta">上櫃・電子零組件</p>
+<ul class="checks">
+<li><svg class="ic chk" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg><span class="ck"><span class="ck-k">強勢雙確認</span><span class="ck-v">60 天贏過全市場 99.0%（門檻 80%）</span></span></li>
+<li><svg class="ic chk" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg><span class="ck"><span class="ck-k">成交量夠</span><span class="ck-v">近 20 日均量達 500 張門檻</span></span></li>
+<li><svg class="ic chk" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg><span class="ck"><span class="ck-k">營收沒衰退</span><span class="ck-v">營收年增 +57.4%</span></span></li>
+</ul>
+<p class="line strong"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg><span><b>相對優勢：</b>成交金額排今天候選前 1/3</span></p>
+<p class="line caution"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span><b>要小心：</b>法說會將近（11-17）</span></p>
+<p class="gap">離近 20 日前高還差 17.2%</p>
+<button class="kbtn"><svg class="ic " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>看 K 線</button></div></li>
+<li class="row"><button class="row-btn" aria-expanded="false">
+<span class="row-main"><span class="row-top"><span class="row-name">和益</span><span class="num row-code">1709</span></span>
+<span class="row-sub">60 天漲幅贏過 <b class="num">98.9%</b></span></span>
+<span class="row-px"><span class="num px-close">53.1</span><span class="chg up num"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg>+1.9%</span></span>
+<svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+<li class="row"><button class="row-btn" aria-expanded="false">
+<span class="row-main"><span class="row-top"><span class="row-name">騰輝電子-KY</span><span class="num row-code">6672</span></span>
+<span class="row-sub">60 天漲幅贏過 <b class="num">98.8%</b></span></span>
+<span class="row-px"><span class="num px-close">510</span><span class="chg up num"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="5,1 9.5,9 0.5,9" fill="currentColor"/></svg>+2.6%</span></span>
+<svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+<li class="row"><button class="row-btn" aria-expanded="false">
+<span class="row-main"><span class="row-top"><span class="row-name">麗臺</span><span class="num row-code">2465</span><span class="dot" aria-hidden="true"></span></span>
+<span class="row-sub">60 天漲幅贏過 <b class="num">98.6%</b></span></span>
+<span class="row-px"><span class="num px-close">162</span><span class="chg down num"><svg class="tri" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><polygon points="0.5,1 9.5,1 5,9" fill="currentColor"/></svg>−1.2%</span></span>
+<svg class="ic chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></li>
+</ul>
+<div class="bottom"></div>
+</div>
+</body>
+</html>
