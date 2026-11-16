@@ -177,8 +177,11 @@ def build_opportunities(results, weights, revenue, data_date):
     # gate.applied=True、reason="applied_small_pool"，前端／快報講「今天強勢股太少，只有 N 檔過關」。
     # 例外：強弱資料整個算不出來（rs_unavailable）時維持舊行為退回全體——那是資料故障，不是弱勢日，
     # 照舊名單會整個空掉、把故障講成市場結論。
+    # 「算不出來」＝沒有任何一檔同時有 rs_pct_60 與 rs_pct_120（強勢雙確認要兩個都有才判得了）。
+    # 原本只看 rs_pct_60，120 日資料缺（例如長歷史不足 121 天的暖身期）會被誤判成候選不足
+    # （2026-11-16 盤點報告 A 表指出）。
     # 舊值 "pool_too_small" 只會出現在 2026-11-16 以前的 picks_history／舊 opportunities.json。
-    rs_ok = any(r.get("rs_pct_60") is not None for r in results)
+    rs_ok = any(r.get("rs_pct_60") is not None and r.get("rs_pct_120") is not None for r in results)
     gate_on = len(gated) >= GATE_MIN_POOL or rs_ok
     pool = gated if gate_on else results
     # 說清楚「為什麼沒套門檻」——RS 資料掛掉時門檻會靜默失效，必須能分辨故障與候選不足

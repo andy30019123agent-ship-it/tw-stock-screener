@@ -144,7 +144,7 @@ def test_preview_n是畫面預設筆數不是建議買幾檔():
 def _tier_stock(sid, turnover_close, bias20):
     return {"id": sid, "name": f"股{sid}", "close": turnover_close, "ma20": 95.0,
             "avg_vol_lots": 1000, "bias20_pct": bias20, "recent_high20": None,
-            "rs_pct_60": 0.5, "earnings_date": None, "signal_ma": True,
+            "rs_pct_60": 0.5, "rs_pct_120": 0.5, "earnings_date": None, "signal_ma": True,
             "rs_confirmed_60_120": True}   # 2026-11-16 起弱勢日只列過關的，夾具要明講過了強勢關
 
 
@@ -341,7 +341,7 @@ def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
 # ── 入場門檻的降級可見性（2026-07-25 Codex 複查後補）──────────────────────
 def _stock(sid, **kw):
     base = {"id": sid, "name": f"N{sid}", "avg_vol_lots": 5000, "close": 100, "ma20": 95,
-            "sn_squeeze_breakout": True, "rs_confirmed_60_120": True, "rs_pct_60": 0.9}
+            "sn_squeeze_breakout": True, "rs_confirmed_60_120": True, "rs_pct_60": 0.9, "rs_pct_120": 0.9}
     base.update(kw)
     return base
 
@@ -573,3 +573,21 @@ def test_影子檔同日重跑覆寫不重複(monkeypatch, tmp_path):
     assert [e["date"] for e in data["entries"]] == ["2026-11-16", "2026-11-17"]
     assert len(data["entries"][0]["rows"]) == 2, "同日重跑要覆寫成最新那次"
     assert "note" in data and "60" in data["note"]
+
+
+def test_只有60日強弱沒有120日時判成資料不可用_退回全體與舊版相同():
+    """120 日強弱算不出來（暖身期）＝強勢雙確認根本判不了，不是「今天沒有股票過關」。
+    pool 行為與 2026-11-16 以前相同：退回全部有訊號的股票。"""
+    stocks = [_stock(f"W{i:02d}", rs_confirmed_60_120=False, rs_pct_60=0.5 + i / 100, rs_pct_120=None)
+              for i in range(30)]
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2025-03-03")
+    assert o["gate"]["applied"] is False and o["gate"]["reason"] == "rs_unavailable"
+    assert o["gate"]["pool"] == 0 and len(o["picks"]) == 30, "退回全體（舊版行為）"
+    assert all("強弱資料算不出來" in " ".join(p["reasons"]) for p in o["picks"])
+
+
+def test_有一檔兩個強弱都有就算資料可用():
+    stocks = [_stock("V1", rs_confirmed_60_120=False, rs_pct_60=0.5, rs_pct_120=0.5),
+              _stock("V2", rs_confirmed_60_120=False, rs_pct_60=0.5, rs_pct_120=None)]
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2026-11-16")
+    assert o["gate"]["reason"] == "applied_small_pool" and o["picks"] == []

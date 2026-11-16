@@ -212,7 +212,7 @@ function HowMade({ opp, tierStats }) {
         ))}
       </ol>
       <p className="bt-lead"><ListChecks size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>排順序</b>：{sortRule}；排前面沒有證據比較會賺。</span></p>
-      <p className="bt-lead"><TrendingUp size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>相對優勢</b>：{EDGE_TEXT}的排在前面（還在觀察的排法，不是定論），意思是成交熱絡，不是漲得比較強；沒排進前 1/3 的沒有分類稱號（「證據」表裡叫「其他候選」）。前 {opp?.main_n ?? MAIN_LIST_N} 檔是主名單，其餘收在「其他候選」。</span></p>
+      <p className="bt-lead"><TrendingUp size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>相對優勢</b>：{EDGE_TEXT}的排在前面（還在觀察的排法，不是定論），意思是成交熱絡，不是漲得比較強；沒排進前 1/3 的叫「其他候選」，沒有分類稱號。前 {opp?.main_n ?? MAIN_LIST_N} 檔是主名單，其餘收在「第 {(opp?.main_n ?? MAIN_LIST_N) + 1} 名以後」。</span></p>
       <p className="bt-lead"><AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>要小心與橘點</b>：卡片上「要小心」只列既有標記（乖離大、乖離排前段、法說會將近）和近 20 天輸大盤幾個百分點，不另外判斷好壞。清單上的橘點只看硬狀況：系統標的風險（乖離大、營收資料缺）或法說會將近。</span></p>
       {common && (
         <p className="bt-lead"><Info size={16} strokeWidth={1.75} aria-hidden="true" />

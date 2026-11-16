@@ -395,6 +395,9 @@ def _pool_row(stock, ind, x, ret):
         "ma20": ind.get("ma20"), "recent_high20": ind.get("recent_high20"),
         "bias20_pct": ind.get("bias20_pct"), "rs20": ind.get("rs20"),
         "rs_pct_60": (x.get("rs_pct_60") if x else None),
+        # 2026-11-16 加：build_opportunities 用「60／120 日強弱是否都算得出來」判斷資料可不可用
+        # （rs_unavailable），重播時少了這欄會每天都被當成資料故障。
+        "rs_pct_120": (x.get("rs_pct_120") if x else None),
         "rs_confirmed_60_120": xf["rs_confirmed_60_120"],
         "_ret": ret,
     })

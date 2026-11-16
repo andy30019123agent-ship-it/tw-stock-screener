@@ -10,7 +10,8 @@ import { commonReasons, sortRuleText, splitMain, smallPoolText } from '../lib/ca
 // 原本同一個元件裡的「這些數字怎麼來的」、成績單搬到 BasisTab；權重表、持有口徑與停損代價搬到工具分頁。
 //
 // 2026-11-16 改（Andy 核准「小改＋觀察」）：不再按 tier 分「相對優勢／其他候選」兩組，
-// 改成照 JSON 原始順序切兩段——前 main_n 檔是主名單、其餘收進預設收合的「其他候選」。
+// 改成照 JSON 原始順序切兩段——前 main_n 檔是主名單、其餘收進預設收合的「第 main_n+1 名以後」
+// （不叫「其他候選」：那個詞在「依據」分頁的證據表專指沒排進相對優勢的候選，避免撞名）。
 // 後端排序已經是「分數 → 相對優勢先 → 60 日強弱」，相對優勢自然排在前面，前端不重新排序。
 // 原本每組各有一層「再看 N 檔」（preview_n）的分頁，跟主名單／其他候選重疊，拿掉，只留一層收合。
 // 卡片與清單兩種檢視吃同一個陣列、同一個切片。
@@ -95,6 +96,7 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
   )
 
   const { main, other } = splitMain(opp.picks, opp.main_n)
+  const otherFrom = main.length + 1   // 收合區從第幾名開始（＝main_n+1；不寫死 21）
   const smallPool = smallPoolText(opp.gate, opp.picks.length)
   const gNote = gateNote(opp.gate, tierStats)
   const stale = staleText(tierStats)
@@ -147,7 +149,7 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
       {other.length > 0 && (
         <div className="opp-other">
           <button className="opp-fold" onClick={() => setShowOther(v => !v)} aria-expanded={showOther}>
-            <span>其他候選（{other.length} 檔）<small>同樣過了所有關卡，排在主名單後面</small></span>
+            <span>第 {otherFrom} 名以後（{other.length} 檔）<small>同樣過了所有關卡，排在主名單後面</small></span>
             {showOther ? <ChevronDown size={20} strokeWidth={2} /> : <ChevronRight size={20} strokeWidth={2} />}
           </button>
           {showOther && (

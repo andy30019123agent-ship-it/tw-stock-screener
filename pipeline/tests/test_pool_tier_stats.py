@@ -20,7 +20,7 @@ def _row(sid, turnover_rank, ret, *, vol=800, bias=1.0, gate=True, engine=True,
     close = 100.0
     return {"id": sid, "name": sid, "signal_ma": engine, "avg_vol_lots": vol * turnover_rank,
             "close": close, "ma20": 95.0, "recent_high20": high20 if high20 is not None else 110.0 + turnover_rank,
-            "bias20_pct": bias, "rs20": None, "rs_pct_60": rs,
+            "bias20_pct": bias, "rs20": None, "rs_pct_60": rs, "rs_pct_120": rs,
             "rs_confirmed_60_120": gate, "_ret": ret}
 
 
