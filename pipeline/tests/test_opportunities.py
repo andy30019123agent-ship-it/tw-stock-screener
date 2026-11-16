@@ -144,7 +144,8 @@ def test_preview_n是畫面預設筆數不是建議買幾檔():
 def _tier_stock(sid, turnover_close, bias20):
     return {"id": sid, "name": f"股{sid}", "close": turnover_close, "ma20": 95.0,
             "avg_vol_lots": 1000, "bias20_pct": bias20, "recent_high20": None,
-            "rs_pct_60": 0.5, "earnings_date": None, "signal_ma": True}
+            "rs_pct_60": 0.5, "rs_pct_120": 0.5, "earnings_date": None, "signal_ma": True,
+            "rs_confirmed_60_120": True}   # 2026-11-16 起弱勢日只列過關的，夾具要明講過了強勢關
 
 
 def test_每檔候選都帶組內百分位與相對優勢分類(monkeypatch):
@@ -316,6 +317,7 @@ def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
     monkeypatch.setattr(opp.bt, "_load", lambda path: None)
     monkeypatch.setattr(opp.mr, "load_or_fetch", lambda today: {})
     monkeypatch.setattr(opp, "update_picks_history", lambda o: [])
+    monkeypatch.setattr(opp, "update_shadow_history", lambda e: [])   # 不可寫到真的影子檔
     monkeypatch.setattr(opp, "trading_calendar", lambda price_hist: [])
     monkeypatch.setattr(
         opp, "compute_scoreboard",
@@ -339,7 +341,7 @@ def test_run_passes_force_recompute_to_ensure_weights(monkeypatch):
 # ── 入場門檻的降級可見性（2026-07-25 Codex 複查後補）──────────────────────
 def _stock(sid, **kw):
     base = {"id": sid, "name": f"N{sid}", "avg_vol_lots": 5000, "close": 100, "ma20": 95,
-            "sn_squeeze_breakout": True, "rs_confirmed_60_120": True, "rs_pct_60": 0.9}
+            "sn_squeeze_breakout": True, "rs_confirmed_60_120": True, "rs_pct_60": 0.9, "rs_pct_120": 0.9}
     base.update(kw)
     return base
 
@@ -356,8 +358,10 @@ def test_gate_min_pool_要算營收過濾之後的候選數():
     revenue = {s["id"]: {"yoy": (-1 if i < 20 else 1)} for i, s in enumerate(stocks)}
     out = opp.build_opportunities(stocks, _weights(), revenue, "2026-07-24")
     assert out["gate"]["pool"] == 5, "pool 應該只算營收也過關的"
-    assert out["gate"]["applied"] is False
-    assert out["gate"]["reason"] == "pool_too_small"
+    # 2026-11-16 起不足 20 檔不再退回全市場，改成只列過關的（reason＝applied_small_pool）
+    assert out["gate"]["applied"] is True
+    assert out["gate"]["reason"] == "applied_small_pool"
+    assert len(out["picks"]) == 5
 
 
 def test_gate_足夠時正常套用():
@@ -452,3 +456,138 @@ def test_候選池夠大時分類正常運作(monkeypatch):
     tiers = {p["tier"] for p in out["picks"]}
     assert "edge" in tiers, f"12 檔候選應分得出相對優勢，實際 {tiers}"
     assert any(t is None for t in tiers), "也應該有不符合條件、不分類的"
+
+
+# ── 2026-11-16 小改＋觀察（Andy 核准）：相對優勢排前面／主名單 20 檔／弱勢日只列過關的／影子名單 ──
+def _edge_pool(n, gate=True):
+    """n 檔過所有關卡的候選：成交金額（avg_vol_lots）遞增、rs_pct_60 遞減——
+    成交金額最高的反而 60 日最弱，才看得出「先排相對優勢」有沒有生效。"""
+    return [_stock(f"E{i:02d}", avg_vol_lots=1000 + i * 100, rs_pct_60=round(0.99 - i * 0.01, 2),
+                   rs_confirmed_60_120=gate) for i in range(n)]
+
+
+def test_相對優勢排在非相對優勢前面_組內再比rs():
+    stocks = _edge_pool(12)
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2026-11-16")
+    tiers = [p["tier"] for p in o["picks"]]
+    assert "edge" in tiers and None in tiers
+    first_none = tiers.index(None)
+    assert all(t is None for t in tiers[first_none:]), f"相對優勢要全部排在前面：{tiers}"
+    for grp in ([p for p in o["picks"] if p["tier"] == "edge"], [p for p in o["picks"] if p["tier"] is None]):
+        rs = [p["rs_pct_60"] for p in grp]
+        assert rs == sorted(rs, reverse=True), "同一組內照 rs_pct_60 由高到低"
+    # 成交金額最高的那檔 rs 最低，但它是相對優勢 → 排在 rs 最高的非相對優勢前面
+    ids = [p["id"] for p in o["picks"]]
+    assert ids.index("E11") < ids.index("E00")
+
+
+def test_候選不足MIN_TIER_POOL時排序退回只看rs():
+    stocks = _edge_pool(opp.MIN_TIER_POOL - 1)
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2026-11-16")
+    assert all(p["tier"] is None for p in o["picks"])
+    rs = [p["rs_pct_60"] for p in o["picks"]]
+    assert rs == sorted(rs, reverse=True)
+
+
+def test_分數仍是第一排序鍵():
+    stocks = _edge_pool(12)
+    stocks[0]["signal_ma"] = True     # E00：成交金額最低（非相對優勢），但有 3 分
+    o = opp.build_opportunities(stocks, WEIGHTS, {}, "2026-11-16")
+    assert o["picks"][0]["id"] == "E00"
+
+
+def test_輸出含main_n且不截斷picks():
+    stocks = _edge_pool(25)
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2026-11-16")
+    assert opp.MAIN_LIST_N == 20
+    assert o["main_n"] == opp.MAIN_LIST_N
+    assert len(o["picks"]) == 25
+
+
+def test_強勢股不足20檔時只列過關的():
+    """弱勢日不再退回「全市場有訊號就入選」（2026-11-16 盤點報告 C5）。"""
+    for k in (0, 5, 19):
+        passed = _edge_pool(k)
+        not_passed = [_stock(f"X{i:02d}", rs_confirmed_60_120=False, rs_pct_60=0.5) for i in range(30)]
+        o = opp.build_opportunities(passed + not_passed, {"signals": {}}, {}, "2026-11-16")
+        assert {p["id"] for p in o["picks"]} == {s["id"] for s in passed}, f"k={k} 只能有過關的"
+        g = o["gate"]
+        assert g["applied"] is True and g["reason"] == "applied_small_pool" and g["pool"] == k, g
+        assert o["pool_n"] == k
+        for p in o["picks"]:
+            txt = " ".join(p["reasons"])
+            assert "僅符合門檻" in txt and "未經強勢篩選" not in txt, txt
+
+
+def test_強勢股剛好20檔時是一般套用():
+    o = opp.build_opportunities(_edge_pool(opp.GATE_MIN_POOL), {"signals": {}}, {}, "2026-11-16")
+    assert o["gate"]["applied"] is True and o["gate"]["reason"] == "applied"
+
+
+def _shadow_stock(sid, **kw):
+    """沒有任何引擎訊號、量夠、過強勢雙確認的股票（影子名單的標準成員）。"""
+    base = {"id": sid, "name": f"S{sid}", "avg_vol_lots": 2000, "close": 50.0, "ma20": 48.0,
+            "rs_confirmed_60_120": True, "rs_pct_60": 0.91234567, "rs_pct_120": 0.8, "sn_squeeze_breakout": False}
+    base.update(kw)
+    return base
+
+
+def test_影子名單只收沒訊號但其他關都過的():
+    results = [
+        _shadow_stock("S1"),                                   # ✅
+        _shadow_stock("S2", sn_squeeze_breakout=True),          # 有訊號＝正式名單的事，不進影子
+        _shadow_stock("S3", avg_vol_lots=400),                  # 量不夠
+        _shadow_stock("S4", rs_confirmed_60_120=False),         # 沒過強勢
+        _shadow_stock("S5"),                                   # 營收年減 → 剔除
+        _shadow_stock("S6"),                                   # 營收查不到 → 不剔除（與正式名單同規則）
+    ]
+    rev = {"S1": {"yoy": 3.0}, "S5": {"yoy": -1.0}}
+    sh = opp.build_shadow_nosignal(results, rev, "2026-11-16")
+    assert sh["date"] == "2026-11-16"
+    rows = [dict(zip(sh["fields"], r)) for r in sh["rows"]]
+    assert [r["id"] for r in rows] == ["S1", "S6"]
+    r = rows[0]
+    assert r["rs60"] == 0.9123 and r["rs120"] == 0.8
+    assert r["turnover"] == 2000 * 50 and r["close"] == 50.0
+
+
+def test_影子名單附正式名單的相對優勢切點():
+    o = opp.build_opportunities(_edge_pool(12), {"signals": {}}, {}, "2026-11-16")
+    sh = opp.build_shadow_nosignal([], {}, "2026-11-16", o)
+    edge_turn = [p["avg_vol_lots"] * p["close"] for p in o["picks"] if p["tier"] == "edge"]
+    assert sh["edge_cut"] == min(edge_turn)
+    assert opp.build_shadow_nosignal([], {}, "2026-11-16", None)["edge_cut"] is None
+
+
+def test_影子檔同日重跑覆寫不重複(monkeypatch, tmp_path):
+    path = tmp_path / "shadow.json"
+    monkeypatch.setattr(opp, "SHADOW_HISTORY_PATH", str(path))
+    a = opp.build_shadow_nosignal([_shadow_stock("S1")], {}, "2026-11-16")
+    b = opp.build_shadow_nosignal([_shadow_stock("S1"), _shadow_stock("S2")], {}, "2026-11-16")
+    c = opp.build_shadow_nosignal([_shadow_stock("S9")], {}, "2026-11-17")
+    opp.update_shadow_history(a)
+    opp.update_shadow_history(c)
+    opp.update_shadow_history(b)
+    import json as _json
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    assert [e["date"] for e in data["entries"]] == ["2026-11-16", "2026-11-17"]
+    assert len(data["entries"][0]["rows"]) == 2, "同日重跑要覆寫成最新那次"
+    assert "note" in data and "60" in data["note"]
+
+
+def test_只有60日強弱沒有120日時判成資料不可用_退回全體與舊版相同():
+    """120 日強弱算不出來（暖身期）＝強勢雙確認根本判不了，不是「今天沒有股票過關」。
+    pool 行為與 2026-11-16 以前相同：退回全部有訊號的股票。"""
+    stocks = [_stock(f"W{i:02d}", rs_confirmed_60_120=False, rs_pct_60=0.5 + i / 100, rs_pct_120=None)
+              for i in range(30)]
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2025-03-03")
+    assert o["gate"]["applied"] is False and o["gate"]["reason"] == "rs_unavailable"
+    assert o["gate"]["pool"] == 0 and len(o["picks"]) == 30, "退回全體（舊版行為）"
+    assert all("強弱資料算不出來" in " ".join(p["reasons"]) for p in o["picks"])
+
+
+def test_有一檔兩個強弱都有就算資料可用():
+    stocks = [_stock("V1", rs_confirmed_60_120=False, rs_pct_60=0.5, rs_pct_120=0.5),
+              _stock("V2", rs_confirmed_60_120=False, rs_pct_60=0.5, rs_pct_120=None)]
+    o = opp.build_opportunities(stocks, {"signals": {}}, {}, "2026-11-16")
+    assert o["gate"]["reason"] == "applied_small_pool" and o["picks"] == []

@@ -121,7 +121,7 @@ jobs:
                   pipeline/history/index.json pipeline/history/bt_price.json pipeline/history/price_breaks.json \
                   pipeline/holders_history.json pipeline/notify_state.json pipeline/universe.json \
                   pipeline/fetch_state.json pipeline/backfill_state.json \
-                  pipeline/signal_weights.json pipeline/signal_windows.json pipeline/signal_combos.json pipeline/signal_exits.json pipeline/signal_regime.json pipeline/picks_history.json \
+                  pipeline/signal_weights.json pipeline/signal_windows.json pipeline/signal_combos.json pipeline/signal_exits.json pipeline/signal_regime.json pipeline/picks_history.json pipeline/shadow_nosignal_history.json \
                   pipeline/scoreboard.json pipeline/revenue_cache.json \
                   pipeline/revenue_history.json pipeline/tier_stats.json
           if git diff --cached --quiet; then

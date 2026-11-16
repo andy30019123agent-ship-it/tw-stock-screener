@@ -284,7 +284,14 @@ def tier_disclaimer(tiers):
 
 def gate_note(gate, tiers):
     """門檻退回日的一句提醒（不切換整組統計數字）；門檻有套用回空字串。數字讀 by_gate.fallback。"""
-    if not isinstance(gate, dict) or gate.get("applied") is not False:
+    if not isinstance(gate, dict):
+        return ""
+    if gate.get("applied") is True:
+        # 2026-11-16 起：過關不足 20 檔時只列過關的（opportunities.py applied_small_pool），講一句就好
+        if gate.get("reason") == "applied_small_pool":
+            return f"⚠️ 今天強勢股太少，只有 {gate.get('pool', 0)} 檔過關。"
+        return ""
+    if gate.get("applied") is not False:
         return ""
     if gate.get("reason") != "pool_too_small":
         return "⚠️ 今天強弱資料算不出來、強勢門檻沒套用，分類請保守看。"

@@ -20,7 +20,7 @@ def _row(sid, turnover_rank, ret, *, vol=800, bias=1.0, gate=True, engine=True,
     close = 100.0
     return {"id": sid, "name": sid, "signal_ma": engine, "avg_vol_lots": vol * turnover_rank,
             "close": close, "ma20": 95.0, "recent_high20": high20 if high20 is not None else 110.0 + turnover_rank,
-            "bias20_pct": bias, "rs20": None, "rs_pct_60": rs,
+            "bias20_pct": bias, "rs20": None, "rs_pct_60": rs, "rs_pct_120": rs,
             "rs_confirmed_60_120": gate, "_ret": ret}
 
 
@@ -206,7 +206,9 @@ def test_paired_同日配對差手算():
 def test_by_gate_門檻套用與退回分開算():
     """門檻退回（過門檻候選 < 20）的日子池子大、權重大，必須能分開看。"""
     applied = [_row(f"A{i:02d}", i + 1, 0.05, gate=True) for i in range(op.GATE_MIN_POOL)]
-    fallback = [_row(f"F{i:02d}", i + 1, -0.05, gate=False) for i in range(30)]
+    # 2026-11-16 起資料正常但過關不足 20 檔＝只列過關的（gate 仍算套用）；會退回全體的只剩
+    # 「強弱資料算不出來」（rs_unavailable），所以退回日的夾具要把 rs 設成缺值。
+    fallback = [_row(f"F{i:02d}", i + 1, -0.05, gate=False, rs=None) for i in range(30)]
     out = ts.compute_pool_tier_stats({"2025-03-03": applied, "2025-03-04": fallback},
                                      net_fn=ID, n_boot=20)
     assert out["meta"]["days_gate_applied"] == 1

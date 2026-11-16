@@ -6,6 +6,7 @@ import {
 import ComboBoard from './ComboBoard'
 import { signalSummary } from '../lib/signalSummary'
 import { oosBadge, sigTier, TIER_MARK } from '../lib/oos'
+import { TierMark } from './Marks'
 
 const isMobile = () =>
   typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
@@ -172,7 +173,7 @@ export default function ConditionPanel({
                       : '成本後超額：扣掉手續費證交稅、再扣掉同日大盤後真正多賺的'}>
                     {btnScore >= 0 ? '+' : ''}{btnScore}<small> 個百分點</small>
                     {st?._isBest && <em className="score-best" title="顯示的是最佳形態的成績">＊</em>}</span>}
-                  {tm && <sup className={tm.cls}>{tm.mark}</sup>}
+                  <TierMark tm={tm} />
                 </button>
               )
             })}

@@ -1,7 +1,7 @@
 import { TrendingUp, AlertTriangle, Info, ListChecks, CircleCheck, CircleMinus, ChevronDown } from 'lucide-react'
 import { usablePair, winDiffText, evDiffText, edgeSentence, staleText, biasNote, evVerdictOf, normalizeTier } from '../lib/tierVerdict'
 import { fmtRange } from '../lib/fmtRange'
-import { signed, commonReasons, reasonView, sortRuleText, MIN_VOL_LOTS, GATE_LABELS, RS_STRONG_PCT, RS_CONFIRM_120_PCT, EDGE_TEXT } from '../lib/cardFacts'
+import { signed, commonReasons, reasonView, sortRuleText, MIN_VOL_LOTS, GATE_LABELS, RS_STRONG_PCT, RS_CONFIRM_120_PCT, EDGE_TEXT, MAIN_LIST_N, smallPoolText } from '../lib/cardFacts'
 
 // 「依據」分頁（2026-11-16 三分頁改版，Andy 核准方向 A＋C、卡片改方向 B）。由上而下：
 //   1. 這份清單怎麼來的（口語版；關卡叫法與卡片上的過關清單一一對應，共用 cardFacts.GATE_LABELS）
@@ -158,9 +158,10 @@ function BasisLayers({ tierStats, gate }) {
         <ul className="opp-limits">
           {!tierStats?.stale && isNum(fbE) && isNum(fbR) && (
             <li>
-              <b>門檻放寬的弱勢日</b>：過「強勢雙確認」的候選不足 {gate?.min_pool ?? 20} 檔、系統放寬門檻的日子
+              <b>門檻放寬的日子</b>：強弱資料算不出來、系統放寬「強勢雙確認」門檻的日子
               {isNum(fb?.meta?.days_total) ? `（歷史 ${fb.meta.days_total} 天）` : ''}，相對優勢 {pct1(fbE)}、其他候選 {pct1(fbR)}
               {fbE < fbR ? '，方向反而相反' : '，差距跟平常不一樣'}。今天門檻{gate?.applied === false ? '沒有' : '有'}套用。
+              （2026-11-16 起過關不足 {gate?.min_pool ?? 20} 檔時不再放寬，只列過關的；這之前的歷史裡兩種日子混在一起。）
             </li>
           )}
           {notReplayed.length > 0 && (
@@ -187,10 +188,11 @@ function HowMade({ opp, tierStats }) {
   const anyBias = picks.some(p => normalizeTier(p).biasHigh)
   const sortRule = sortRuleText(picks)
   const gateOn = gate?.applied !== false
+  const small = smallPoolText(gate, poolN)
   const steps = [
     { k: GATE_LABELS.strong, ok: gateOn, t: gateOn
-      ? <>近 60 天漲幅贏過全市場 {Math.round(RS_STRONG_PCT * 100)}% 的股票，而且近 120 天也贏過 {Math.round(RS_CONFIRM_120_PCT * 100)}%（回測最穩的門檻）。</>
-      : <>今天「{gate?.label || GATE_LABELS.strong}」門檻沒套用（過關的不足 {gate?.min_pool ?? 20} 檔或強弱資料算不出來），改看當日有訊號的全部股票。</> },
+      ? <>近 60 天漲幅贏過全市場 {Math.round(RS_STRONG_PCT * 100)}% 的股票，而且近 120 天也贏過 {Math.round(RS_CONFIRM_120_PCT * 100)}%（回測最穩的門檻）。過關的不足 {gate?.min_pool ?? 20} 檔也不放寬，只列過關的{small ? `（${small}）` : ''}。</>
+      : <>今天「{gate?.label || GATE_LABELS.strong}」門檻沒套用（強弱資料算不出來），改看當日有訊號的全部股票。</> },
     { k: GATE_LABELS.signal, ok: true, t: <>當天至少亮一個技術或籌碼訊號，一個都沒亮的刷掉。卡片上列出亮了哪幾個（資料有寫才列）。</> },
     { k: GATE_LABELS.volume, ok: true, t: <>近 20 日平均成交量至少 {MIN_VOL_LOTS} 張。</> },
     { k: GATE_LABELS.revenue, ok: true, t: <>最近一個月營收沒有年減；查不到營收的不剔除（卡片上這一行不打勾、照實寫查不到；系統標「營收資料缺」）。</> },
@@ -210,7 +212,7 @@ function HowMade({ opp, tierStats }) {
         ))}
       </ol>
       <p className="bt-lead"><ListChecks size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>排順序</b>：{sortRule}；排前面沒有證據比較會賺。</span></p>
-      <p className="bt-lead"><TrendingUp size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>相對優勢</b>：{EDGE_TEXT}的另外分一組，意思是成交熱絡，不是漲得比較強；其他的叫「其他候選」，沒有分類稱號。</span></p>
+      <p className="bt-lead"><TrendingUp size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>相對優勢</b>：{EDGE_TEXT}的排在前面（還在觀察的排法，不是定論），意思是成交熱絡，不是漲得比較強；沒排進前 1/3 的叫「其他候選」，沒有分類稱號。前 {opp?.main_n ?? MAIN_LIST_N} 檔是主名單，其餘收在「第 {(opp?.main_n ?? MAIN_LIST_N) + 1} 名以後」。</span></p>
       <p className="bt-lead"><AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" /><span><b>要小心與橘點</b>：卡片上「要小心」只列既有標記（乖離大、乖離排前段、法說會將近）和近 20 天輸大盤幾個百分點，不另外判斷好壞。清單上的橘點只看硬狀況：系統標的風險（乖離大、營收資料缺）或法說會將近。</span></p>
       {common && (
         <p className="bt-lead"><Info size={16} strokeWidth={1.75} aria-hidden="true" />

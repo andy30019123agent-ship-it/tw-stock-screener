@@ -1,0 +1,1 @@
+{"note":"影子名單（只記錄、不顯示）：拿掉「當天至少亮一個訊號」這關時會多進來的股票（均量夠＋強勢雙確認＋營收關都過、但當天沒訊號）。滿 60 個交易日後比這批與 picks_history 正式名單的前瞻報酬，再評估要不要正式拿掉訊號關。產生：pipeline/opportunities.py build_shadow_nosignal。","entries":[]}

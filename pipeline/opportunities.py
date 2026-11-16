@@ -28,12 +28,20 @@ HERE = os.path.dirname(__file__)
 OUT_DIR = os.path.join(HERE, "..", "public", "data")
 PICKS_HISTORY_PATH = os.path.join(HERE, "picks_history.json")
 SCOREBOARD_PATH = os.path.join(HERE, "scoreboard.json")
+# 影子名單（2026-11-16 加，只記錄、不顯示）：見 build_shadow_nosignal。
+SHADOW_HISTORY_PATH = os.path.join(HERE, "shadow_nosignal_history.json")
+SHADOW_MAX = 400          # 留最近幾個資料日（約一年半）；每天約 100 多檔 × 5 個數字，檔案不會大
 
 # 🔄 2026-07-26：拿掉「每天固定推 N 檔」的購買組合語意（Andy 拍板：不用幫我配好組合、我自己會
 # 挑買哪幾檔）。原本這裡有 40 行「TOP_N 該取多少」的量測紀錄（5→10→8 的實測表），連同 TOP_N
 # 常數一起刪除——那整段是舊需求（固定榜單）的產物，新需求是「輸出全部合格候選＋分類，交給
 # Andy 自己選」。舊量測數字仍留在 git 歷史（本檔 2026-07-25 之前的版本）可查。
 PREVIEW_N = 10   # 前端預設展開顯示幾筆，純粹是畫面初始狀態，不是「建議買幾檔」；候選有幾檔就出幾檔。
+# 2026-11-16 加（Andy 核准「小改＋觀察」）：「今天」分頁前 MAIN_LIST_N 檔是主名單，其餘收進
+# 「其他候選」。只是畫面分段，picks 照樣全部輸出、不截斷。前端 Opportunities.jsx 已改用這個值，
+# 不再用 PREVIEW_N（PREVIEW_N 只留給舊資料相容與下面 run() 的 log）。
+# 依據：2026-11-16 盤點報告 C4——前 20 檔比其餘好但證據不足，只用 20 一個值觀察、不挑最好看的 5。
+MAIN_LIST_N = 20
 MIN_VOL_LOTS = 500        # 20 日均量門檻（張）
 BIAS_FLAG_PCT = 15        # 20 日乖離 > 此值加「乖離大」風險旗標
 FORWARD = bt.FORWARD      # 成績單評估的前瞻交易日數（跟回測一致）
@@ -95,7 +103,7 @@ def feature_level(pct):
 
 
 GATE_SIGNAL = "rs_confirmed_60_120"   # 入場門檻訊號（強勢雙確認）
-GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < 此數 → 退回不設門檻（保命）
+GATE_MIN_POOL = 20                   # 過門檻又有引擎訊號的候選 < 此數 → 只列過關的並標 applied_small_pool（2026-11-16 起）
 
 
 def _percentile_ranks(values):
@@ -141,8 +149,9 @@ def build_opportunities(results, weights, revenue, data_date):
     的權重硬加在一起合理：後者會讓 21% 的股票先白拿 4 分（最高權重），廣泛訊號淹掉區辨力。
     這也維持了「多頭排列因太常見而不進引擎」的既有邏輯一致性——強勢雙確認比它更常見。
 
-    保命機制：若過門檻的候選太少（GATE_MIN_POOL），退回不設門檻並在輸出標記。橫斷面資料
-    要長歷史才算得出來，抓取失敗時旗標會全 False——不能因此讓 Top5 整個空掉。
+    保命機制：強弱資料整個算不出來（rs_unavailable）時退回不設門檻並在輸出標記。橫斷面資料
+    要長歷史才算得出來，抓取失敗時旗標會全 False——不能因此讓名單整個空掉。
+    過關的候選不足 GATE_MIN_POOL 但資料正常時，2026-11-16 起只列過關的（applied_small_pool）。
     """
     sig = (weights or {}).get("signals", {})
 
@@ -162,12 +171,23 @@ def build_opportunities(results, weights, revenue, data_date):
         return rev is None or rev.get("yoy") is None or rev["yoy"] >= 0
 
     gated = [r for r in results if r.get(GATE_SIGNAL) and eligible(r)[1] and passes_revenue(r)]
-    gate_on = len(gated) >= GATE_MIN_POOL
+    # 🔄 2026-11-16（Andy 核准，依 2026-11-16 盤點報告 C5／B9）：過關不足 GATE_MIN_POOL 檔時
+    # **不再退回「全市場有訊號就入選」**——那種日子的名單跟隨便買差不多（20 日平均 −0.71pp、
+    # 日勝 19%，證據不足），端出一大份看起來像推薦的名單反而誤導。改成只列真的過關的（0～19 檔），
+    # gate.applied=True、reason="applied_small_pool"，前端／快報講「今天強勢股太少，只有 N 檔過關」。
+    # 例外：強弱資料整個算不出來（rs_unavailable）時維持舊行為退回全體——那是資料故障，不是弱勢日，
+    # 照舊名單會整個空掉、把故障講成市場結論。
+    # 「算不出來」＝沒有任何一檔同時有 rs_pct_60 與 rs_pct_120（強勢雙確認要兩個都有才判得了）。
+    # 原本只看 rs_pct_60，120 日資料缺（例如長歷史不足 121 天的暖身期）會被誤判成候選不足
+    # （2026-11-16 盤點報告 A 表指出）。
+    # 舊值 "pool_too_small" 只會出現在 2026-11-16 以前的 picks_history／舊 opportunities.json。
+    rs_ok = any(r.get("rs_pct_60") is not None and r.get("rs_pct_120") is not None for r in results)
+    gate_on = len(gated) >= GATE_MIN_POOL or rs_ok
     pool = gated if gate_on else results
     # 說清楚「為什麼沒套門檻」——RS 資料掛掉時門檻會靜默失效，必須能分辨故障與候選不足
-    gate_reason = ("applied" if gate_on
-                   else "rs_unavailable" if not any(r.get("rs_pct_60") is not None for r in results)
-                   else "pool_too_small")
+    gate_reason = ("applied" if len(gated) >= GATE_MIN_POOL
+                   else "applied_small_pool" if rs_ok
+                   else "rs_unavailable")
 
     picks = []
     feat_raw = []   # 跟 picks 對齊的原始特徵值；要看到候選池全體才能算百分位，迴圈結束後統一算
@@ -205,8 +225,7 @@ def build_opportunities(results, weights, revenue, data_date):
                 reasons = [f"僅符合門檻（{bt.SIGNAL_LABELS.get(GATE_SIGNAL, GATE_SIGNAL)}），"
                            "無加權訊號、按相對強弱排序"]
             else:
-                why = {"rs_unavailable": "今天的強弱資料算不出來",
-                       "pool_too_small": "過門檻的股票不足 20 檔"}.get(gate_reason, gate_reason)
+                why = {"rs_unavailable": "今天的強弱資料算不出來"}.get(gate_reason, gate_reason)
                 reasons = [f"⚠️ 今天沒套用強勢雙確認門檻（{why}）＝這檔未經強勢篩選，"
                            "無加權訊號、按相對強弱排序"]
         recent_high20 = r.get("recent_high20")
@@ -271,12 +290,21 @@ def build_opportunities(results, weights, revenue, data_date):
     # 兩者的差別：rs20 是「個股 20 日報酬 − 加權指數」（受大盤短期波動影響），
     # rs_pct_60 是「個股 60 日報酬在全市場的百分位」（跨股票比較、不依賴指數，指數只有 40 天歷史）。
     # 缺 rs_pct_60 的用 -1 墊底（0 是「最弱」的合法百分位，不能拿來當缺值）。
-    picks.sort(key=lambda p: (-p["score"], -(p["rs_pct_60"] if p["rs_pct_60"] is not None else -1)))
+    # 🔄 2026-11-16（Andy 核准「小改＋觀察」）：分數之後、rs_pct_60 之前插一鍵「相對優勢（tier=edge）先」。
+    # 依據 2026-11-16 盤點報告（_reports/盤點_選股邏輯_claude_2026-11-16.md 結論 4、建議 C1）：
+    #   成交金額排候選前 1/3 的這批，樣本內 20 日贏的機率 46.4% 對池平均 41.1%；
+    #   樣本外（後半段）40 日仍顯著、20 日方向對但不顯著；最近 88 天滾動驗證轉弱（跨 0）。
+    # ⚠️ 這是**觀察中的排序，不是定論**：切點固定用網站原本的 1/3、不再調，滿 60 個新交易日用
+    # picks_history 再判一次。候選不足 MIN_TIER_POOL 時 tier 全為 None，這一鍵自然失效、退回原排序。
+    picks.sort(key=lambda p: (-p["score"],
+                              0 if p["tier"] == TIER_EDGE else 1,
+                              -(p["rs_pct_60"] if p["rs_pct_60"] is not None else -1)))
     return {
         "date": data_date,
         "picks": picks,             # 2026-07-26 起不截斷：全部合格候選都輸出，買哪幾檔由 Andy 自己決定
         "pool_n": len(picks),        # 當日候選池大小（給前端顯示「共 N 檔」）
-        "preview_n": PREVIEW_N,      # 前端預設展開幾筆，不是建議買幾檔
+        "preview_n": PREVIEW_N,      # 舊欄位（前端 2026-11-16 起改看 main_n），留著給舊讀取端相容
+        "main_n": MAIN_LIST_N,       # 前端主名單筆數（其餘收進「其他候選」）；只是畫面分段，不是建議買幾檔
         "tier_scheme": TIER_SCHEME,  # 分類版本（2026-11-13 起 edge_v2；缺欄位＝舊三分類）
         # 前端/快報要能講清楚這批是「強勢股裡的技術面最佳」還是「全市場技術面最佳」
         "gate": {"signal": GATE_SIGNAL, "applied": gate_on, "pool": len(gated),
@@ -360,6 +388,62 @@ def update_picks_history(opp):
     return entries
 
 
+def build_shadow_nosignal(results, revenue, data_date, opp=None):
+    """影子名單（2026-11-16 加，**只記錄、不顯示**）：如果拿掉「當天至少亮一個引擎訊號」這一關，
+    會多進來哪些股票。條件＝20 日均量 ≥ MIN_VOL_LOTS＋過強勢雙確認＋過營收關，但當天沒有任何引擎訊號。
+
+    為什麼：2026-11-16 盤點報告 B2 量不出這一關的貢獻（拿掉後平均和贏的機率幾乎一樣），
+    但證據還不夠直接拿掉 → 先每天留這份，**滿 60 個交易日後**用前瞻報酬比「這批 vs 正式名單」
+    （正式名單在 picks_history.json），再評估要不要正式拿掉訊號關。
+
+    每檔只存 id／rs60／rs120／turnover（均量張×收盤，與相對優勢同一把尺）／close，欄位名放 fields、
+    每檔一個 list（省空間）。edge_cut＝當天正式名單「相對優勢」的最低 turnover（沒分類＝None），
+    日後可還原「這檔放進正式名單會不會是相對優勢」。強勢雙確認算不出來的日子照樣只記過關的（通常 0 檔）。"""
+    rows = []
+    for r in results:
+        if not r.get(GATE_SIGNAL) or (r.get("avg_vol_lots", 0) or 0) < MIN_VOL_LOTS:
+            continue
+        rev = revenue.get(r["id"])
+        if rev and rev.get("yoy") is not None and rev["yoy"] < 0:
+            continue                                  # 營收年減剔除；查不到不剔（與正式名單同規則）
+        flags = bt.signal_flags(r)
+        if any(v for k, v in flags.items() if k in bt.ENGINE_SIGNALS):
+            continue                                  # 有訊號的歸正式名單，不是影子
+        rnd = lambda v: round(v, 4) if isinstance(v, (int, float)) else None
+        close = r.get("close")
+        rows.append([r["id"], rnd(r.get("rs_pct_60")), rnd(r.get("rs_pct_120")),
+                     round((r.get("avg_vol_lots") or 0) * (close or 0)), close])
+    edge_turn = [(p.get("avg_vol_lots") or 0) * (p.get("close") or 0)
+                 for p in ((opp or {}).get("picks") or []) if p.get("tier") == TIER_EDGE]
+    return {"date": data_date, "fields": ["id", "rs60", "rs120", "turnover", "close"], "rows": rows,
+            "edge_cut": round(min(edge_turn)) if edge_turn else None}
+
+
+SHADOW_NOTE = ("影子名單（只記錄、不顯示）：拿掉「當天至少亮一個訊號」這關時會多進來的股票"
+               "（均量夠＋強勢雙確認＋營收關都過、但當天沒訊號）。滿 60 個交易日後比這批與 picks_history"
+               " 正式名單的前瞻報酬，再評估要不要正式拿掉訊號關。產生：pipeline/opportunities.py build_shadow_nosignal。")
+
+
+def update_shadow_history(entry):
+    """把今天的影子名單併入 shadow_nosignal_history.json（同資料日覆寫、留最近 SHADOW_MAX 天）。
+    寫入時機與 picks_history 相同（run() 裡緊接在 update_picks_history 之後）。"""
+    hist = {}
+    if os.path.exists(SHADOW_HISTORY_PATH):
+        try:
+            with open(SHADOW_HISTORY_PATH, encoding="utf-8") as f:
+                hist = json.load(f)
+        except Exception:
+            hist = {}
+    entries = [e for e in hist.get("entries", []) if e.get("date") != entry.get("date")]
+    if entry.get("date"):
+        entries.append(entry)
+    entries.sort(key=lambda e: e["date"])
+    entries = entries[-SHADOW_MAX:]
+    with open(SHADOW_HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump({"note": SHADOW_NOTE, "entries": entries}, f, ensure_ascii=False, separators=(",", ":"))
+    return entries
+
+
 def compute_scoreboard(entries, cal, adj_close_by_sid, adj_open_by_sid, forward=FORWARD, cost=None):
     """純函式：對「已滿 forward 交易日」的舊 picks 算實績。回 {win_rate, avg_ret, samples, cost_pct, ...}。
 
@@ -427,6 +511,7 @@ def run(results, price_hist, chip_hist, div_hist, universe, data_date, today=Non
     opp = build_opportunities(results, weights, revenue, data_date)
 
     entries = update_picks_history(opp)
+    update_shadow_history(build_shadow_nosignal(results, revenue, data_date, opp))
     cal = trading_calendar(price_hist)
     ids = {p["id"] for e in entries for p in e["picks"]}
     adj_close_by_sid = {sid: adjusted_close_map(price_hist, div_hist, sid) for sid in ids}

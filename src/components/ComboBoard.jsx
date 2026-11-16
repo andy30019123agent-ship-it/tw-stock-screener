@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { ChevronDown, ChevronRight, Trophy } from 'lucide-react'
 import { comboReliability, sigTier, TIER_MARK, OOS_BADGE } from '../lib/oos'
+import { TierMark, WarnMark, CheckMark, CrossMark } from './Marks'
 
 // 組合戰績排行榜：把「多個訊號同時成立」的回測戰績（signal_combos.json）依平均超額排名，
 // 讓使用者一眼找到最高勝率的組合；可點策略 chip 篩選只看含該策略的組合；桌機另給熱力圖。
@@ -45,7 +46,8 @@ export default function ComboBoard({ combos, weights = null }) {
 
   const heatBg = v => {
     if (v == null) return 'transparent'
-    const pct = Math.min(80, Math.abs(v) * 22)   // 超額越大顏色越深
+    // 超額越大顏色越深；上限 40%（2026-11-16 專業看盤：原 80% 時格內深色字對底只剩約 3.8:1）
+    const pct = Math.min(40, Math.abs(v) * 22)
     return `color-mix(in srgb, var(${v >= 0 ? '--up' : '--down'}) ${pct}%, transparent)`
   }
 
@@ -65,7 +67,7 @@ export default function ComboBoard({ combos, weights = null }) {
         </p>
         <p className="combo-intro combo-legend">
           <b>成分訊號後面的記號＝該訊號的樣本外驗證結果</b>（滑過/長按看說明）：無記號＝通過驗證；
-          <span className="sig-weak">⚠</span> ＝樣本外撐不住（過擬合或大幅縮水）；
+          <span className="sig-weak"><WarnMark /></span> ＝樣本外撐不住（過擬合或大幅縮水）；
           <span className="sig-unknown">?</span> ＝樣本太少還無法判斷。
           「過驗證」欄顯示這個組合有幾個成分通過。<b>排行榜頂端常常是「小樣本 × 帶記號的訊號」堆出來的高勝率</b>，
           不代表未來會重現——這裡不過濾也不重排，資訊都給你，自己斟酌。
@@ -73,7 +75,7 @@ export default function ComboBoard({ combos, weights = null }) {
         <p className="combo-intro combo-legend">
           <b>「天數」</b>＝樣本分佈在幾個不同交易日。同一天成立的事件高度相關（同一波行情），
           天數少代表這個成績其實只反映一兩段時期。<b>「禁得起挑選」</b>＝這張榜同時比較數百個組合，
-          光靠運氣就會冒出幾個看起來很強的；打 ✓ 的代表它的優勢通過了多重比較校正（Bonferroni），
+          光靠運氣就會冒出幾個看起來很強的；打 <CheckMark /> 的代表它的優勢通過了多重比較校正（Bonferroni），
           不太可能只是被挑出來的巧合。<b>下界與 t 值都已做同日群聚校正</b>（不再把同一天的多筆當獨立樣本）。
         </p>
 
@@ -85,7 +87,7 @@ export default function ComboBoard({ combos, weights = null }) {
               <button key={s} className={`combo-chip ${sel.includes(s) ? 'on' : ''}`}
                 onClick={() => toggle(s)} aria-pressed={sel.includes(s)}
                 title={st ? `樣本外驗證：${OOS_BADGE[st]?.[0]}——${OOS_BADGE[st]?.[2]}` : undefined}>
-                {sigLabel[s]}{tm && <sup className={tm.cls}>{tm.mark}</sup>}
+                {sigLabel[s]}<TierMark tm={tm} />
               </button>
             )
           })}
@@ -97,7 +99,7 @@ export default function ComboBoard({ combos, weights = null }) {
             <button className={`combo-chip ${onlyMc ? 'on' : ''}`} onClick={() => setOnlyMc(v => !v)}
               aria-pressed={onlyMc}
               title="只顯示通過多重比較校正的組合——這些的優勢不太可能只是「從數百組裡挑最高」挑出來的巧合">
-              {onlyMc ? '✓ ' : ''}只看禁得起挑選的（{mcCount}／{list.length}）
+              {onlyMc ? <><CheckMark /> </> : ''}只看禁得起挑選的（{mcCount}／{list.length}）
             </button>
           </div>
         )}
@@ -126,7 +128,7 @@ export default function ComboBoard({ combos, weights = null }) {
                             {i > 0 && '＋'}
                             {/* combo-sig 必須 nowrap：欄寬被擠窄時中文會逐字斷行，整欄變成一個字寬的直條 */}
                             <span className="combo-sig" title={p.label ? `樣本外驗證：${p.label}——${p.title}` : undefined}>
-                              {c.labels[i]}{tm && <sup className={tm.cls}>{tm.mark}</sup>}
+                              {c.labels[i]}<TierMark tm={tm} />
                             </span>
                           </span>
                         )
@@ -146,7 +148,7 @@ export default function ComboBoard({ combos, weights = null }) {
                       {c.n_days ?? '—'}{c.se_kind === 'naive' && <small> 未校正</small>}</td>
                     <td className={c.survives_mc ? 'combo-rel-pass' : 'combo-weak'}
                       title={c.t_stat != null ? `t 值 ${c.t_stat}（已做同日群聚校正）` : undefined}>
-                      {c.survives_mc == null ? '—' : c.survives_mc ? '✓' : '✗'}</td>
+                      {c.survives_mc == null ? '—' : c.survives_mc ? <CheckMark /> : <CrossMark />}</td>
                   </tr>
                 )
               })}

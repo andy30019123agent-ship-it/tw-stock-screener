@@ -99,17 +99,21 @@ export function CandidateCard({ p, full, gate, first, onOpen, showReasons }) {
 
 // 清單檢視：一行一檔＝名稱、代號、60 天漲幅贏過 X%、現價漲跌；有硬狀況（risk_flags、法說會將近）時名稱旁一個橘點。
 // 點一下就地展開同一份 PassBody（不跳頁），再點收合。
-export function CandidateRow({ p, full, gate, first, open, onToggle, onOpen, showReasons }) {
+export function CandidateRow({ p, full, gate, first, open, onToggle, onOpen, showReasons, hideEdgeTag }) {
   const beat = beatText(p.rs_pct_60)
   const dot = hasRiskDot(p)
+  // 2026-11-16：清單不再按分類分組，相對優勢改在列上標（樣式同卡片那行：無底粗體）。
+  // hideEdgeTag＝整段名單每檔都是相對優勢時由上層關掉（名單上方講一次就好）；展開後的內容照舊會寫。
+  const edge = hideEdgeTag ? null : edgeLine(p)
   const detailId = `opp-row-${p.id}`
   return (
     <li className={`opp-row${open ? ' open' : ''}`} data-pick-row {...(first ? { 'data-first-pick': '' } : {})}>
       <button className="opp-row-btn" onClick={onToggle} aria-expanded={open} aria-controls={detailId}>
         <span className="opp-row-main">
-          <span className="opp-row-top">
+          <span className={`opp-row-top${edge ? ' has-edge' : ''}`}>
             <span className="opp-row-name" data-pick-name>{p.name}</span>
             <span className="mono opp-row-code" data-pick-code>{p.id}</span>
+            {edge && <span className="opp-row-edge" data-edge-tag title={edge}><TrendingUp size={14} strokeWidth={2} aria-hidden="true" />相對優勢</span>}
             {dot && <><span className="opp-dot" aria-hidden="true" data-risk-dot /><span className="sr-only">（有風險標記）</span></>}
           </span>
           {beat != null && <span className="opp-row-sub">60 天漲幅贏過 <b className="mono">{beat}</b></span>}
