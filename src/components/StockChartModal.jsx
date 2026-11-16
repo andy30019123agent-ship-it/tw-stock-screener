@@ -93,19 +93,23 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
     disposeChart()          // 先拆舊圖再建新圖，避免殘留（走唯一入口，重複呼叫安全）
     el.innerHTML = ''
 
+    // 2026-11-16 專業看盤：格線用較淡的 --chart-grid、座標軸框用 --border、刻度字用等寬數字字體；
+    // 均線改用專用的 --ma5／--ma20／--ma60（舊版借用粉色 --primary、琥珀 --accent、薰衣草裝飾色）。
     const inkMuted = cssVar('--ink-muted')
     const border = cssVar('--border')
+    const grid = cssVar('--chart-grid')
     const up = cssVar('--up')
     const down = cssVar('--down')
-    const primary = cssVar('--primary')
-    const ma5Color = cssVar('--accent')
-    const ma20Color = cssVar('--primary')
-    const ma60Color = cssVar('--deco-lavender')
+    const levelColor = cssVar('--ink-body')
+    const ma5Color = cssVar('--ma5')
+    const ma20Color = cssVar('--ma20')
+    const ma60Color = cssVar('--ma60')
+    const numFont = cssVar('--font-num') || 'monospace'
 
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: inkMuted, fontFamily: 'inherit' },
-      grid: { vertLines: { color: border }, horzLines: { color: border } },
+      layout: { background: { color: 'transparent' }, textColor: inkMuted, fontFamily: numFont },
+      grid: { vertLines: { color: grid }, horzLines: { color: grid } },
       rightPriceScale: { borderColor: border },
       timeScale: { borderColor: border, timeVisible: false },
       crosshair: { mode: 0 },
@@ -151,14 +155,14 @@ export default function StockChartModal({ stock, pick = null, onClose }) {
       s.setData(times.map((t, i) => (m[i] == null ? null : { time: t, value: m[i] })).filter(Boolean))
     }
 
-    // 支撐／壓力：近 60 個交易日的低/高，畫成水平參考線並標數值（粉色虛線＝參考位，非漲跌語意）
+    // 支撐／壓力：近 60 個交易日的低/高，畫成水平參考線並標數值（中性深灰虛線＝參考位，非漲跌語意）
     // 用還原後的 bars（不是原始 ohlc）：除息前的高點若不還原，壓力線會畫在偏高的位置
     const recent = bars.slice(-60)
     const resistance = Math.round(Math.max(...recent.map(d => d.high)) * 100) / 100
     const support = Math.round(Math.min(...recent.map(d => d.low)) * 100) / 100
     setLevels({ support, resistance })
-    candle.createPriceLine({ price: resistance, color: primary, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '壓力' })
-    candle.createPriceLine({ price: support, color: primary, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '支撐' })
+    candle.createPriceLine({ price: resistance, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '壓力' })
+    candle.createPriceLine({ price: support, color: levelColor, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: '支撐' })
 
     // 十字準星讀數：手指點到哪天就顯示那天日期＋開高低收
     chart.subscribeCrosshairMove(param => {

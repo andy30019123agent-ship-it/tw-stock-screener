@@ -45,7 +45,8 @@ export default function ComboBoard({ combos, weights = null }) {
 
   const heatBg = v => {
     if (v == null) return 'transparent'
-    const pct = Math.min(80, Math.abs(v) * 22)   // 超額越大顏色越深
+    // 超額越大顏色越深；上限 40%（2026-11-16 專業看盤：原 80% 時格內深色字對底只剩約 3.8:1）
+    const pct = Math.min(40, Math.abs(v) * 22)
     return `color-mix(in srgb, var(${v >= 0 ? '--up' : '--down'}) ${pct}%, transparent)`
   }
 

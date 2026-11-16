@@ -192,8 +192,6 @@ export default function App() {
     <div className="app">
       {/* 頁首：標題＋資料日一行。2026-11-16 起「使用說明」入口搬到「工具」分頁與頁尾，頁首只留資訊。 */}
       <header className="hero" data-region="Hero / 標題與資料日">
-        <span className="hero-blob b1" aria-hidden="true" />
-        <span className="hero-blob b2" aria-hidden="true" />
         <h1>台股全市場選股</h1>
         {data && (
           <p className="hero-meta">
