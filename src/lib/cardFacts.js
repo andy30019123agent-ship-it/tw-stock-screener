@@ -118,3 +118,135 @@ export function engineWeightsAllZero(signals) {
   if (ws.every(w => w == null)) return null
   return ws.every(w => !(isNum(w) && w > 0))
 }
+
+// ── 2026-11-16 三分頁＋「過關清單」卡片（Andy 核准：分頁照方向 C，卡片改方向 B）─────────
+// 卡片檢視每張卡與清單展開內容共用同一份事實。全部只寫資料檔裡拿得到的事實：
+//   ・不新增任何好壞門檻（MASTER 2026-11-16 第 5 點）；
+//   ・pick 的新欄位 fired_labels／rs_pct_120／avg_vol_lots 由 pipeline 另外加，舊資料沒有——
+//     有欄位就顯示、沒有就省略該行或改成不帶數字的說法，絕不自己重算或編造。
+// 關卡叫法要跟「依據」分頁「這份清單怎麼來的」一一對應（GATE_LABELS 兩邊共用）。
+
+export const GATE_LABELS = {
+  strong: '強勢雙確認',
+  signal: '今天亮的訊號',
+  volume: '成交量夠',
+  revenue: '營收沒衰退',
+}
+
+// 強勢雙確認的兩個門檻＝pipeline/backtest_signals.py 的 RS_STRONG_PCT／RS_CONFIRM_120_PCT。
+// opportunities.json 沒帶這兩個數，前端只能抄；改 pipeline 時要一起改（cardFacts.test.mjs 會讀 .py 對照）。
+export const RS_STRONG_PCT = 0.80
+export const RS_CONFIRM_120_PCT = 0.70
+const pctOf = v => `${Math.round(v * 100)}%`
+
+const fmtLots = v => Math.round(v).toLocaleString('en-US')
+const isEdge = p => ['edge', 'both', 'win'].includes(p?.tier)   // 舊值 both/win 也是相對優勢（同 normalizeTier）
+
+// 「贏過全市場 X」的 X：一位小數；四捨五入會變成 100.0% 的（含百分位 1.0）一律寫「99.9% 以上」，
+// 不印「贏過 100%」——自己也在全市場裡，贏過 100% 是誇大。缺值回 null。
+export function beatText(p) {
+  if (!isNum(p)) return null
+  const v = Math.min(1, Math.max(0, p)) * 100
+  return v >= 99.95 ? '99.9% 以上' : `${v.toFixed(1)}%`
+}
+
+// 過關清單：回 [{ key, label, text, ok }]；ok=true 畫勾，ok=false 畫中性記號（沒過或查不到，不打勾）。
+//   gate＝opportunities.json 的 gate（門檻是否套用）。
+export function passChecks(p, gate) {
+  if (!p || typeof p !== 'object') return []
+  const out = []
+  // 1. 強勢關：門檻有套用才打勾；沒套用照實說沒過這一關；不知道（舊資料沒有 gate）就不寫。
+  if (gate && gate.applied === true) {
+    const isRs = gate.signal === 'rs_confirmed_60_120' || !gate.label
+    const b60 = beatText(p.rs_pct_60), b120 = beatText(p.rs_pct_120)
+    const t60 = isRs ? `（門檻 ${pctOf(RS_STRONG_PCT)}）` : ''
+    const t120 = isRs ? `（門檻 ${pctOf(RS_CONFIRM_120_PCT)}）` : ''
+    let text
+    if (b60 != null && b120 != null) text = `60 天贏過全市場 ${b60}${t60}，120 天贏過 ${b120}${t120}`
+    else if (b60 != null) text = `60 天贏過全市場 ${b60}${t60}`
+    else text = '近 60 天、近 120 天漲幅都排在全市場前段'
+    out.push({ key: 'strong', label: isRs ? GATE_LABELS.strong : gate.label, text, ok: true })
+  } else if (gate && gate.applied === false) {
+    out.push({ key: 'strong', label: gate.label || GATE_LABELS.strong, text: '今天這道門檻沒套用，這檔沒經過這一關', ok: false })
+  }
+  // 2. 今天亮的訊號：只認 fired_labels（字串陣列）；沒有這欄或空的就整行不顯示。
+  const fired = Array.isArray(p.fired_labels) ? p.fired_labels.filter(x => typeof x === 'string' && x.trim()) : []
+  if (fired.length) out.push({ key: 'signal', label: GATE_LABELS.signal, text: fired.join('、'), ok: true })
+  // 3. 成交量
+  out.push({
+    key: 'volume', label: GATE_LABELS.volume, ok: true,
+    text: isNum(p.avg_vol_lots)
+      ? `近 20 日平均 ${fmtLots(p.avg_vol_lots)} 張（門檻 ${MIN_VOL_LOTS} 張）`
+      : `近 20 日均量達 ${MIN_VOL_LOTS} 張門檻`,
+  })
+  // 4. 營收：查不到不打勾（中性記號），照實說沒有因此被刷掉。
+  //    年增是負的照規則不該出現（後端會剔除）；萬一出現也不打勾，免得畫面自相矛盾。
+  if (!isNum(p.revenue_yoy)) {
+    out.push({ key: 'revenue', label: GATE_LABELS.revenue, text: '查不到營收資料，沒有因此被刷掉', ok: false })
+  } else {
+    out.push({ key: 'revenue', label: GATE_LABELS.revenue, text: `營收年增 ${signed(p.revenue_yoy)}%`, ok: p.revenue_yoy >= 0 })
+  }
+  return out
+}
+
+// 「相對優勢」一行（只有相對優勢才有）：意思是成交熱絡，不是漲得比較強。
+export const EDGE_TEXT = '成交金額排今天候選前 1/3'
+export function edgeLine(p) {
+  return isEdge(p) ? EDGE_TEXT : null
+}
+
+const flagsOf = p => {
+  const out = []
+  for (const f of (Array.isArray(p.risk_flags) ? p.risk_flags : [])) {
+    if (typeof f === 'string' && f && !out.includes(f)) out.push(f)
+  }
+  return out
+}
+// 法說會將近：沿用改版前的判定——earnings_date 有值就算（後端只在未來 7 天內有法說會才填，
+// 見 pipeline/build_data.py fetch_earnings_badges(days_ahead=7)），前端不另設天數門檻。
+const earningsText = p => (typeof p.earnings_date === 'string' && p.earnings_date
+  ? `法說會將近（${p.earnings_date.length >= 10 ? p.earnings_date.slice(5) : p.earnings_date}）` : null)
+
+// 清單列橘點：只看「硬狀況」——後端給的 risk_flags（乖離大、營收資料缺…）＋法說會將近。
+// 近 20 天輸大盤、乖離排前段是描述，不觸發橘點。回傳觸發的項目（空陣列＝不畫）。
+export function riskDotMarks(p) {
+  if (!p || typeof p !== 'object') return []
+  const out = flagsOf(p)
+  const e = earningsText(p)
+  if (e) out.push(e)
+  return out
+}
+export const hasRiskDot = p => riskDotMarks(p).length > 0
+
+// 卡片「要小心」一行：列事實，不新增好壞門檻。回字串陣列，空＝不顯示。
+//   ・risk_flags，但「營收資料缺」不列（過關清單的營收那行已經講了）
+//   ・乖離排前段（bias_high，或舊值 tier=both/return）；已經有「乖離大」就不再列
+//   ・法說會將近（帶日期）
+//   ・近 20 天輸大盤 X 個百分點（rs20 為負）
+export function cautionList(p) {
+  if (!p || typeof p !== 'object') return []
+  const flags = flagsOf(p)
+  const out = flags.filter(f => f !== '營收資料缺')
+  if ((p.tier === 'both' || p.tier === 'return' || !!p.bias_high) && !flags.includes('乖離大')) out.push('乖離排前段')
+  const e = earningsText(p)
+  if (e) out.push(e)
+  const vs = vsMarketText(p.rs20)
+  if (vs && vs.dir === 'down') out.push(`近 20 天輸大盤 ${vs.value} 個百分點`)
+  return out
+}
+
+// 中性事實：離近 20 日前高還差多少（不放進要小心、不加判斷）
+export function highGapLine(close, high) {
+  const g = gapToHigh(close, high)
+  if (!g) return null
+  return g.atHigh ? '已在近 20 日高點' : `離近 20 日前高還差 ${gapText(g)}`
+}
+
+// 近 20 天比大盤：rs20＝個股近 20 日報酬 − 加權指數近 20 日報酬（百分點）。
+// 回 { word, value, dir }：多漲／少漲；四捨五入後是 0 就說差不多；缺值回 null。
+export function vsMarketText(rs20, digits = 1) {
+  if (!isNum(rs20)) return null
+  const s = Math.abs(rs20).toFixed(digits)
+  if (Number(s) === 0) return { word: '跟大盤差不多', value: null, dir: 'flat' }
+  return rs20 > 0 ? { word: '多漲', value: s, dir: 'up' } : { word: '少漲', value: s, dir: 'down' }
+}

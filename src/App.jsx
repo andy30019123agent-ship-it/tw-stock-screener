@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen, TrendingDown } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { AlertTriangle, CircleAlert, SlidersHorizontal, RotateCcw, ChevronDown, Check, ArrowUpDown, BookOpen, TrendingDown, Info } from 'lucide-react'
 import ConditionPanel from './components/ConditionPanel'
 import HelpGuide from './components/HelpGuide'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -7,22 +7,52 @@ import ResultTable from './components/ResultTable'
 import StockChartModal from './components/StockChartModal'
 import Opportunities from './components/Opportunities'
 import MarketAdvice from './components/MarketAdvice'
+import BasisTab from './components/BasisTab'
+import SignalWeights from './components/SignalWeights'
+import OutcomeShape from './components/OutcomeShape'
+import PositionPlan from './components/PositionPlan'
+import { TABS, parseHash, tabHash, tabKeyTarget } from './lib/tabs'
+import { normalizeTier } from './lib/tierVerdict'
 import { readDense, writeDense } from './lib/safeStorage'
 import { DEFAULT_CONDITIONS, applyFilters, SORTS, SORT_LABELS, MOBILE_SORTS, countActiveConditions, describeActiveConditions } from './lib/filters'
 
 export default function App() {
-  // 使用說明書用 hash 路由（#help）：零新依賴、可加書籤、GitHub Pages 不必改設定。
-  // 監聽 hashchange 才能讓上一頁/下一頁與直接貼連結都正常。
-  const [route, setRoute] = useState(() =>
-    (typeof window !== 'undefined' && window.location.hash.startsWith('#help')) ? 'help' : 'main')
+  // 2026-11-16 三分頁改版（Andy 核准方向 A＋C）：分頁與使用說明都走網址雜湊（lib/tabs.js）。
+  // #today／#basis／#tools＝三個分頁；#help（含 #help/s1 章節連結）＝使用說明。
+  // 監聽 hashchange，上一頁/下一頁、重新整理、直接貼連結都會停在對的地方；零新依賴、GitHub Pages 不必改設定。
+  const [loc, setLoc] = useState(() => parseHash(typeof window !== 'undefined' ? window.location.hash : ''))
+  const route = loc.route
+  const [tab, setTab] = useState(() => loc.tab || 'today')   // 進說明書時記住剛才在哪個分頁，回來用
+  const [visited, setVisited] = useState(() => new Set([loc.tab || 'today']))   // 看過的分頁才掛載，之後保留狀態
   useEffect(() => {
-    const onHash = () => setRoute(window.location.hash.startsWith('#help') ? 'help' : 'main')
+    const onHash = () => {
+      const next = parseHash(window.location.hash)
+      setLoc(next)
+      if (next.tab) {
+        setTab(next.tab)
+        setVisited(v => (v.has(next.tab) ? v : new Set(v).add(next.tab)))
+      }
+    }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
   useEffect(() => {           // 切到說明書時捲回頂端，否則會停在選股頁的捲動位置
     if (route === 'help') window.scrollTo(0, 0)
   }, [route])
+  const tabRefs = useRef({})
+  const goTab = (key, focus = false) => {
+    if (window.location.hash !== tabHash(key)) window.location.hash = tabHash(key)   // 觸發 hashchange、留上一頁紀錄
+    // 換分頁時，若已經捲過頁首，捲回分頁列的位置（不然會停在上一頁的捲動深度）
+    const bar = document.getElementById('tabbar')
+    if (bar && window.scrollY > bar.offsetTop) window.scrollTo(0, bar.offsetTop)
+    if (focus) tabRefs.current[key]?.focus()
+  }
+  const onTabKey = e => {
+    const next = tabKeyTarget(tab, e.key)
+    if (!next) return
+    e.preventDefault()
+    goTab(next, true)
+  }
 
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -42,10 +72,12 @@ export default function App() {
     writeDense(next)   // 寫不進去（隱私模式）就算了，只是下次不記得
     return next
   })
-  const [picked, setPicked] = useState(null)
+  const [picked, setPicked] = useState(null)        // { stock, pick }：K 線視窗；pick＝候選清單那一筆（進階篩選開的沒有）
+  const [opp, setOpp] = useState(undefined)          // opportunities.json（undefined＝載入中、null＝抓不到）
+  const [board, setBoard] = useState(null)           // scoreboard.json：真實績效紀錄
+  const [windows, setWindows] = useState(null)       // signal_windows.json：多時間窗勝率榜
   // 大盤提醒：2026-11-13 可讀性改版收成一行摘要（含「請自行斟酌降低曝險」），點開看完整說明
   const [mktOpen, setMktOpen] = useState(false)
-  const [oppCount, setOppCount] = useState(null)
   const [panelOpen, setPanelOpen] = useState(false)   // 手機常駐工具列與篩選面板連動；桌機面板恆展開（CSS）
   // 「進階篩選」整組（舊版篩選器＋結果列表）2026-07-26 降級為次要工具，預設收合——
   // 這是核准方向第 1 條「砍掉雙軌候選機制」的落地：候選情報是唯一預設可見的候選清單，
@@ -53,6 +85,8 @@ export default function App() {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   // 穩定的關閉函式（避免每次渲染都是新函式，害 StockChartModal 的 focus-trap effect 反覆 cleanup/重跑搶焦）
   const closeModal = useCallback(() => setPicked(null), [])
+  const pickStock = useCallback((stock, pick = null) => setPicked(stock ? { stock, pick } : null), [])
+  const oppCount = opp === undefined ? null : (opp?.pool_n ?? opp?.picks?.length ?? 0)
 
   const activeConds = useMemo(() => countActiveConditions(conditions), [conditions])
   const activeCondText = useMemo(() => describeActiveConditions(conditions), [conditions])
@@ -88,7 +122,24 @@ export default function App() {
       .then(r => (r.ok ? r.json() : null)).then(setTierStats).catch(() => setTierStats(null))
     fetch(`${import.meta.env.BASE_URL}data/exit_rules_summary.json`)
       .then(r => (r.ok ? r.json() : null)).then(setExitSummary).catch(() => setExitSummary(null))
+    // 候選情報三件（原本在 Opportunities 裡抓；三分頁後今天／依據／工具都要用，提到這層抓一次）
+    fetch(`${import.meta.env.BASE_URL}data/opportunities.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setOpp).catch(() => setOpp(null))
+    fetch(`${import.meta.env.BASE_URL}data/scoreboard.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setBoard).catch(() => setBoard(null))
+    fetch(`${import.meta.env.BASE_URL}data/signal_windows.json`)
+      .then(r => (r.ok ? r.json() : null)).then(setWindows).catch(() => setWindows(null))
   }, [])
+
+  // 持有口徑區的集中度警示要用相對優勢那組（picks 本身沒有產業，從 screener.json 併回來）
+  const edgePicks = useMemo(() => {
+    if (!opp?.picks) return []
+    const byId = new Map((data?.stocks || []).map(s => [s.id, s]))
+    return opp.picks.filter(p => normalizeTier(p).tier === 'edge').map(p => {
+      const full = byId.get(p.id)
+      return { id: p.id, name: p.name, close: p.close ?? full?.close ?? null, industry: full?.industry ?? null }
+    })
+  }, [opp, data])
 
   const filtered = useMemo(() => {
     if (!data) return []
@@ -127,24 +178,23 @@ export default function App() {
       <div className="app">
         <HelpGuide tierStats={tierStats} exitSummary={exitSummary} weights={weights} combos={combos}
           exits={exits} regime={regime} marketCount={data?.count ?? null}
-          onBack={() => { window.location.hash = '' }} />
+          onBack={() => { window.location.hash = tabHash(tab) }} />
       </div>
     )
   }
 
+  const panelProps = key => ({
+    role: 'tabpanel', id: `panel-${key}`, 'aria-labelledby': `tab-${key}`, tabIndex: -1,
+    hidden: tab !== key, className: `tabpanel tabpanel-${key}`,
+  })
+
   return (
     <div className="app">
-      {/* 2026-11-13 可讀性改版（Andy 核准方向 3「先看股票」）：hero 壓成「標題＋資料日」一小塊，
-          緊接著就是相對優勢候選。原本 hero 235px＋大盤 banner 158px＋說明 229px 把第一檔股票推到第 2 屏
-          （審計 A1）。數字不砍，只是併成一行；資料過期警示（下面 banner-warn）照舊整段顯示。 */}
+      {/* 頁首：標題＋資料日一行。2026-11-16 起「使用說明」入口搬到「工具」分頁與頁尾，頁首只留資訊。 */}
       <header className="hero" data-region="Hero / 標題與資料日">
         <span className="hero-blob b1" aria-hidden="true" />
         <span className="hero-blob b2" aria-hidden="true" />
-        <div className="hero-top">
-          <h1>台股全市場選股</h1>
-          {/* 使用說明入口：手機第一眼就要看得到（站上概念不少，看不懂時人不會捲到頁尾找說明） */}
-          <a className="help-btn" href="#help"><BookOpen size={16} strokeWidth={1.75} />使用說明</a>
-        </div>
+        <h1>台股全市場選股</h1>
         {data && (
           <p className="hero-meta">
             <span className="hero-meta-seg">
@@ -159,6 +209,21 @@ export default function App() {
         )}
       </header>
 
+      {/* 三分頁列：頁首下方、捲動時黏在頂端（WAI-ARIA tabs：左右鍵／Home／End 切換） */}
+      <nav className="tabbar" id="tabbar" aria-label="分頁">
+        <div className="tabbar-inner" role="tablist" aria-label="今天／依據／工具" onKeyDown={onTabKey}>
+          {TABS.map(([key, label]) => (
+            <button key={key} id={`tab-${key}`} ref={el => { tabRefs.current[key] = el }}
+              role="tab" aria-selected={tab === key} aria-controls={`panel-${key}`} tabIndex={tab === key ? 0 : -1}
+              className={`tab${tab === key ? ' on' : ''}`} onClick={() => goTab(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* 狀態型警示（資料抓取失敗、資料過期）：顯示條件不變；放在分頁列正下方，三個分頁都看得到，
+          「今天」分頁首屏一定可見（MASTER 2026-11-16 第 4 點）。 */}
       {error && (
         <div className="banner banner-error" role="alert">
           <CircleAlert size={18} strokeWidth={1.75} />{error}
@@ -177,30 +242,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 「今天大盤怎樣」：2026-11-13 收成一行摘要（Andy 核准第 1 條），摘要裡保留最重要的一句
-          「請自行斟酌降低曝險」；完整數字與「市場廣度代理、非大盤指數」在展開內容，
-          後者也同時寫在「這些數字怎麼來的 → 限制」（預設可見）。 */}
-      {data?.market_breadth && ['red', 'severe_red', 'yellow'].includes(data.market_breadth.status) && (() => {
-        const mb = data.market_breadth
-        const label = mb.status === 'severe_red' ? '大盤明顯走弱' : mb.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'
-        return (
-          <div className={`mkt ${mb.status === 'yellow' ? 'mkt-warn' : 'mkt-down'}`} role="status">
-            <button className="mkt-sum" onClick={() => setMktOpen(o => !o)} aria-expanded={mktOpen} aria-controls="mkt-detail">
-              <TrendingDown size={18} strokeWidth={1.75} aria-hidden="true" />
-              <span><b>{label}</b>：僅 {Math.round(mb.breadth20 * 100)}% 站上月線，請自行斟酌降低曝險</span>
-              <ChevronDown className={`chevron ${mktOpen ? 'up' : ''}`} size={18} strokeWidth={2} aria-hidden="true" />
-            </button>
-            {mktOpen && (
-              <p className="mkt-detail" id="mkt-detail">
-                {label}——全市場僅 <b>{Math.round(mb.breadth20 * 100)}%</b> 的股票站上月線
-                （20 日報酬中位 {mb.median_ret20_pct >= 0 ? '+' : ''}{mb.median_ret20_pct}%）。
-                候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。
-              </p>
-            )}
-          </div>
-        )
-      })()}
-
       {!data && !error && (
         <div className="center-state">
           <div className="spin" />
@@ -208,27 +249,69 @@ export default function App() {
         </div>
       )}
 
-      {/* 「今天有幾檔候選」＋「相對優勢這幾檔」＋「其他候選」＋「這些數字怎麼來的」都在 Opportunities
-          裡由上而下排好（2026-07-26 單欄故事線核准方向第 2 條）；候選情報現在預設展開、
-          不用點「展開」才看得到第一檔股票。 */}
-      <ErrorBoundary name="opportunities" label="候選情報">
-        <Opportunities stocks={data?.stocks} onPick={setPicked} onCount={setOppCount}
-          engineStatus={data?.engine_status} tierStats={tierStats} exitSummary={exitSummary} />
-      </ErrorBoundary>
+      {/* ===== 今天：只放股票 ===== */}
+      <div {...panelProps('today')}>
+          {/* 「今天大盤怎樣」：2026-11-13 收成一行摘要（Andy 核准第 1 條），摘要裡保留最重要的一句
+              「請自行斟酌降低曝險」；完整數字與「市場廣度代理、非大盤指數」在展開內容，
+              後者也同時寫在「這些數字怎麼來的 → 限制」（預設可見）。 */}
+          {data?.market_breadth && ['red', 'severe_red', 'yellow'].includes(data.market_breadth.status) && (() => {
+            const mb = data.market_breadth
+            const label = mb.status === 'severe_red' ? '大盤明顯走弱' : mb.status === 'red' ? '大盤廣度轉弱' : '大盤廣度中性偏弱'
+            return (
+              <div className={`mkt ${mb.status === 'yellow' ? 'mkt-warn' : 'mkt-down'}`} role="status">
+                <button className="mkt-sum" onClick={() => setMktOpen(o => !o)} aria-expanded={mktOpen} aria-controls="mkt-detail">
+                  <TrendingDown size={18} strokeWidth={1.75} aria-hidden="true" />
+                  <span><b>{label}</b>：僅 {Math.round(mb.breadth20 * 100)}% 站上月線，請自行斟酌降低曝險</span>
+                  <ChevronDown className={`chevron ${mktOpen ? 'up' : ''}`} size={18} strokeWidth={2} aria-hidden="true" />
+                </button>
+                {mktOpen && (
+                  <p className="mkt-detail" id="mkt-detail">
+                    {label}——全市場僅 <b>{Math.round(mb.breadth20 * 100)}%</b> 的股票站上月線
+                    （20 日報酬中位 {mb.median_ret20_pct >= 0 ? '+' : ''}{mb.median_ret20_pct}%）。
+                    候選情報仍照常產生，<b>請自行斟酌降低曝險</b>。
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
-      {data && (
-        <>
-          {hasAdvice && (
-            <>
+        <ErrorBoundary name="opportunities" label="候選情報">
+          <Opportunities opp={opp} stocks={data?.stocks} onPick={pickStock} engineStatus={data?.engine_status}
+            tierStats={tierStats} onGoBasis={e => { e.preventDefault(); goTab('basis') }} />
+        </ErrorBoundary>
+      </div>
+
+      {/* ===== 依據：清單怎麼來的、真實績效、回測結論與證據、限制與但書 ===== */}
+      {visited.has('basis') && (
+        <div {...panelProps('basis')}>
+          <ErrorBoundary name="basis" label="依據">
+            <BasisTab opp={opp} tierStats={tierStats} board={board} />
+          </ErrorBoundary>
+        </div>
+      )}
+
+      {/* ===== 工具：市況建議、進階篩選、訊號戰績、條件層級分佈、持有口徑與停損代價、使用說明 ===== */}
+      {visited.has('tools') && (
+        <div {...panelProps('tools')}>
+          <a className="tools-help" href="#help">
+            <BookOpen size={20} strokeWidth={1.75} aria-hidden="true" />
+            <span><b>使用說明</b><small>第一次用？每個名詞、每張表怎麼看都在這裡</small></span>
+          </a>
+          {data && hasAdvice && (
+            <section className="tools-sec" data-region="今日市況建議">
               <h2 className="opp-section-title">想直接套用歷史最強的訊號？</h2>
+              <p className="tools-note">
+                <Info size={16} strokeWidth={1.75} aria-hidden="true" />
+                <span>按「套用」會在下面的進階篩選開出另一份清單，<b>跟「今天」分頁的候選不是同一份</b>（那份還多過了量、營收、當天訊號幾關）。</span>
+              </p>
               <ErrorBoundary name="advice" label="今日市況建議">
                 <MarketAdvice breadth={data.market_breadth} regime={regime} onApply={applyAdvice} />
               </ErrorBoundary>
-            </>
+            </section>
           )}
-
           {/* 「想自己篩？進階篩選」：舊版「篩選＋訊號排序」候選列表（ConditionPanel＋ResultTable）
-              整組降級為進階工具，預設收合，用一條分隔線＋標題跟上面的候選情報隔開（核准方向第 1 條）。 */}
+              整組降級為進階工具，預設收合（2026-07-26 核准方向第 1 條）；2026-11-16 起搬到「工具」分頁。 */}
+          {data && (
           <section className="advanced-tools" data-region="進階篩選（舊版篩選器）">
             <button
               className="advanced-toggle"
@@ -241,7 +324,7 @@ export default function App() {
               <ChevronDown className={`chevron ${advancedOpen ? 'up' : ''}`} size={18} strokeWidth={2} />
             </button>
             <p className="advanced-hint">
-              這是舊版的手動篩選器：自己勾條件、自己排序，跟上面「候選情報」是兩套獨立工具，互不影響。
+              這是舊版的手動篩選器：自己勾條件、自己排序，跟「今天」分頁的候選情報是兩套獨立工具，互不影響。
             </p>
             {advancedOpen && (
               <div id="advanced-tools-body">
@@ -267,7 +350,7 @@ export default function App() {
                     <RotateCcw size={15} strokeWidth={1.75} />
                   </button>
                 </div>
-
+    
                 {/* 排序選單：底部彈出，固定二欄格線 */}
                 {sortOpen && (
                   <div className="sort-sheet-backdrop" onClick={() => setSortOpen(false)}>
@@ -315,18 +398,31 @@ export default function App() {
                   stocks={filtered}
                   sortKey={sortKey}
                   onSort={setSortKey}
-                  onPick={setPicked}
+                  onPick={pickStock}
                   dense={dense}
                 />
               </div>
             )}
           </section>
-        </>
+          )}
+          <section className="tools-sec" data-region="訊號戰績">
+            <h2 className="opp-section-title">訊號戰績與條件層級</h2>
+            <ErrorBoundary name="weights" label="各訊號回測戰績">
+              <SignalWeights windows={windows} weights={weights} />
+            </ErrorBoundary>
+            <ErrorBoundary name="outcome" label="條件層級的歷史分佈">
+              <OutcomeShape tierStats={tierStats} />
+            </ErrorBoundary>
+          </section>
+          <ErrorBoundary name="position" label="持有口徑與停損代價">
+            <PositionPlan dataDate={opp?.date} exitSummary={exitSummary} picks={edgePicks} />
+          </ErrorBoundary>
+        </div>
       )}
 
       {/* 各自包 error boundary：任何一塊壞掉不該讓整站變白畫面（2026-07-25 K 線圖崩站的教訓） */}
       <ErrorBoundary name="chart" label="K 線圖">
-        <StockChartModal stock={picked} onClose={closeModal} />
+        <StockChartModal stock={picked?.stock || null} pick={picked?.pick || null} onClose={closeModal} />
       </ErrorBoundary>
 
       <footer className="app-footer">

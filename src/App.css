@@ -36,6 +36,14 @@
   --warn:#7A5200;
   --warn-bg:#FBF0D8;
   --warn-border:#E8CE94;
+  /* 清單列「要小心」橘點（2026-11-16 三分頁改版新增；MASTER 色票沒有可用的橘）。
+     它是圖形不是文字，WCAG 1.4.11 要求對背景 ≥3:1：對白 4.35、對 --surface-tint 3.88、
+     對 --bg 3.96、對 --primary-tint 3.32。不承擔漲跌語意，也不跟 --primary 搶強調。 */
+  --risk-dot:#C8570A;
+
+  /* 分頁列高度（tab 48px＋底線 1px）。其他 sticky 元件（例如手機進階篩選工具列）要排在它下面，
+     不然兩者都 top:0 會互相蓋住、分頁切不了。 */
+  --tabbar-h:49px;
 
   /* ===== 裝飾色塊（僅限 hero／空狀態，資料區不可用）===== */
   --deco-pink:#FFB1CC;
@@ -98,7 +106,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
 .hero-blob.b1 { width: 240px; height: 240px; top: -120px; right: -40px; background: var(--deco-pink); }
 .hero-blob.b2 { width: 200px; height: 200px; bottom: -140px; left: -40px; background: var(--deco-lavender); }
 .hero-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.hero-top h1 { font-size: clamp(1.5rem, 4.5vw, 2.25rem); font-weight: 800; line-height: 1.2; letter-spacing: -.5px; }
+.hero-top h1, .hero > h1 { font-size: clamp(1.5rem, 4.5vw, 2.25rem); font-weight: 800; line-height: 1.2; letter-spacing: -.5px; }
 .hero-meta {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; margin-top: 8px;
   font-size: .875rem; line-height: 1.6; color: var(--ink-body);
@@ -1054,7 +1062,7 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   /* 常駐工具列：吸頂、不透明底避免疊字，層級在卡片之上、彈窗之下 */
   .mobile-toolbar {
     display: flex; align-items: center; gap: 8px;
-    position: sticky; top: 0; z-index: 20;
+    position: sticky; top: var(--tabbar-h); z-index: 19;
     padding: 8px; margin: 0 0 12px;
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--r-pill); box-shadow: var(--shadow-sm);
@@ -1382,3 +1390,134 @@ h1, h2, h3 { font-family: 'Manrope', sans-serif; color: var(--ink); }
   font-size: 1rem; font-weight: 700; color: var(--ink);
 }
 .help-sub { font-size: 1.125rem; margin: 24px 0 8px; color: var(--ink); }
+
+
+/* ===================================================================================
+   2026-11-16 三分頁「今天／依據／工具」＋過關清單卡片（Andy 核准：分頁方向 C、卡片方向 B）
+   =================================================================================== */
+/* 頁首再壓扁一點：標題＋資料日一行，股票要進手機第一屏 */
+@media (max-width: 640px) {
+  .hero { padding: 12px 16px; margin: 12px 0 0; border-radius: var(--r-lg); }
+  .hero > h1 { font-size: 1.375rem; }
+  .hero-meta { margin-top: 2px; font-size: .875rem; gap: 0 2px; }
+  .hero-meta .live-dot { margin-right: 2px; }
+}
+
+/* 分頁列：黏在頂端，捲動時一直看得到。寬螢幕不撐滿（最多 480px 置中）。 */
+.tabbar {
+  position: sticky; top: 0; z-index: 20; background: var(--bg); height: var(--tabbar-h);
+  margin: 0 0 16px; border-bottom: 1px solid var(--border);
+  /* 底色延伸到整個視窗寬（捲動時兩側不露出底下內容），但不撐出橫向捲動 */
+  box-shadow: 0 0 0 100vmax var(--bg); clip-path: inset(0 -100vmax);
+}
+.tabbar-inner { display: grid; grid-template-columns: repeat(3, 1fr); max-width: 480px; margin: 0 auto; }
+.tab {
+  min-height: 48px; padding: 8px 12px; border: none; background: none;
+  font-size: 1rem; font-weight: 700; color: var(--ink-muted);
+  border-bottom: 3px solid transparent; margin-bottom: -1px;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--ink); border-bottom-color: var(--primary); }
+.tab:focus-visible { outline-offset: -4px; }
+@media (max-width: 640px) {
+  .tabbar { margin-bottom: 12px; }
+}
+.tabpanel:focus { outline: none; }
+.tabpanel[hidden] { display: none; }
+
+/* 「今天」：寬螢幕限制寬度置中，清單不會一列橫跨 1200px 中間一大片空白 */
+.tabpanel-today { max-width: 680px; margin: 0 auto; }
+.tabpanel-today .opp-today { padding: 12px 16px; }
+.tabpanel-today .opp-today { background: none; border: none; padding: 0; }
+.tabpanel-today .opp-today-main .opp-basis-link { white-space: nowrap; min-height: 44px; margin-left: 4px; vertical-align: baseline; display: inline; padding: 12px 0; }
+.opp-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--risk-dot); flex: none;
+}
+.opp-dot-legend { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: 4px; }
+.tabpanel-today .opp-listhead { margin: 16px 0 4px; flex-wrap: nowrap; }
+.tabpanel-today .opp-view-btn { min-width: 0; padding: 0 14px; }
+.opp-legend-sm { font-size: .875rem; line-height: 1.5; margin-bottom: 4px; }
+.opp-legend-sm svg { margin-top: 2px; }
+
+/* 清單：一列＝名稱（＋橘點）／代號・60 天贏過｜現價漲跌｜展開箭頭 */
+.opp-rows { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+.opp-row-main { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 0; }
+.opp-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.opp-row-top .opp-row-name { flex: 0 1 auto; min-width: 0; }
+.opp-row-top .opp-row-code { flex: none; font-size: .875rem; line-height: 1.5; color: var(--ink-muted); font-weight: 700; }
+.opp-row-sub { font-size: 1rem; line-height: 1.5; color: var(--ink-body); white-space: nowrap; }
+.opp-row-sub b { color: var(--ink); font-weight: 800; }
+.opp-row-detail { padding: 12px 16px 20px; }
+.opp-row-detail > .opp-card-sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 過關清單卡片（卡片與清單展開共用 PassBody） */
+.pc-body { display: flex; flex-direction: column; gap: 12px; }
+.pc-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pc-check { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 12px; align-items: start; }
+.pc-check .pc-ico { grid-row: 1 / 3; margin-top: 2px; color: var(--ink); }
+.pc-check.is-neutral .pc-ico { color: var(--ink-muted); }
+.pc-check-k { font-size: .875rem; line-height: 1.5; color: var(--ink-muted); }
+.pc-check-v { font-size: 1rem; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.pc-check.is-neutral .pc-check-v { color: var(--ink-body); }
+.pc-line {
+  display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 12px; border-radius: var(--r-md);
+  font-size: 1rem; line-height: 1.5; color: var(--ink);
+}
+.pc-line svg { flex: none; margin-top: 4px; }
+.pc-strong { background: var(--primary-tint); }
+.pc-caution { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+.pc-caution svg { color: var(--warn); }
+.pc-gap { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--ink-body); }
+.pc-body .opp-row-chart { align-self: flex-start; }
+.opp-card { cursor: default; }
+.opp-card:hover { transform: none; border-color: var(--border); box-shadow: var(--shadow-sm); }
+.opp-card:active { transform: none; }
+
+/* 「依據」分頁 */
+.bt { max-width: 880px; margin: 0 auto; }
+.bt-sec + .bt-sec { margin-top: 40px; }
+.bt-h { font-size: 1.25rem; font-weight: 800; line-height: 1.3; color: var(--ink); margin-bottom: 12px; }
+.bt-lead { display: flex; align-items: flex-start; gap: 8px; font-size: 1rem; line-height: 1.7; color: var(--ink-body); margin: 0 0 12px; }
+.bt-lead svg { flex: none; margin-top: 5px; color: var(--ink-muted); }
+.bt-lead b { color: var(--ink); }
+.bt-steps { list-style: none; margin: 0 0 16px; padding: 16px 20px; display: grid; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
+.bt-steps li { display: flex; align-items: flex-start; gap: 12px; font-size: 1rem; line-height: 1.6; color: var(--ink-body); }
+.bt-steps li svg { flex: none; margin-top: 2px; color: var(--ink); }
+.bt-steps li.is-neutral svg { color: var(--ink-muted); }
+.bt-steps b { color: var(--ink); }
+.bt .opp-board { margin-top: 0; }
+.bt-fold { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
+.bt-sec > .bt-fold, .bt-sec > .opp-layer + .bt-fold { margin-top: 16px; }
+.bt-sec > .bt-fold:first-child { margin-top: 0; }
+.bt-fold > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 56px; padding: 12px 20px; cursor: pointer; list-style: none; color: var(--ink);
+}
+.bt-fold > summary::-webkit-details-marker { display: none; }
+.bt-fold > summary b { display: block; font-size: 1rem; font-weight: 700; line-height: 1.5; }
+.bt-fold > summary small { display: block; font-size: .875rem; line-height: 1.5; color: var(--ink-muted); }
+.bt-fold > summary:hover { background: var(--surface-tint); border-radius: var(--r-lg); }
+.bt-fold-chev { flex: none; color: var(--ink-muted); transition: transform 200ms ease; }
+.bt-fold[open] .bt-fold-chev { transform: rotate(180deg); }
+.bt-fold-body { padding: 0 16px 16px; }
+.bt-fold-body > .opp-layer { border: none; padding: 4px; }
+.bt .opp-board-stats { font-size: 1rem; }
+
+/* 「工具」分頁 */
+.tabpanel-tools > * + * { margin-top: 32px; }
+.tools-help {
+  display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 12px 20px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  color: var(--ink); text-decoration: none; max-width: 640px;
+}
+.tools-help svg { color: var(--primary-strong); flex: none; }
+.tools-help b { display: block; font-size: 1rem; }
+.tools-help small { display: block; font-size: .875rem; line-height: 1.5; color: var(--ink-muted); }
+.tools-help:hover { border-color: var(--primary); }
+.tools-note { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; font-size: 1rem; line-height: 1.6; color: var(--ink-body); max-width: 52em; }
+.tools-note svg { flex: none; margin-top: 4px; color: var(--ink-muted); }
+.tools-note b { color: var(--ink); }
+.tabpanel-tools .advanced-tools { border-top: none; padding-top: 0; margin-top: 32px; }

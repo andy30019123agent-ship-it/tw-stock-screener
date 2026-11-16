@@ -159,7 +159,7 @@ export default function OutcomeShape({ tierStats }) {
       {open && (<>
         {!tierStats ? (
           <p className="os-warn">
-            <b>條件層級歷史分佈暫時取不到</b>——這通常是資料管線問題，不影響上面的候選清單本身；
+            <b>條件層級歷史分佈暫時取不到</b>——這通常是資料管線問題，不影響「今天」分頁的候選清單本身；
             隔天自動更新後會恢復。
           </p>
         ) : (<>
@@ -168,7 +168,7 @@ export default function OutcomeShape({ tierStats }) {
             數字已扣來回交易成本 <b>{tierStats.cost_pct}%</b>（手續費＋證交稅＋滑價）。
             <br />
             這裡只顯示「這個條件層級」歷史上的分佈：樣本是歷史上每一天「照今天同一套流程選出候選、在候選池內切三層」之後，
-            同一層所有股票的統計（另外兩點——這是整群統計、哪些條件歷史重播不了——見上面「證據」與「限制」）。
+            同一層所有股票的統計（另外兩點——這是整群統計、哪些條件歷史重播不了——見「依據」分頁的「證據」與「限制」）。
           </p>
           {tierStats.stale && (
             <p className="os-warn">
@@ -187,7 +187,7 @@ export default function OutcomeShape({ tierStats }) {
             持有 20 交易日彼此重疊，{tierStats.date ? '長歷史' : '樣本'}換算下來每個層級只有約
             <b> {tierStats.features?.turnover?.high?.blocks ?? 19} 批</b>獨立進場，所以每一格都附了誤差範圍。
             <b>兩層的誤差範圍有重疊，不代表兩層一樣，也不代表哪層比較好</b>——那要看同一天配對比較，
-            結果寫在上面「結論」那一層；這張表本身只說明每一層自己有多不確定。
+            結果寫在「依據」分頁「結論」那一層；這張表本身只說明每一層自己有多不確定。
           </p>
         </>)}
       </>)}

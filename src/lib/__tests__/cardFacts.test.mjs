@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { sortRuleText, engineWeightNote, ENGINE_KEYS, MIN_VOL_LOTS, engineWeightsAllZero } from '../cardFacts.js'
+import { sortRuleText, engineWeightNote, ENGINE_KEYS, MIN_VOL_LOTS, engineWeightsAllZero, RS_STRONG_PCT, RS_CONFIRM_120_PCT } from '../cardFacts.js'
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.log('  ❌', msg) } }
 
@@ -32,6 +32,10 @@ ok(pyKeys.length > 0, '解析得到 ENGINE_SIGNALS')
 ok(JSON.stringify([...pyKeys].sort()) === JSON.stringify([...ENGINE_KEYS].sort()), 'ENGINE_KEYS 與 pipeline ENGINE_SIGNALS 完全相同')
 const mv = py('opportunities.py').match(/^MIN_VOL_LOTS\s*=\s*(\d+)/m)
 ok(mv && Number(mv[1]) === MIN_VOL_LOTS, 'MIN_VOL_LOTS 與 pipeline/opportunities.py 相同')
+// 強勢雙確認兩個門檻（卡片過關清單會印出來）
+const rs = bt.match(/^RS_STRONG_PCT\s*=\s*([\d.]+)/m), rc = bt.match(/^RS_CONFIRM_120_PCT\s*=\s*([\d.]+)/m)
+ok(rs && Number(rs[1]) === RS_STRONG_PCT, 'RS_STRONG_PCT 與 pipeline/backtest_signals.py 相同')
+ok(rc && Number(rc[1]) === RS_CONFIRM_120_PCT, 'RS_CONFIRM_120_PCT 與 pipeline/backtest_signals.py 相同')
 
 ok(engineWeightsAllZero({ signal_ma: { weight: 0 }, signal_breakout: { weight: 0 }, rs_strong_60: { weight: 1 } }) === true, '引擎訊號全 0（rs_* 不算）→ true')
 ok(engineWeightsAllZero({ signal_ma: { weight: 2 } }) === false, '有權重 → false')
