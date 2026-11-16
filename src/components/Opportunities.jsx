@@ -1,18 +1,19 @@
 import { useState, useMemo } from 'react'
 import { AlertTriangle, ChevronRight, ChevronDown, LayoutGrid, List } from 'lucide-react'
 import { CandidateCard, CandidateRow } from './PassCard'
-import { edgeWinHeadline, staleText, gateNote, normalizeTier } from '../lib/tierVerdict'
+import { edgeWinHeadline, staleText, gateNote } from '../lib/tierVerdict'
 import { readView, writeView } from '../lib/viewPref'
-import { commonReasons, sortRuleText } from '../lib/cardFacts'
+import { commonReasons, sortRuleText, splitMain, smallPoolText } from '../lib/cardFacts'
 
 // 「今天」分頁的候選清單（2026-11-16 三分頁改版，Andy 核准方向 A＋C、卡片改方向 B）。
 // 這裡只放股票：一句關鍵事實＋狀態型警示（一律首屏可見）＋卡片／清單切換＋兩組候選。
 // 原本同一個元件裡的「這些數字怎麼來的」、成績單搬到 BasisTab；權重表、持有口徑與停損代價搬到工具分頁。
 //
-// 候選分類：tier 由後端 opportunities.py 依「當日候選池內百分位」算好，前端只負責分組顯示，
-// 不重新排序、不重新判斷（舊檔的舊值經 normalizeTier 相容）。
-// ⚠️ 名次沒有證據（2026-07-25 實測：前 3 名 vs 第 4~8 名 t=-0.22，第 2 名反而最差）——
-// 每組清單一律照 JSON 給的原始順序顯示。卡片與清單兩種檢視吃同一個陣列、同一個切片。
+// 2026-11-16 改（Andy 核准「小改＋觀察」）：不再按 tier 分「相對優勢／其他候選」兩組，
+// 改成照 JSON 原始順序切兩段——前 main_n 檔是主名單、其餘收進預設收合的「其他候選」。
+// 後端排序已經是「分數 → 相對優勢先 → 60 日強弱」，相對優勢自然排在前面，前端不重新排序。
+// 原本每組各有一層「再看 N 檔」（preview_n）的分頁，跟主名單／其他候選重疊，拿掉，只留一層收合。
+// 卡片與清單兩種檢視吃同一個陣列、同一個切片。
 const NEUTRAL = '歷史數字暫時取不到，有分類也可能虧錢'
 
 function PickList({ list, view, byId, gate, onPick, showReasons, markFirst }) {
@@ -51,23 +52,6 @@ function ViewToggle({ view, onChange }) {
   )
 }
 
-function TierBlock({ list, view, byId, gate, onPick, previewN, showReasons, markFirst, moreLabel }) {
-  const [expanded, setExpanded] = useState(false)
-  const shown = expanded ? list : list.slice(0, previewN)
-  const hasMore = list.length > shown.length
-  return (<>
-    <PickList list={shown} view={view} byId={byId} gate={gate} onPick={onPick} showReasons={showReasons} markFirst={markFirst} />
-    {hasMore && (
-      <button className="opp-more" onClick={() => setExpanded(true)}>
-        再看 {list.length - shown.length} 檔{moreLabel}<ChevronDown size={16} strokeWidth={2} />
-      </button>
-    )}
-    {expanded && list.length > previewN && (
-      <button className="opp-more" onClick={() => setExpanded(false)}>收合，只看前 {previewN} 檔</button>
-    )}
-  </>)
-}
-
 // opp＝opportunities.json（App 抓好傳進來；undefined＝還在載入、null＝抓不到）
 export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasis, engineStatus }) {
   const [showOther, setShowOther] = useState(false)   // 「其他候選」收合區
@@ -104,13 +88,14 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
   )
   if (!opp.picks || opp.picks.length === 0) return (
     <section className="opp opp-fail" data-region="候選情報">
-      <p><b>今天沒有個股通過門檻</b>（名單產出正常、就是零檔）——這是正常結果，不必找原因。</p>
+      {smallPoolText(opp.gate, 0)
+        ? <p><b>{smallPoolText(opp.gate, 0)}</b>（過「{opp.gate.label}」的股票太少，名單產出正常、就是零檔）——這是有效結論，可以觀望。</p>
+        : <p><b>今天沒有個股通過門檻</b>（名單產出正常、就是零檔）——這是正常結果，不必找原因。</p>}
     </section>
   )
 
-  const previewN = opp.preview_n || 10
-  const tiered = { edge: [], other: [] }
-  for (const p of opp.picks) (normalizeTier(p).tier === 'edge' ? tiered.edge : tiered.other).push(p)
+  const { main, other } = splitMain(opp.picks, opp.main_n)
+  const smallPool = smallPoolText(opp.gate, opp.picks.length)
   const gNote = gateNote(opp.gate, tierStats)
   const stale = staleText(tierStats)
   const common = commonReasons(opp.picks)
@@ -134,6 +119,9 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
               : <b className="opp-degraded"><AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" />今日符合「{opp.gate.label}」的候選僅 {opp.gate.pool} 檔（不足 {opp.gate.min_pool}），門檻未套用</b>}
           </p>
         )}
+        {smallPool && (
+          <p className="opp-sub"><b className="opp-degraded"><AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" />{smallPool}</b></p>
+        )}
         {gNote && (
           <p className="opp-sub"><b className="opp-degraded"><AlertTriangle size={16} strokeWidth={2} className="inline-warn-icon" />{gNote}</b></p>
         )}
@@ -143,33 +131,28 @@ export default function Opportunities({ opp, stocks, onPick, tierStats, onGoBasi
       </div>
 
       <div className="opp-listhead">
-        <h2 className="opp-listtitle">相對優勢 <span className="mono">{tiered.edge.length}</span> 檔</h2>
+        <h2 className="opp-listtitle">主名單 <span className="mono">{main.length}</span> 檔</h2>
         <ViewToggle view={view} onChange={changeView} />
       </div>
-      {/* 圖例併成一段：分組意思＋排序＋（清單檢視才有的）橘點說明 */}
+      {/* 圖例一句：排序依據（不寫戰績數字，會被每週重算推翻）＋（清單檢視才有的）橘點說明 */}
       <p className="opp-legend opp-legend-sm">
         <span>
-          ＝成交金額排今天候選前 1/3，{sortRule}。
+          {sortRule}。
           {anyDot && <span className="opp-dot-legend"><span className="opp-dot" aria-hidden="true" />橘點＝有風險標記，點開看</span>}
         </span>
       </p>
 
-      {tiered.edge.length > 0
-        ? <TierBlock list={tiered.edge} view={view} byId={byId} gate={opp.gate} onPick={handlePick} previewN={previewN}
-            showReasons={!common} markFirst moreLabel="相對優勢" />
-        : <p className="opp-legend">今天沒有候選落在「相對優勢」。</p>}
+      <PickList list={main} view={view} byId={byId} gate={opp.gate} onPick={handlePick} showReasons={!common} markFirst />
 
-      {tiered.other.length > 0 && (
+      {other.length > 0 && (
         <div className="opp-other">
           <button className="opp-fold" onClick={() => setShowOther(v => !v)} aria-expanded={showOther}>
-            <span>其他候選共 {tiered.other.length} 檔<small>同樣過了門檻，只是成交金額沒排進今天前 1/3（沒有分類稱號）</small></span>
+            <span>其他候選（{other.length} 檔）<small>同樣過了所有關卡，排在主名單後面</small></span>
             {showOther ? <ChevronDown size={20} strokeWidth={2} /> : <ChevronRight size={20} strokeWidth={2} />}
           </button>
-          {showOther && (<>
-            <p className="opp-legend">排序規則同上。歷史數字見「依據」分頁「證據」表的「其他候選」欄。</p>
-            <TierBlock list={tiered.other} view={view} byId={byId} gate={opp.gate} onPick={handlePick} previewN={previewN}
-              showReasons={!common} markFirst={false} moreLabel="其他候選" />
-          </>)}
+          {showOther && (
+            <PickList list={other} view={view} byId={byId} gate={opp.gate} onPick={handlePick} showReasons={!common} markFirst={false} />
+          )}
         </div>
       )}
     </section>

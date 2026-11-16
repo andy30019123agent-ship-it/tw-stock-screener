@@ -76,10 +76,34 @@ export function reasonView(r) {
 
 // ── 2026-11-16 快修 ──────────────────────────────────────────────
 // 清單排序規則的一句話（只講真的在發生的）：pipeline/opportunities.py 排序鍵是
-// (-score, -rs_pct_60)；今天所有候選 score 都是 0 時，實際上就是照近 60 天漲幅排。
+// (-score, 相對優勢先, -rs_pct_60)（相對優勢那一鍵 2026-11-16 加）；今天所有候選 score 都是 0 時，
+// 實際上就是「先排相對優勢，再照近 60 天漲幅」。候選太少不分類時相對優勢那一鍵沒作用，就不講。
+// 2026-11-16 以前產的舊檔沒有這一鍵（同分內相對優勢不一定在前面）→ 照資料實際順序判斷，不照版本猜。
+const edgeFirst = list => list.every((p, i) => i === 0 || !isEdge(p) || isEdge(list[i - 1]) || (list[i - 1]?.score ?? 0) > (p?.score ?? 0))
 export function sortRuleText(picks) {
-  const anyScore = Array.isArray(picks) && picks.some(p => isNum(p?.score) && p.score > 0)
+  const list = Array.isArray(picks) ? picks : []
+  const anyScore = list.some(p => isNum(p?.score) && p.score > 0)
+  const anyEdge = list.some(p => isEdge(p)) && edgeFirst(list)
+  if (anyEdge) return anyScore ? '先比訊號權重分，同分先排成交熱絡的，再比 60 天強弱' : '先排成交熱絡的，再比 60 天強弱'
   return anyScore ? '先照訊號權重分、同分再照近 60 天漲幅由高到低排' : '照近 60 天漲幅由高到低排'
+}
+
+// 主名單筆數＝pipeline/opportunities.py 的 MAIN_LIST_N（opportunities.json 的 main_n）。
+// 今晚排程前的舊資料沒有 main_n，前端用這個常數；改 pipeline 時要一起改（cardFacts.test.mjs 會讀 .py 對照）。
+export const MAIN_LIST_N = 20
+
+// 前 mainN 檔是主名單、其餘收進「其他候選」。只是畫面分段，順序照 JSON 原樣、不重排。
+export function splitMain(picks, mainN) {
+  const list = Array.isArray(picks) ? picks : []
+  const n = Number.isInteger(mainN) && mainN > 0 ? mainN : MAIN_LIST_N
+  return { main: list.slice(0, n), other: list.slice(n) }
+}
+
+// 弱勢日（過強勢雙確認不足 20 檔、只列過關的；gate.reason＝applied_small_pool）名單上方那一句。
+// 其他情況回 null。
+export function smallPoolText(gate, n) {
+  if (!gate || gate.applied !== true || gate.reason !== 'applied_small_pool') return null
+  return isNum(n) && n > 0 ? `今天強勢股太少，只有 ${n} 檔過關` : '今天沒有股票過關'
 }
 
 // 進引擎計分的訊號清單＝pipeline/backtest_signals.py ENGINE_SIGNALS（前端只用來判斷「有權重的訊號到底進不進計分」，
